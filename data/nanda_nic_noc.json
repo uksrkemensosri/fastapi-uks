@@ -1,0 +1,25 @@
+﻿{
+  "rules": [
+    {
+      "nanda_code": "00030",
+      "nanda_label": "Gangguan pertukaran gas",
+      "triggers": ["sesak", "saturasi turun", "napas cepat", "dispnea"],
+      "nic": ["Monitoring respirasi", "Manajemen jalan napas", "Terapi oksigen"],
+      "noc": ["Status respirasi: pertukaran gas", "Status respirasi: ventilasi"]
+    },
+    {
+      "nanda_code": "00132",
+      "nanda_label": "Nyeri akut",
+      "triggers": ["nyeri", "skala nyeri", "meringis", "gelisah"],
+      "nic": ["Manajemen nyeri", "Pemberian analgesik", "Edukasi teknik relaksasi"],
+      "noc": ["Kontrol nyeri", "Tingkat kenyamanan"]
+    },
+    {
+      "nanda_code": "00004",
+      "nanda_label": "Risiko infeksi",
+      "triggers": ["luka", "demam", "leukosit naik", "alat invasif"],
+      "nic": ["Kontrol infeksi", "Perawatan luka", "Surveilans"],
+      "noc": ["Keparahan infeksi", "Penyembuhan luka: primer"]
+    }
+  ]
+}

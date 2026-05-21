@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMR UKS Sekolah Rakyat</title>
+  <style>
+    :root {
+      --bg: #f4f7f8;
+      --card: #ffffff;
+      --ink: #1f2933;
+      --muted: #6b7280;
+      --accent: #0f766e;
+      --accent-2: #115e59;
+      --danger: #b91c1c;
+      --border: #d8e1e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at top left, #eaf8f6, var(--bg));
+      color: var(--ink);
+    }
+    .wrap {
+      max-width: 980px;
+      margin: 24px auto;
+      padding: 0 16px 32px;
+    }
+    h1 { margin: 0 0 6px; font-size: 1.6rem; }
+    .sub { margin: 0 0 20px; color: var(--muted); }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 10px;
+    }
+    .brand-logo {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px;
+    }
+    .brand-center {
+      flex: 1;
+      text-align: center;
+    }
+    .grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 6px 14px rgba(17, 24, 39, 0.06);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1.05rem; }
+    label { display: block; margin-bottom: 8px; font-size: 0.9rem; }
+    input, textarea, button, select {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      padding: 9px 10px;
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    textarea { min-height: 80px; resize: vertical; }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+    button:hover { background: var(--accent-2); }
+    .status { margin-top: 8px; font-size: 0.88rem; color: var(--muted); white-space: pre-wrap; }
+    .error { color: var(--danger); }
+    .ok { color: var(--accent-2); }
+    .mono {
+      font-family: Consolas, "Courier New", monospace;
+      background: #f7fafb;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      font-size: 0.82rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 240px;
+      overflow: auto;
+    }
+    .credit {
+      margin-top: 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.86rem;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <img class="brand-logo" src="/ui/assets/kemensos-ri.png" alt="Logo Kementerian Sosial RI" />
+      <div class="brand-center">
+        <h1>EMR UKS Sekolah Rakyat</h1>
+        <p class="sub">Login, data siswa, kunjungan, dan laporan harian dalam satu halaman.</p>
+      </div>
+      <img class="brand-logo" src="/ui/assets/sekolah-rakyat.png" alt="Logo Sekolah Rakyat" />
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>1) Masuk Sistem</h2>
+        <label>Username
+          <input id="username" value="admin" />
+        </label>
+        <label>Password
+          <input id="password" type="password" value="admin123" />
+        </label>
+        <button id="btnLogin">Login</button>
+        <div id="loginStatus" class="status"></div>
+      </section>
+
+      <section class="card">
+        <h2>2) Data Siswa</h2>
+        <label>ID/NIS Siswa
+          <input id="patientId" placeholder="SISWA-001" />
+        </label>
+        <label>Nama Siswa
+          <input id="patientName" placeholder="Nama lengkap siswa" />
+        </label>
+        <label>Usia (Tahun)
+          <input id="patientAge" type="number" min="0" max="120" placeholder="12" />
+        </label>
+        <label>Kelas
+          <input id="patientClass" placeholder="Contoh: 7A" />
+        </label>
+        <label>Jenis Kelamin
+          <select id="patientGender">
+            <option value="L">Laki-laki (L)</option>
+            <option value="P">Perempuan (P)</option>
+          </select>
+        </label>
+        <button id="btnCreatePatient">Simpan Data Siswa</button>
+        <div id="patientStatus" class="status"></div>
+      </section>
+
+      <section class="card">
+        <h2>3) Kunjungan UKS</h2>
+        <label>ID/NIS Siswa
+          <input id="visitPatientId" placeholder="SISWA-001" />
+        </label>
+        <label>Tanggal Kunjungan
+          <input id="visitDate" type="date" />
+        </label>
+        <label>Keluhan Utama
+          <textarea id="visitComplaint" placeholder="Tulis keluhan utama siswa"></textarea>
+        </label>
+        <label>Hasil Pemeriksaan Singkat
+          <textarea id="visitExam" placeholder="Tulis hasil pemeriksaan singkat"></textarea>
+        </label>
+        <label>Diagnosa
+          <input id="visitDiagnosis" placeholder="Contoh: Nyeri akut" />
+        </label>
+        <label>Tindakan UKS
+          <input id="visitTreatment" placeholder="Istirahat" />
+        </label>
+        <label>Catatan Tambahan
+          <textarea id="visitNotes" placeholder="Opsional"></textarea>
+        </label>
+        <button id="btnSuggestAI" type="button">Bantu dengan AI</button>
+        <button id="btnCreateVisit">Simpan Kunjungan</button>
+        <div id="visitStatus" class="status"></div>
+      </section>
+
+      <section class="card">
+        <h2>4) Laporan Harian UKS</h2>
+        <label>Tanggal Laporan Harian
+          <input id="reportDate" type="date" />
+        </label>
+        <button id="btnDaily">Ambil Laporan</button>
+        <button id="btnDailyExcel" type="button">Download Excel Harian</button>
+        <div id="reportStatus" class="status"></div>
+        <div id="reportOutput" class="mono"></div>
+      </section>
+    </div>
+    <div class="credit">Created by : Nur Indah Fitriana Dewi, AMd. Kep</div>
+  </div>
+
+  <script>
+    let token = "";
+
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById("visitDate").value = today;
+    document.getElementById("reportDate").value = today;
+
+    function showStatus(id, message, ok) {
+      const el = document.getElementById(id);
+      el.textContent = message;
+      el.className = `status ${ok ? "ok" : "error"}`;
+    }
+
+    async function api(path, method = "GET", body = null, useAuth = true) {
+      const headers = { "Content-Type": "application/json" };
+      if (useAuth && token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const res = await fetch(path, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : null,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = json.detail || `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      return json;
+    }
+
+    document.getElementById("btnLogin").addEventListener("click", async () => {
+      try {
+        const payload = {
+          username: document.getElementById("username").value.trim(),
+          password: document.getElementById("password").value,
+        };
+        const data = await api("/api/auth/login", "POST", payload, false);
+        token = data.access_token;
+        showStatus("loginStatus", `Login berhasil. Token aktif ${data.expires_in} detik.`, true);
+      } catch (err) {
+        showStatus("loginStatus", `Login gagal: ${err.message}`, false);
+      }
+    });
+
+    document.getElementById("btnCreatePatient").addEventListener("click", async () => {
+      if (!token) {
+        showStatus("patientStatus", "Silakan login dulu.", false);
+        return;
+      }
+      try {
+        const body = {
+          id: document.getElementById("patientId").value.trim(),
+          name: document.getElementById("patientName").value.trim(),
+          age: Number(document.getElementById("patientAge").value),
+          class_name: document.getElementById("patientClass").value.trim() || null,
+          gender: document.getElementById("patientGender").value.trim(),
+        };
+        const data = await api("/api/patients", "POST", body, true);
+        showStatus("patientStatus", `Siswa tersimpan: ${data.id} - ${data.name}`, true);
+        document.getElementById("visitPatientId").value = data.id;
+      } catch (err) {
+        showStatus("patientStatus", `Gagal simpan siswa: ${err.message}`, false);
+      }
+    });
+
+    document.getElementById("btnCreateVisit").addEventListener("click", async () => {
+      if (!token) {
+        showStatus("visitStatus", "Silakan login dulu.", false);
+        return;
+      }
+      try {
+        const body = {
+          patient_id: document.getElementById("visitPatientId").value.trim(),
+          visit_date: document.getElementById("visitDate").value,
+          complaint: document.getElementById("visitComplaint").value.trim(),
+          examination: document.getElementById("visitExam").value.trim(),
+          treatment: document.getElementById("visitTreatment").value.trim(),
+          diagnosis: document.getElementById("visitDiagnosis").value.trim() || null,
+          notes: document.getElementById("visitNotes").value.trim() || null,
+          referral_to: null,
+          referral_status: null,
+        };
+        const data = await api("/api/uks/visits", "POST", body, true);
+        showStatus("visitStatus", `Kunjungan tersimpan. ID kunjungan: ${data.id}`, true);
+      } catch (err) {
+        showStatus("visitStatus", `Gagal simpan kunjungan: ${err.message}`, false);
+      }
+    });
+
+    document.getElementById("btnSuggestAI").addEventListener("click", async () => {
+      if (!token) {
+        showStatus("visitStatus", "Silakan login dulu.", false);
+        return;
+      }
+      try {
+        const payload = {
+          complaint: document.getElementById("visitComplaint").value.trim(),
+          examination: document.getElementById("visitExam").value.trim(),
+        };
+        const data = await api("/api/ai/suggest-care", "POST", payload, true);
+        document.getElementById("visitDiagnosis").value = data.diagnosis;
+        document.getElementById("visitTreatment").value = data.intervention;
+        document.getElementById("visitNotes").value = `Implementasi: ${data.implementation}\nTindak lanjut: ${data.follow_up}`;
+        showStatus("visitStatus", `Saran AI terisi (confidence: ${data.confidence}). Silakan review sebelum simpan.`, true);
+      } catch (err) {
+        showStatus("visitStatus", `Gagal ambil saran AI: ${err.message}`, false);
+      }
+    });
+
+    document.getElementById("btnDaily").addEventListener("click", async () => {
+      if (!token) {
+        showStatus("reportStatus", "Silakan login dulu.", false);
+        return;
+      }
+      try {
+        const date = document.getElementById("reportDate").value;
+        const data = await api(`/api/reports/uks/daily?date=${encodeURIComponent(date)}`, "GET", null, true);
+        showStatus("reportStatus", "Laporan berhasil diambil.", true);
+        document.getElementById("reportOutput").textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        showStatus("reportStatus", `Gagal ambil laporan: ${err.message}`, false);
+      }
+    });
+
+    document.getElementById("btnDailyExcel").addEventListener("click", async () => {
+      if (!token) {
+        showStatus("reportStatus", "Silakan login dulu.", false);
+        return;
+      }
+      try {
+        const date = document.getElementById("reportDate").value;
+        const res = await fetch(`/api/reports/uks/daily/excel?date=${encodeURIComponent(date)}`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.detail || `HTTP ${res.status}`);
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `laporan_harian_uks_${date}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showStatus("reportStatus", "File Excel berhasil diunduh.", true);
+      } catch (err) {
+        showStatus("reportStatus", `Gagal download Excel: ${err.message}`, false);
+      }
+    });
+  </script>
+</body>
+</html>
+
+
