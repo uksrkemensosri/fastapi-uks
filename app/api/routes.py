@@ -354,6 +354,35 @@ def create_uks_visit(
         referral_to=visit.referral_to,
         referral_status=visit.referral_status,
     )
+@router.get("/uks/visits")
+def get_all_uks_visits(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+):
+
+    visits = (
+        db.query(UKSVisitORM)
+        .order_by(UKSVisitORM.id.desc())
+        .all()
+    )
+
+    results = []
+
+    for visit in visits:
+
+        patient = db.get(PatientORM, visit.patient_id)
+
+        results.append({
+            "id": visit.id,
+            "patient_id": visit.patient_id,
+            "patient_name": patient.name if patient else visit.patient_id,
+            "visit_date": visit.visit_date,
+            "complaint": visit.complaint,
+            "diagnosis": visit.diagnosis,
+            "treatment": visit.treatment,
+        })
+
+    return results
 
 
 @router.get("/uks/visits/{visit_id}", response_model=UKSVisitResponse)
