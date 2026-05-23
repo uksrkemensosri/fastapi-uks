@@ -383,7 +383,25 @@ def get_all_uks_visits(
         })
 
     return results
+@router.delete("/uks/visits/{visit_id}")
+def delete_uks_visit(
+    visit_id: int,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+):
 
+    visit = db.get(UKSVisitORM, visit_id)
+
+    if visit is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Visit not found"
+        )
+
+    db.delete(visit)
+    db.commit()
+
+    return {"message": "Visit deleted"}
 
 @router.get("/uks/visits/{visit_id}", response_model=UKSVisitResponse)
 def get_uks_visit_detail(
@@ -764,4 +782,31 @@ def get_assessment_detail(
             for r in recs
         ],
     )
+@router.put("/uks/visits/{visit_id}")
+def update_uks_visit(
+    visit_id: int,
+    payload: UKSVisitCreate,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+):
 
+    visit = db.get(UKSVisitORM, visit_id)
+
+    if visit is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Visit not found"
+        )
+
+    visit.patient_id = payload.patient_id
+    visit.visit_date = payload.visit_date
+    visit.complaint = payload.complaint
+    visit.examination = payload.examination
+    visit.treatment = payload.treatment
+    visit.diagnosis = payload.diagnosis
+    visit.notes = payload.notes
+
+    db.commit()
+    db.refresh(visit)
+
+    return {"message": "Visit updated"}

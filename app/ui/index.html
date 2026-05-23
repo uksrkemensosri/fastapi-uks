@@ -790,6 +790,7 @@
 <script>
 
 let token = "";
+let editingVisitId = null;
 
 const today = new Date().toISOString().slice(0, 10);
 document.getElementById("visitDate").value = today;
@@ -917,13 +918,35 @@ document.getElementById("btnCreateVisit").addEventListener("click", async () => 
       notes: document.getElementById("visitNotes").value.trim() || null,
     };
 
-    const data = await api("/api/uks/visits", "POST", body, true);
+let data;
 
-    showStatus(
-      "visitStatus",
-      `Kunjungan tersimpan. ID: ${data.id}`,
-      true
-    );
+if (editingVisitId) {
+
+  data = await api(
+    `/api/uks/visits/${editingVisitId}`,
+    "PUT",
+    body,
+    true
+  );
+
+  alert("Kunjungan berhasil diupdate");
+
+  editingVisitId = null;
+
+} else {
+
+  data = await api(
+    "/api/uks/visits",
+    "POST",
+    body,
+    true
+  );
+
+  alert("Kunjungan berhasil disimpan");
+
+}
+
+loadVisits();
 
   } catch (err) {
 
@@ -1166,11 +1189,17 @@ console.log(data);
         </td>
         <td>${item.treatment || "-"}</td>
         <td>
-          <button class="action-btn edit-btn">
+          <button
+  class="action-btn edit-btn"
+  onclick="editVisit(${item.id})"
+>
             Edit
           </button>
 
-          <button class="action-btn delete-btn">
+          <button
+  class="action-btn delete-btn"
+  onclick="deleteVisit(${item.id})"
+>
             Hapus
           </button>
         </td>
@@ -1197,6 +1226,87 @@ document.getElementById("btnLogin").addEventListener("click", async () => {
   }, 1000);
 
 });
+/* DELETE VISIT */
+
+async function deleteVisit(id) {
+
+  const confirmDelete = confirm(
+    "Hapus kunjungan ini?"
+  );
+
+  if (!confirmDelete) return;
+
+  try {
+
+    await api(
+      `/api/uks/visits/${id}`,
+      "DELETE",
+      null,
+      true
+    );
+
+    alert("Kunjungan berhasil dihapus");
+
+    loadVisits();
+
+  } catch (err) {
+
+    alert("Gagal hapus: " + err.message);
+
+  }
+
+}
+/* EDIT VISIT */
+
+async function editVisit(id) {
+
+  try {
+
+    const data = await api(
+      "/api/uks/visits",
+      "GET",
+      null,
+      true
+    );
+
+    const visit = data.find(v => v.id === id);
+
+    if (!visit) {
+      alert("Data tidak ditemukan");
+      return;
+    }
+
+    editingVisitId = id;
+
+    document.getElementById("visitPatientId").value =
+      visit.patient_id || "";
+
+    document.getElementById("visitComplaint").value =
+      visit.complaint || "";
+
+    document.getElementById("visitExam").value =
+      visit.examination || "";
+
+    document.getElementById("visitTreatment").value =
+      visit.treatment || "";
+
+    document.getElementById("visitDiagnosis").value =
+      visit.diagnosis || "";
+
+    alert("Mode edit aktif");
+
+    window.scrollTo({
+      top: 0,
+      behavior: "smooth"
+    });
+
+  } catch (err) {
+
+    alert("Gagal load data edit");
+
+  }
+
+}
 </script>
 
 </body>
