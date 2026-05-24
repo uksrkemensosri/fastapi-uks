@@ -11,6 +11,8 @@ from app.api.routes import router
 from app.auth.security import hash_password
 from app.db import models  # noqa: F401
 from app.db.database import Base, SessionLocal, engine
+from app.db.models import PatientORM
+import pandas as pd
 from app.db.models import UserORM
 
 app = FastAPI(title="EMR Keperawatan + Expert System NANDA-NIC-NOC")
@@ -58,7 +60,43 @@ def seed_admin_user() -> None:
 
 
 ensure_sqlite_columns()
+def import_students_once() -> None:
+
+    db: Session = SessionLocal()
+
+    try:
+
+        existing = db.query(PatientORM).count()
+
+        if existing > 0:
+            return
+
+        df = pd.read_excel(
+            "students_clean_import.xlsx"
+        )
+
+        for _, row in df.iterrows():
+
+            student = PatientORM(
+                id=str(row["id"]),
+                name=row["name"],
+                gender=row["gender"],
+                class_name=row["class_name"],
+                birth_date=str(row["birth_date"]),
+                age=0,
+            )
+
+            db.add(student)
+
+        db.commit()
+
+        print("Students imported 😄🔥")
+
+    finally:
+
+        db.close()
 seed_admin_user()
+import_students_once()
 
 
 @app.get("/")
