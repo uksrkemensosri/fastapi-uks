@@ -39,7 +39,25 @@
       display:flex;
       min-height:100vh;
     }
+#patientSuggestions{
+  margin-top:8px;
+  border-radius:14px;
+  background:white;
+  border:1px solid #e2e8f0;
+  overflow:hidden;
+  max-height:220px;
+  overflow-y:auto;
+}
 
+.patient-item{
+  padding:12px 14px;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.patient-item:hover{
+  background:#ecfeff;
+}
     /* SIDEBAR */
 
     .sidebar{
@@ -490,22 +508,22 @@
 
       <div class="stat-card">
         <div class="stat-label">Total Siswa</div>
-        <div class="stat-number">180</div>
+        <h1 id="totalStudents">0</h1>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">Kunjungan Hari Ini</div>
-        <div class="stat-number">24</div>
+        <h1 id="todayVisits">0</h1>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">Kasus Terbanyak</div>
-        <div class="stat-number">Demam</div>
+        <h1 id="topCase">-</h1>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">Laporan Aktif</div>
-        <div class="stat-number">12</div>
+        <h1 id="activeReports">0</h1>
       </div>
 
     </div>
@@ -545,26 +563,24 @@
         <h2>Data Siswa</h2>
 
         <div class="form-group">
-          <label>ID / NIS</label>
-          <input id="patientId" placeholder="SISWA-001">
-        </div>
+<label>ID / NIS</label>
+<input id="patientId">
 
-        <div class="form-group">
-          <label>Nama Lengkap</label>
-          <input id="patientName">
-        </div>
+<div class="form-group">
+  <label>Nama Lengkap</label>
+  <input id="patientName">
+</div>
 
-        <div class="form-group">
-          <label>Usia</label>
-          <input id="patientAge" type="number">
-        </div>
+<div class="form-group">
+  <label>Tanggal Lahir</label>
+  <input id="patientBirthDate" type="date">
+</div>
 
-        <div class="form-group">
-          <label>Kelas</label>
-          <input id="patientClass">
-        </div>
-
-        <div class="form-group">
+<div class="form-group">
+  <label>Kelas</label>
+  <input id="patientClass">
+</div>
+           <div class="form-group">
           <label>Jenis Kelamin</label>
 
           <select id="patientGender">
@@ -588,8 +604,17 @@
         <h2>Kunjungan UKS</h2>
 
         <div class="form-group">
-          <label>ID / NIS Siswa</label>
-          <input id="visitPatientId">
+          <label>Cari Siswa</label>
+
+<input
+  id="patientSearch"
+  placeholder="Cari nama siswa..."
+  autocomplete="off"
+/>
+
+<div id="patientSuggestions"></div>
+
+<input type="hidden" id="visitPatientId">
         </div>
 
         <div class="form-group">
@@ -777,9 +802,10 @@
   </div>
 
 </section>
-    <div class="footer">
-      Created by Nur Indah Fitriana Dewi, AMd. Kep - Perawat Terampil Kementerian Sosial
-    </div>
+    <footer class="footer">
+  <div>© 2026 Sekolah Rakyat Health System</div>
+  <div>Developed by Nur Indah Fitriana Dewi</div>
+</footer>
 
   </main>
 
@@ -839,7 +865,9 @@ document.getElementById("btnLogin").addEventListener("click", async () => {
 
     token = data.access_token;
 
-    showStatus(
+loadPatients();
+
+showStatus(
       "loginStatus",
       `Login berhasil. Token aktif ${data.expires_in} detik.`,
       true
@@ -869,9 +897,10 @@ document.getElementById("btnCreatePatient").addEventListener("click", async () =
   try {
 
     const body = {
-      id: document.getElementById("patientId").value.trim(),
+  id: document.getElementById("patientId").value.trim(),
       name: document.getElementById("patientName").value.trim(),
-      age: Number(document.getElementById("patientAge").value),
+      age: 0,
+      birth_date: document.getElementById("patientBirthDate").value,
       class_name: document.getElementById("patientClass").value.trim() || null,
       gender: document.getElementById("patientGender").value.trim(),
     };
@@ -1183,26 +1212,35 @@ console.log(data);
         <td>${item.patient_name || item.patient_id}</td>
         <td>${item.complaint || "-"}</td>
         <td>
-          <span class="badge badge-blue">
-            ${item.diagnosis || "-"}
-          </span>
-        </td>
-        <td>${item.treatment || "-"}</td>
-        <td>
-          <button
-  class="action-btn edit-btn"
-  onclick="editVisit(${item.id})"
->
-            Edit
-          </button>
+  <span class="badge badge-blue">
+    ${item.diagnosis || "-"}
+  </span>
+</td>
 
-          <button
-  class="action-btn delete-btn"
-  onclick="deleteVisit(${item.id})"
->
-            Hapus
-          </button>
-        </td>
+<td>
+
+  <button
+    class="action-btn edit-btn"
+    onclick="showHistory('${item.patient_id}')"
+  >
+    Riwayat
+  </button>
+
+  <button
+    class="action-btn edit-btn"
+    onclick="editVisit(${item.id})"
+  >
+    Edit
+  </button>
+
+  <button
+    class="action-btn delete-btn"
+    onclick="deleteVisit(${item.id})"
+  >
+    Hapus
+  </button>
+
+</td>
       `;
 
       tbody.appendChild(row);
@@ -1307,7 +1345,339 @@ async function editVisit(id) {
   }
 
 }
-</script>
+async function loadDashboardStats() {
 
+  try {
+
+    const data = await api("/api/dashboard/stats");
+
+    document.getElementById("totalStudents").textContent =
+      data.total_students;
+
+    document.getElementById("todayVisits").textContent =
+      data.today_visits;
+
+    document.getElementById("topCase").textContent =
+      data.top_case;
+
+    document.getElementById("activeReports").textContent =
+      data.active_reports;
+
+  } catch (err) {
+
+    console.error("Dashboard stats error:", err);
+
+  }
+
+}
+
+loadDashboardStats();
+</script>
+<script>
+
+let patientsData = [];
+
+async function loadPatients() {
+
+  try {
+
+    patientsData = await api("/api/patients");
+
+  } catch (err) {
+
+    console.error(err);
+
+  }
+
+}
+
+document
+.getElementById("patientSearch")
+.addEventListener("input", function () {
+
+  const keyword = this.value.toLowerCase();
+
+  const box =
+    document.getElementById("patientSuggestions");
+
+  box.innerHTML = "";
+
+  if (!keyword) return;
+
+  const results = patientsData.filter(patient =>
+    patient.name.toLowerCase().includes(keyword)
+  );
+
+  results.slice(0, 8).forEach(patient => {
+
+    const item = document.createElement("div");
+
+    item.className = "patient-item";
+
+    item.textContent =
+      `${patient.name} - ${patient.class_name}`;
+
+    item.onclick = () => {
+
+      document.getElementById("patientSearch").value =
+        `${patient.name} - ${patient.class_name}`;
+
+      document.getElementById("visitPatientId").value =
+        patient.id;
+
+      document.getElementById("patientName").value =
+        patient.name;
+
+      document.getElementById("patientClass").value =
+        patient.class_name;
+
+      box.innerHTML = "";
+
+    };
+
+    box.appendChild(item);
+
+  });
+
+});
+async function showHistory(patientId) {
+
+  try {
+
+    const visits = await api(
+      `/api/patients/${patientId}/visits`
+    );
+
+  const patient = patientsData.find(
+  p => p.id === patientId
+);
+
+let historyHtml = `
+
+  <div style="margin-bottom:30px;">
+
+    <h1 style="
+      margin-bottom:20px;
+      color:#0f172a;
+    ">
+      Rekam Medis Siswa
+    </h1>
+
+    <table style="
+      width:400px;
+      margin-bottom:20px;
+      border-collapse:collapse;
+    ">
+
+      <tr>
+        <td style="padding:8px;font-weight:bold;">
+          Nama
+        </td>
+
+        <td style="padding:8px;">
+          : ${patient?.name || "-"}
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:8px;font-weight:bold;">
+          Kelas
+        </td>
+
+        <td style="padding:8px;">
+          : ${patient?.class_name || "-"}
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:8px;font-weight:bold;">
+          Usia
+        </td>
+
+        <td style="padding:8px;">
+          ${calculateAge(patient?.birth_date)} tahun
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:8px;font-weight:bold;">
+          Jenis Kelamin
+        </td>
+
+        <td style="padding:8px;">
+          : ${patient?.gender || "-"}
+        </td>
+      </tr>
+
+    </table>
+
+  </div>
+
+  <h2 style="margin-bottom:20px;">
+    Riwayat Kunjungan UKS
+  </h2>
+
+  <table style="
+    width:100%;
+    border-collapse:collapse;
+  ">
+        <tr>
+          <th style="border:1px solid #ccc;padding:10px;">
+            Tanggal
+          </th>
+
+          <th style="border:1px solid #ccc;padding:10px;">
+            Keluhan
+          </th>
+
+          <th style="border:1px solid #ccc;padding:10px;">
+            Diagnosa
+          </th>
+
+          <th style="border:1px solid #ccc;padding:10px;">
+            Tindakan
+          </th>
+        </tr>
+    `;
+
+    visits.forEach(v => {
+
+      historyHtml += `
+        <tr>
+
+          <td style="border:1px solid #ccc;padding:10px;">
+            ${v.visit_date || "-"}
+          </td>
+
+          <td style="border:1px solid #ccc;padding:10px;">
+            ${v.complaint || "-"}
+          </td>
+
+          <td style="border:1px solid #ccc;padding:10px;">
+            ${v.diagnosis || "-"}
+          </td>
+
+          <td style="border:1px solid #ccc;padding:10px;">
+            ${v.treatment || "-"}
+          </td>
+
+        </tr>
+      `;
+
+    });
+
+    historyHtml += `</table>
+
+      <button
+        onclick="printHistory()"
+        style="
+          margin-top:20px;
+          padding:12px 20px;
+          border:none;
+          border-radius:12px;
+          background:#0f766e;
+          color:white;
+          font-weight:bold;
+          cursor:pointer;
+        "
+      >
+        Export PDF
+      </button>
+    `;
+
+    const popup = window.open(
+      "",
+      "",
+      "width=1000,height=700"
+    );
+
+    popup.document.write(`
+      <html>
+
+        <head>
+
+          <title>Riwayat UKS</title>
+
+          <style>
+
+            body{
+              font-family:Arial;
+              padding:30px;
+            }
+
+            table{
+              width:100%;
+            }
+
+            th{
+              background:#f1f5f9;
+            }
+
+          </style>
+
+        </head>
+
+        <body id="printArea">
+
+          ${historyHtml}
+
+          <script>
+
+            function printHistory(){
+
+              window.print();
+
+            }
+
+          <\/script>
+
+        </body>
+
+      </html>
+    `);
+
+    popup.document.close();
+
+  } catch (err) {
+
+    console.error(err);
+
+    alert("Gagal ambil riwayat");
+
+  }
+
+}
+function calculateAge(birthDate) {
+
+  if (!birthDate) return "-";
+
+  const today = new Date();
+
+  const birth = new Date(birthDate);
+
+  let age =
+    today.getFullYear() -
+    birth.getFullYear();
+
+  const monthDiff =
+    today.getMonth() -
+    birth.getMonth();
+
+  if (
+    monthDiff < 0 ||
+    (
+      monthDiff === 0 &&
+      today.getDate() < birth.getDate()
+    )
+  ) {
+
+    age--;
+
+  }
+
+  return age;
+
+}
+</script>
 </body>
 </html>

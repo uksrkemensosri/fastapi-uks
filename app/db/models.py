@@ -18,16 +18,41 @@ class UserORM(Base):
 class PatientORM(Base):
     __tablename__ = "patients"
 
-    id: Mapped[str] = mapped_column(String(50), primary_key=True)
-    name: Mapped[str] = mapped_column(String(200), nullable=False)
-    age: Mapped[int] = mapped_column(Integer, nullable=False)
-    gender: Mapped[str] = mapped_column(String(30), nullable=False)
-    class_name: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    id: Mapped[str] = mapped_column(
+        String(50),
+        primary_key=True
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False
+    )
+
+    age: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False
+    )
+
+    gender: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False
+    )
+
+    class_name: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+    )
+
+    birth_date: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True
+    )
 
     assessments: Mapped[list["AssessmentORM"]] = relationship(
         back_populates="patient",
         cascade="all, delete-orphan",
     )
+
     uks_visits: Mapped[list["UKSVisitORM"]] = relationship(
         back_populates="patient",
         cascade="all, delete-orphan",

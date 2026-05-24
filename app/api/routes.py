@@ -1,4 +1,8 @@
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+load_dotenv()
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -51,6 +55,10 @@ from app.models.schemas import (
 
 router = APIRouter(prefix="/api", tags=["EMR Keperawatan"])
 expert_system = NursingExpertSystem()
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY"),
+)
 
 
 def _build_top_complaints(visits: list[UKSVisitORM], limit: int = 5) -> list[ComplaintStat]:
@@ -199,42 +207,93 @@ def assess_patient(
         recommendations=recommendations,
     )
 
-
 @router.post("/ai/suggest-care", response_model=AICareSuggestionResponse)
 def suggest_care_with_ai(
     payload: AICareSuggestionRequest,
     _: UserORM = Depends(require_roles("admin", "perawat")),
 ) -> AICareSuggestionResponse:
-    assessment = NursingAssessment(
-        patient=Patient(id="AI-DRAFT", name="AI Draft", age=0, gender="-"),
-        complaints=[payload.complaint],
-        observations=[payload.examination],
-    )
-    recs = expert_system.infer(assessment)
 
-    if recs:
-        top = recs[0]
-        diagnosis = top.nanda_label
-        intervention = "; ".join(top.nic[:3]) if top.nic else "Edukasi dan observasi lanjutan"
-        implementation = f"Lakukan {intervention.lower()} sesuai kondisi pasien."
-        follow_up = "; ".join(top.noc[:3]) if top.noc else "Evaluasi ulang keluhan dalam 1x24 jam"
-        confidence = top.confidence
+    prompt = f"""
+Anda adalah perawat UKS Indonesia.
+
+Gunakan SDKI secara singkat dan praktis.
+
+Keluhan:
+{payload.complaint}
+
+Pemeriksaan:
+{payload.examination}
+
+Jawab SINGKAT dengan format:
+
+Diagnosa:
+...
+
+Tindakan:
+...
+
+Catatan:
+...
+
+Maksimal 2 kalimat tiap bagian.
+"""
+
+    try:
+
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b:free",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.3,
+            max_tokens=200,
+        )
+
+        result = response.choices[0].message.content
+
+        result = result.replace("**", "")
+
+    except Exception as e:
+
+        result = str(e)
+
+    diagnosis = ""
+    intervention = ""
+    implementation = ""
+
+    parts = result.split("Tindakan:")
+
+    if len(parts) > 1:
+
+        diagnosis = parts[0].replace(
+            "Diagnosa:",
+            ""
+        ).strip()
+
+        tindakan_parts = parts[1].split(
+            "Catatan:"
+        )
+
+        intervention = tindakan_parts[0].strip()
+
+        if len(tindakan_parts) > 1:
+
+            implementation = tindakan_parts[1].strip()
+
     else:
-        diagnosis = "Perlu asesmen lanjutan"
-        intervention = "Observasi tanda vital dan pengkajian keluhan lebih lanjut"
-        implementation = "Catat perkembangan keluhan, lakukan observasi, dan berikan edukasi awal."
-        follow_up = "Evaluasi ulang kondisi pasien dan pertimbangkan rujukan bila memburuk."
-        confidence = 0.2
+
+        diagnosis = result
 
     return AICareSuggestionResponse(
         diagnosis=diagnosis,
         intervention=intervention,
         implementation=implementation,
-        follow_up=follow_up,
-        confidence=round(confidence, 2),
+        follow_up="Evaluasi ulang sesuai kondisi pasien.",
+        confidence=0.95,
     )
-
-
 @router.post("/patients", response_model=PatientSummary, status_code=status.HTTP_201_CREATED)
 def create_patient(
     payload: PatientCreate,
@@ -251,6 +310,7 @@ def create_patient(
         age=payload.age,
         gender=payload.gender,
         class_name=payload.class_name,
+        birth_date=payload.birth_date,
     )
     db.add(patient)
     db.commit()
@@ -269,10 +329,26 @@ def get_patients(
     db: Session = Depends(get_db),
     _: UserORM = Depends(require_roles("admin", "perawat")),
 ) -> list[PatientSummary]:
-    patients = db.query(PatientORM).order_by(PatientORM.name.asc()).all()
+
+    patients = (
+        db.query(PatientORM)
+        .order_by(PatientORM.name.asc())
+        .all()
+    )
+
     return [
-        PatientSummary(id=p.id, name=p.name, age=p.age, gender=p.gender, class_name=p.class_name)
+
+        PatientSummary(
+            id=p.id,
+            name=p.name,
+            age=p.age,
+            gender=p.gender,
+            class_name=p.class_name,
+            birth_date=p.birth_date,
+        )
+
         for p in patients
+
     ]
 
 
@@ -353,7 +429,22 @@ def create_uks_visit(
         notes=visit.notes,
         referral_to=visit.referral_to,
         referral_status=visit.referral_status,
+)
+@router.get("/patients/{patient_id}/visits")
+def get_patient_visits(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+):
+
+    visits = (
+        db.query(UKSVisitORM)
+        .filter(UKSVisitORM.patient_id == patient_id)
+        .order_by(UKSVisitORM.visit_date.desc())
+        .all()
     )
+
+    return visits
 @router.get("/uks/visits")
 def get_all_uks_visits(
     db: Session = Depends(get_db),
@@ -810,3 +901,35 @@ def update_uks_visit(
     db.refresh(visit)
 
     return {"message": "Visit updated"}
+from sqlalchemy import func
+from datetime import date
+
+
+@router.get("/dashboard/stats")
+def dashboard_stats(
+    db: Session = Depends(get_db),
+):
+
+    total_students = db.query(PatientORM).count()
+
+    today_visits = db.query(UKSVisitORM).filter(
+        UKSVisitORM.visit_date == date.today()
+    ).count()
+
+    top_case = (
+        db.query(
+            UKSVisitORM.diagnosis,
+            func.count(UKSVisitORM.diagnosis).label("total")
+        )
+        .group_by(UKSVisitORM.diagnosis)
+        .order_by(func.count(UKSVisitORM.diagnosis).desc())
+        .first()
+    )
+
+    return {
+        "total_students": total_students,
+        "today_visits": today_visits,
+        "top_case": top_case[0] if top_case else "-",
+        "active_reports": today_visits
+    }
+

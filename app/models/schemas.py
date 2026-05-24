@@ -36,6 +36,7 @@ class PatientSummary(BaseModel):
     age: int
     gender: str
     class_name: Optional[str] = None
+    birth_date: Optional[str] = None
 
 
 class PatientCreate(BaseModel):
@@ -44,14 +45,14 @@ class PatientCreate(BaseModel):
     age: int = Field(ge=0, le=120)
     gender: str = Field(min_length=1, max_length=30)
     class_name: Optional[str] = Field(default=None, max_length=50)
-
+    birth_date: Optional[str] = None
 
 class UKSVisitCreate(BaseModel):
     patient_id: str = Field(min_length=1, max_length=50)
     visit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
     complaint: str = Field(min_length=2, max_length=255)
     examination: str = Field(min_length=2, max_length=255)
-    treatment: str = Field(min_length=2, max_length=255)
+    treatment: Optional[str] = Field(default=None, max_length=255)
     diagnosis: Optional[str] = Field(default=None, max_length=255)
     notes: Optional[str] = Field(default=None, max_length=1000)
     referral_to: Optional[str] = Field(default=None, max_length=255)
