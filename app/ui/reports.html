@@ -1140,7 +1140,72 @@ async function downloadMedicinePdf(){
   }
 
 }
+async function saveMedicine(){
 
+  try{
+
+    const payload = {
+
+      name:
+        document.getElementById(
+          "medicineName"
+        ).value,
+
+      unit:
+        document.getElementById(
+          "medicineUnit"
+        ).value,
+
+      stock:
+        parseInt(
+          document.getElementById(
+            "medicineStock"
+          ).value
+        ),
+
+      minimum_stock:
+        parseInt(
+          document.getElementById(
+            "medicineMinStock"
+          ).value
+        )
+
+    };
+
+    await api(
+      "/api/medicines",
+      "POST",
+      payload
+    );
+
+    showStatus(
+      "medicineStatus",
+      "Obat berhasil disimpan",
+      true
+    );
+
+    loadMedicines();
+
+  }catch(err){
+
+    showStatus(
+      "medicineStatus",
+      err.message,
+      false
+    );
+
+  }
+
+}
+
+document
+  .getElementById(
+    "btnCreateMedicine"
+  )
+  .addEventListener(
+    "click",
+    saveMedicine
+  );
 </script>
 </body>
 </html>
