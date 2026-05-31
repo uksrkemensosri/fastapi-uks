@@ -1,4 +1,13 @@
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import (
+    Boolean,
+    Float,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Column,
+    Date
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
@@ -40,6 +49,10 @@ class PatientORM(Base):
 
     class_name: Mapped[str | None] = mapped_column(
         String(50),
+        nullable=True
+    )
+    parent_phone = Column(
+        String,
         nullable=True
     )
 
@@ -102,6 +115,9 @@ class UKSVisitORM(Base):
     notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     referral_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
     referral_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    referral_place: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    control_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    control_done: Mapped[bool] = mapped_column(Boolean, default=False)
 
     patient: Mapped[PatientORM] = relationship(back_populates="uks_visits")
     medications: Mapped[list["UKSMedicationORM"]] = relationship(
@@ -122,3 +138,12 @@ class UKSMedicationORM(Base):
 
     visit: Mapped[UKSVisitORM] = relationship(back_populates="medications")
 
+
+class MedicineInventoryORM(Base):
+    __tablename__ = "medicine_inventory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    unit: Mapped[str] = mapped_column(String(50), nullable=False, default="tablet")
+    stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    minimum_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=10)

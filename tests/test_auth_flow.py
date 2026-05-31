@@ -158,3 +158,52 @@ def test_health_and_ui_endpoint(client: TestClient):
     ui = client.get("/ui")
     assert ui.status_code == 200
     assert "EMR UKS Sekolah Rakyat" in ui.text
+
+
+def test_medicine_inventory_and_stock_deduction(client: TestClient):
+    headers = _auth_headers(client)
+
+    create_medicine = client.post(
+        "/api/medicines",
+        headers=headers,
+        json={
+            "name": "Paracetamol 500mg",
+            "unit": "tablet",
+            "stock": 20,
+            "minimum_stock": 5,
+        },
+    )
+    assert create_medicine.status_code == 201
+    medicine_id = create_medicine.json()["id"]
+
+    low_stock_attempt = client.post(
+        "/api/uks/visits/1/medications",
+        headers=headers,
+        json={
+            "medicine_name": "Paracetamol 500mg",
+            "dosage": "3x1",
+            "quantity": 25,
+            "notes": "Sesudah makan",
+        },
+    )
+    assert low_stock_attempt.status_code == 400
+    assert "Insufficient stock" in low_stock_attempt.json()["detail"]
+
+    consume = client.post(
+        "/api/uks/visits/1/medications",
+        headers=headers,
+        json={
+            "medicine_name": "Paracetamol 500mg",
+            "dosage": "3x1",
+            "quantity": 4,
+            "notes": "Sesudah makan",
+        },
+    )
+    assert consume.status_code == 201
+    assert consume.json()["remaining_stock"] == 16
+
+    medicines = client.get("/api/medicines", headers=headers)
+    assert medicines.status_code == 200
+    med = next((m for m in medicines.json() if m["id"] == medicine_id), None)
+    assert med is not None
+    assert med["stock"] == 16

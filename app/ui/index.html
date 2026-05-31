@@ -6,6 +6,7 @@
   <title>EMR UKS Sekolah Rakyat</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
   <style>
@@ -29,8 +30,13 @@
     }
 
     body{
-      font-family: Inter, Segoe UI, sans-serif;
-      background: linear-gradient(to bottom right,#ecfeff,#f8fafc);
+      font-family: 'Inter',sans-serif;
+      background:
+      linear-gradient(
+      180deg,
+      #f8fafc,
+      #eef2ff
+      );
       color:var(--text);
       min-height:100vh;
     }
@@ -62,7 +68,7 @@
 
     .sidebar{
       width:260px;
-      background:linear-gradient(180deg,var(--primary),var(--primary-dark));
+      background:linear-gradient( 180deg, #0f766e 0%, #115e59 45%, #0f172a 100%);
       color:white;
       padding:28px 22px;
       position:fixed;
@@ -109,6 +115,9 @@
       cursor:pointer;
       transition:.2s;
       font-weight:500;
+      text-decoration:none;
+      color:white;
+      display:block;
     }
 
     .menu-item:hover,
@@ -120,10 +129,12 @@
     /* MAIN */
 
     .main{
-      margin-left:260px;
-      flex:1;
-      padding:30px;
-    }
+  margin-left:260px;
+  flex:1;
+  padding:30px;
+  width:calc(100vw - 260px);
+  overflow-x:hidden;
+}
 
     /* TOPBAR */
 
@@ -137,7 +148,10 @@
       justify-content:space-between;
       align-items:center;
       margin-bottom:28px;
-      box-shadow:var(--shadow);
+      box-shadow:0 12px 40px rgba(15,118,110,.08);
+      position:sticky;
+      top:20px;
+      z-index:999;
     }
 
     .topbar h1{
@@ -173,6 +187,8 @@
       border-radius:24px;
       box-shadow:var(--shadow);
       border:1px solid rgba(255,255,255,.8);
+      position:relative;
+      overflow:hidden;
     }
 
     .stat-label{
@@ -182,33 +198,150 @@
     }
 
     .stat-number{
-      font-size:2rem;
+      font-size:1rem;
       font-weight:800;
-    }
+      line-height:1.25;
+      word-break:break-word;
+      overflow-wrap:anywhere;
+      color:#0f172a;
+      letter-spacing:-1px;
+      line-height:1.2;
+      word-break:break-word;
+#todayDiagnosisMini{
+
+  font-size:.9rem !important;
+  line-height:1.5;
+ font-weight:700;
+
+}
+
+   }
+    .stat-card::before{
+  content:"";
+  position:absolute;
+  right:-30px;
+  top:-30px;
+  width:120px;
+  height:120px;
+
+  background:
+    radial-gradient(
+      rgba(20,184,166,.15),
+      transparent
+    );
+
+  border-radius:999px;
+
+}
 
     /* GRID */
 
     .grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
-      gap:24px;
-    }
+
+  display:grid;
+
+  grid-template-columns:
+    repeat(auto-fit,minmax(420px,1fr));
+
+  gap:24px;
+
+  align-items:start;
+
+}
 
     /* CARD */
 
     .card{
-      background:rgba(255,255,255,.75);
+      background:white;
       backdrop-filter:blur(16px);
       border-radius:28px;
       padding:28px;
-      box-shadow:var(--shadow);
-      border:1px solid rgba(255,255,255,.7);
+      box-shadow:0 10px 30px rgba(15,23,42,.04);
+      border:1px solid #e2e8f0;
     }
 
     .card h2{
       font-size:1.2rem;
       margin-bottom:22px;
     }
+/* STATS */
+
+.stats-grid{
+  display:grid;
+  grid-template-columns:
+    repeat(auto-fit,minmax(220px,1fr));
+  gap:22px;
+align-items:stretch;
+}
+
+.stat-card{
+
+  position:relative;
+  overflow:hidden;
+
+  background:white;
+
+  border-radius:24px;
+
+  padding:28px;
+
+  border:1px solid #e2e8f0;
+
+  box-shadow:
+    0 10px 30px rgba(15,23,42,.04);
+min-height:180px;
+
+display:flex;
+
+flex-direction:column;
+
+justify-content:center;
+
+}
+
+.stat-card::before{
+
+  content:"";
+
+  position:absolute;
+
+  right:-40px;
+  top:-40px;
+
+  width:140px;
+  height:140px;
+
+  background:
+    radial-gradient(
+      rgba(20,184,166,.12),
+      transparent
+    );
+
+  border-radius:999px;
+
+}
+
+.stat-label{
+
+  color:#64748b;
+
+  font-size:.92rem;
+
+  margin-bottom:14px;
+
+}
+
+.stat-number{
+
+  font-size:2.3rem;
+
+  font-weight:800;
+
+  color:#0f172a;
+
+  letter-spacing:-1px;
+
+}
 
     /* FORM */
 
@@ -242,6 +375,11 @@
       resize:vertical;
     }
 
+    #visitComplaint,
+    #visitExam{
+      min-height:140px;
+    }
+
     input:focus,
     textarea:focus,
     select:focus{
@@ -249,10 +387,10 @@
       box-shadow:0 0 0 4px rgba(20,184,166,.15);
     }
 
-    /* BUTTONS */
+    /* BUTTONS
+ */
 
-    .btn{
-      width:100%;
+    .btn{      width:100%;
       border:none;
       border-radius:16px;
       padding:14px;
@@ -345,27 +483,47 @@
   overflow:auto;
   max-height:300px;
 }
-    }
+    
      /* HISTORY TABLE */
 
 .history-table{
   width:100%;
-  border-collapse:collapse;
-  min-width:900px;
+  border-collapse:separate;
+  border-spacing:0;
+  table-layout:fixed;
 }
 
 .history-table th{
+  background:#f8fafc;
   text-align:left;
-  padding:16px;
+  padding:22px 24px;
   font-size:.9rem;
-  color:var(--muted);
-  border-bottom:1px solid var(--border);
+  font-weight:700;
+  color:#475569;
+  border-bottom:1px solid #e2e8f0;
 }
 
+.history-table th:nth-child(1),
+.history-table td:nth-child(1){width:120px;}
+.history-table th:nth-child(2),
+.history-table td:nth-child(2){width:170px;}
+.history-table th:nth-child(3),
+.history-table td:nth-child(3){width:180px;}
+.history-table th:nth-child(4),
+.history-table td:nth-child(4){width:210px;}
+.history-table th:nth-child(5),
+.history-table td:nth-child(5){width:280px;}
+.history-table th:nth-child(6),
+.history-table td:nth-child(6){width:170px;}
+
 .history-table td{
-  padding:18px 16px;
-  border-bottom:1px solid #e2e8f0;
-  font-size:.92rem;
+  padding:28px 24px;
+  border-bottom:1px solid #eef2f7;
+  vertical-align:top;
+  font-size:.95rem;
+  color:#334155;
+  word-break:break-word;
+  overflow-wrap:anywhere;
 }
 
 .history-table tbody tr{
@@ -373,7 +531,9 @@
 }
 
 .history-table tbody tr:hover{
-  background:#f8fafc;
+  transform:translateY(-2px);
+  box-shadow:
+    0 12px 24px rgba(15,23,42,.06);
 }
 
 /* BADGE */
@@ -388,21 +548,35 @@
 }
 
 .badge-blue{
-  background:#dbeafe;
-  color:#1d4ed8;
+  background:#eff6ff;
+  color:#2563eb;
+  padding:14px 18px;
+  border-radius:18px;
+  font-size:.88rem;
+  font-weight:700;
+  display:inline-block;
+  line-height:1.5;
+  max-width:100%;
+  white-space:normal;
+  word-break:break-word;
 }
 
 /* ACTION BUTTON */
 
 .action-btn{
   border:none;
-  padding:8px 12px;
-  border-radius:10px;
+  padding:8px 10px;
+  border-radius:12px;
   cursor:pointer;
   font-weight:700;
-  margin-right:6px;
+  font-size:.78rem;
+  transition:.2s;
+  min-width:78px;
 }
-
+.action-btn:hover{
+  transform:translateY(-1px);
+  opacity:.92;
+}
 .edit-btn{
   background:#dbeafe;
   color:#1d4ed8;
@@ -411,18 +585,473 @@
 .delete-btn{
   background:#fee2e2;
   color:#b91c1c;
-}
-    /* FOOTER */
 
-    .footer{
-      margin-top:30px;
-      text-align:center;
-      color:var(--muted);
-      font-size:.9rem;
-    }
+}
+.referral-btn{
+  background:#fef3c7;
+  color:#92400e;
+}
+
+.rest-btn{
+  background:#dcfce7;
+  color:#166534;
+}
+#visitChart{
+  width:100% !important;
+  height:350px !important;
+}
+#diagnosisChart{
+  width:100% !important;
+  height:350px !important;
+}
+   /* ACTIVITY */
+
+.activity-item{
+
+  display:flex;
+
+  align-items:flex-start;
+
+  gap:14px;
+
+  padding:16px 0;
+
+  border-bottom:1px solid #f1f5f9;
+
+}
+
+.activity-item:last-child{
+
+  border-bottom:none;
+
+}
+
+.activity-dot{
+
+  width:12px;
+  height:12px;
+
+  border-radius:999px;
+
+  background:#14b8a6;
+
+  margin-top:6px;
+
+  flex-shrink:0;
+
+}
+
+.activity-text{
+
+  color:#334155;
+
+  line-height:1.5;
+
+}
+
+.activity-time{
+
+  color:#94a3b8;
+
+  font-size:.85rem;
+
+  margin-top:4px;
+
+}
+.top-students-list{
+
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:18px;
+
+}
+
+.top-student-item{
+
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+
+  padding:14px 16px;
+
+  border:1px solid #e2e8f0;
+  border-radius:14px;
+
+  background:white;
+
+}
+
+.visit-badge{
+
+  background:#dcfce7;
+  color:#166534;
+
+  padding:6px 12px;
+
+  border-radius:999px;
+
+  font-weight:700;
+
+}
+/* TOAST */
+
+#toastContainer{
+
+  position:fixed;
+
+  top:24px;
+  right:24px;
+
+  z-index:99999;
+
+  display:flex;
+  flex-direction:column;
+
+  gap:14px;
+
+}
+
+.toast{
+
+  min-width:280px;
+
+  background:white;
+
+  border-radius:18px;
+
+  padding:16px 18px;
+
+  box-shadow:
+    0 10px 30px rgba(15,23,42,.12);
+
+  border:1px solid #e2e8f0;
+
+  display:flex;
+
+  align-items:flex-start;
+
+  gap:12px;
+
+  animation:
+    toastSlide .35s ease;
+
+}
+
+.toast-success{
+
+  border-left:
+    5px solid #14b8a6;
+
+}
+
+.toast-error{
+
+  border-left:
+    5px solid #ef4444;
+
+}
+
+.toast-icon{
+
+  font-size:1.1rem;
+
+}
+
+.toast-content{
+
+  flex:1;
+
+}
+
+.toast-title{
+
+  font-weight:700;
+
+  margin-bottom:4px;
+
+  color:#0f172a;
+
+}
+
+.toast-message{
+
+  color:#64748b;
+
+  font-size:.92rem;
+
+}
+
+@keyframes toastSlide{
+
+  from{
+
+    opacity:0;
+    transform:
+      translateX(40px);
+
+  }
+
+  to{
+
+    opacity:1;
+    transform:
+      translateX(0);
+
+  }
+
+}
+/* SEARCH */
+
+#searchResults{
+
+  margin-top:14px;
+
+  display:grid;
+
+  gap:12px;
+
+}
+
+.search-item{
+
+  padding:16px 18px;
+
+  border-radius:18px;
+
+  background:#f8fafc;
+
+  border:1px solid #e2e8f0;
+
+  cursor:pointer;
+
+  transition:.2s;
+
+}
+
+.search-item:hover{
+
+  transform:translateY(-2px);
+
+  background:#ecfeff;
+
+}
+
+.search-name{
+
+  font-weight:700;
+
+  color:#0f172a;
+
+  margin-bottom:4px;
+
+}
+
+.search-class{
+
+  color:#64748b;
+
+  font-size:.9rem;
+
+}
+/* FAB */
+
+.fab-container{
+
+  position:fixed;
+
+  right:28px;
+  bottom:28px;
+
+  z-index:9999;
+
+}
+
+.fab-main{
+
+  width:64px;
+  height:64px;
+
+  border:none;
+
+  border-radius:999px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #0f766e,
+      #14b8a6
+    );
+
+  color:white;
+
+  font-size:2rem;
+
+  cursor:pointer;
+
+  box-shadow:
+  0 25px 50px rgba(15,118,110,.35);
+
+  transition:.25s;
+
+}
+
+.fab-main:hover{
+
+  transform:
+    translateY(-3px)
+    scale(1.05);
+
+}
+
+.fab-menu{
+
+  position:absolute;
+
+  bottom:80px;
+  right:0;
+
+  display:flex;
+
+  flex-direction:column;
+
+  gap:12px;
+
+  opacity:0;
+
+  pointer-events:none;
+
+  transform:
+    translateY(10px);
+
+  transition:.25s;
+
+  z-index:99999;
+
+}
+.fab-menu.show{
+
+  opacity:1;
+
+  pointer-events:auto;
+
+  transform:
+    translateY(0);
+
+}
+.fab-item{
+
+  border:none;
+
+  text-decoration:none;
+
+  background:white;
+
+  color:#0f172a;
+
+  padding:14px 18px;
+
+  border-radius:16px;
+
+  box-shadow:
+    0 10px 30px rgba(15,23,42,.08);
+
+  font-weight:700;
+
+  cursor:pointer;
+
+  transition:.2s;
+
+}
+
+.fab-item:hover{
+
+  transform:translateY(-2px);
+
+  background:#ecfeff;
+
+}
+  /* FOOTER */
+
+.footer{
+
+  width:100%;
+
+  margin-top:40px;
+  padding:24px 0;
+
+  display:flex;
+  flex-direction:column;
+
+  justify-content:center;
+  align-items:center;
+
+  text-align:center;
+
+  color:var(--muted);
+
+  font-size:.9rem;
+
+}
 
     /* MOBILE */
+/* SOFT DARK MODE */
 
+body.dark{
+
+  background:
+    linear-gradient(
+      180deg,
+      #cbd5e1,
+      #94a3b8
+    );
+
+  color:#0f172a;
+
+}
+
+body.dark .card,
+body.dark .topbar,
+body.dark .stat-card,
+body.dark .user-box{
+
+  background:
+    rgba(255,255,255,.72);
+
+  backdrop-filter:blur(18px);
+
+  border:
+    1px solid rgba(255,255,255,.65);
+
+}
+
+body.dark .sidebar{
+
+  background:
+    linear-gradient(
+      180deg,
+      #334155,
+      #0f172a
+    );
+
+}
+
+body.dark .btn-primary{
+
+  background:
+    linear-gradient(
+      135deg,
+      #0f766e,
+      #14b8a6
+    );
+
+}
+
+body.dark .activity-item{
+
+  border-color:#e2e8f0;
+
+}
     @media(max-width:900px){
 
       .sidebar{
@@ -461,24 +1090,27 @@
     </div>
 
     <div class="menu">
-    <div class="menu-item active" data-target="dashboard">
-  Dashboard
-</div>
 
-<div class="menu-item" data-target="siswa">
-  Data Siswa
-</div>
+  <a href="/dashboard" class="menu-item active">
+    Dashboard
+  </a>
 
-<div class="menu-item" data-target="kunjungan">
-  Kunjungan UKS
-</div>
+  <a href="/students" class="menu-item">
+    Data Siswa
+  </a>
 
-<div class="menu-item" data-target="laporan">
+  <div class="menu-item">
+    Kunjungan UKS
+  </div>
+
+  <a href="/reports" class="menu-item">
   Laporan
-</div>
+</a>
 
-<div class="menu-item">
+ <a href="/settings" class="menu-item">
   Pengaturan
+</a>
+
 </div>
 
   </aside>
@@ -496,13 +1128,145 @@
         <p>Sistem rekam medis siswa modern dan terintegrasi</p>
       </div>
 
-      <div class="user-box">
-        Perawat UKS
-      </div>
+     <div style="
+  display:flex;
+  align-items:center;
+  gap:12px;
+">
+
+  <button
+    class="btn btn-secondary"
+    id="btnTheme"
+    style="
+      width:auto;
+      margin:0;
+      padding:12px 16px;
+    "
+  >
+    🌙
+  </button>
+
+  <div class="user-box">
+
+    <button
+      class="btn btn-secondary"
+      id="btnLogout"
+      style="margin:0;"
+    >
+      Logout
+    </button>
+
+  </div>
+
+</div>
+
+    </div>
+<section class="card" style="margin-bottom:24px;">
+
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:18px;
+    flex-wrap:wrap;
+  ">
+
+    <div>
+
+      <h2 style="margin-bottom:8px;">
+        Pencarian Siswa
+      </h2>
+
+      <p style="color:#64748b;">
+        Cari data siswa dengan cepat
+      </p>
 
     </div>
 
+  </div>
+
+  <div style="margin-top:20px;">
+
+    <input
+      type="text"
+      id="globalSearch"
+      placeholder="Cari nama siswa..."
+    >
+
+    <div id="searchResults"></div>
+
+  </div>
+
+</section>
+
     <!-- STATS -->
+<section class="card" style="margin-bottom:24px;">
+
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:20px;
+  ">
+
+    <div>
+
+      <h2 style="
+        margin-bottom:8px;
+      ">
+        Aktivitas Hari Ini
+      </h2>
+
+      <p style="
+        color:#64748b;
+      ">
+        Ringkasan aktivitas UKS realtime
+      </p>
+
+    </div>
+
+    <div style="
+      font-size:1rem;
+      font-weight:700;
+      color:#0f766e;
+    " id="todayDate">
+
+    </div>
+
+  </div>
+
+  <div class="stats-grid" style="margin-top:24px;">
+
+    <div class="stat-card">
+      <div class="stat-label">
+        Kunjungan Hari Ini
+      </div>
+
+      <div
+        class="stat-number"
+        id="todayVisitMini"
+      >
+        0
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">
+        Diagnosa Hari Ini
+      </div>
+
+      <div
+        class="stat-number"
+        id="todayDiagnosisMini"
+      >
+        -
+      </div>
+    </div>
+
+  </div>
+
+</section>
 
     <div class="stats">
 
@@ -531,297 +1295,287 @@
     <!-- GRID -->
 
     <div class="grid">
-
-      <!-- LOGIN -->
-
-      <section class="card" id="dashboard">
-
-        <h2>Login Sistem</h2>
-
-        <div class="form-group">
-          <label>Username</label>
-          <input id="username" placeholder= "Masukkan Username">
-        </div>
-
-        <div class="form-group">
-          <label>Password</label>
-          <input id="password" type="password" placeholder="Masukkan Password">
-        </div>
-
-        <button class="btn btn-primary" id="btnLogin">
-          Login
-        </button>
-
-        <div id="loginStatus" class="status"></div>
-
-      </section>
-
-      <!-- DATA SISWA -->
-
-      <section class="card" id="siswa">
-
-        <h2>Data Siswa</h2>
-
-        <div class="form-group">
-<label>ID / NIS</label>
-<input id="patientId">
-
-<div class="form-group">
-  <label>Nama Lengkap</label>
-  <input id="patientName">
-</div>
-
-<div class="form-group">
-  <label>Tanggal Lahir</label>
-  <input id="patientBirthDate" type="date">
-</div>
-
-<div class="form-group">
-  <label>Kelas</label>
-  <input id="patientClass">
-</div>
-           <div class="form-group">
-          <label>Jenis Kelamin</label>
-
-          <select id="patientGender">
-            <option value="L">Laki-laki</option>
-            <option value="P">Perempuan</option>
-          </select>
-        </div>
-
-        <button class="btn btn-primary" id="btnCreatePatient">
-          Simpan Data Siswa
-        </button>
-
-        <div id="patientStatus" class="status"></div>
-
-      </section>
-
-      <!-- KUNJUNGAN -->
-
-      <section class="card" id="kunjungan">
-
-        <h2>Kunjungan UKS</h2>
-
-        <div class="form-group">
-          <label>Cari Siswa</label>
-
-<input
-  id="patientSearch"
-  placeholder="Cari nama siswa..."
-  autocomplete="off"
-/>
-
-<div id="patientSuggestions"></div>
-
-<input type="hidden" id="visitPatientId">
-        </div>
-
-        <div class="form-group">
-          <label>Tanggal Kunjungan</label>
-          <input id="visitDate" type="date">
-        </div>
-
-        <div class="form-group">
-          <label>Keluhan</label>
-          <textarea id="visitComplaint"></textarea>
-        </div>
-
-        <div class="form-group">
-          <label>Hasil Pemeriksaan</label>
-          <textarea id="visitExam"></textarea>
-        </div>
-
-        <div class="form-group">
-          <label>Diagnosa</label>
-          <input id="visitDiagnosis">
-        </div>
-
-        <div class="form-group">
-          <label>Tindakan</label>
-          <input id="visitTreatment">
-        </div>
-
-        <div class="form-group">
-          <label>Catatan</label>
-          <textarea id="visitNotes"></textarea>
-        </div>
-
-        <button class="btn btn-secondary" id="btnSuggestAI">
-          Cek Saran
-        </button>
-
-        <button class="btn btn-primary" id="btnCreateVisit">
-          Simpan Kunjungan
-        </button>
-
-        <div id="visitStatus" class="status"></div>
-
-      </section>
-
-      <!-- LAPORAN -->
-
-      <section class="card" id="laporan">
-
-        <div style="
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  margin-bottom:20px;
-  flex-wrap:wrap;
-  gap:12px;
-">
-
-  <div>
-    <h2 style="margin-bottom:6px;">
-      Laporan UKS
-    </h2>
-
-    <p style="
-      color:var(--muted);
-      font-size:.9rem;
-    ">
-      Rekap harian, mingguan, dan bulanan
-    </p>
-  </div>
-
-  <div class="report-tabs">
-
-    <button class="report-tab active">
-      Harian
-    </button>
-
-    <button class="report-tab">
-      Mingguan
-    </button>
-
-    <button class="report-tab">
-      Bulanan
-    </button>
-
-  </div>
-
-</div>
-<div class="form-group" style="margin-top:24px;">
-
-  <label>Tanggal Harian</label>
-  <input id="reportDate" type="date">
-
-</div>
-
-<div class="form-group">
-
-  <label>Minggu</label>
-  <input type="week" id="reportWeek">
-
-</div>
-
-<div class="form-group">
-
-  <label>Bulan</label>
-  <input type="month" id="reportMonth">
-
-</div>
-
-<button class="btn btn-primary" id="btnDaily">
-  Ambil Laporan
-</button>
-
-<button class="btn btn-secondary" id="btnDailyExcel">
-  Download Excel
-</button>
-
-<div id="reportStatus" class="status"></div>
-
-<div id="reportOutput" class="report-output"></div>
-      </section>
-
-    </div>
-    <!-- RIWAYAT KUNJUNGAN -->
-
-<section class="card" id="riwayat" style="margin-top:24px;">
+<section class="card">
 
   <div style="
     display:flex;
     justify-content:space-between;
     align-items:center;
-    gap:20px;
+    margin-bottom:20px;
     flex-wrap:wrap;
-    margin-bottom:24px;
+    gap:14px;
   ">
 
     <div>
-      <h2 style="margin-bottom:6px;">
-        Riwayat Kunjungan
+
+      <h2 style="margin-bottom:8px;">
+        Statistik Kunjungan
       </h2>
 
-      <p style="
-        color:var(--muted);
-        font-size:.9rem;
-      ">
-        Histori pemeriksaan siswa UKS
+      <p style="color:#64748b;">
+        Grafik kunjungan UKS mingguan
       </p>
-    </div>
 
-    <input
-      id="searchVisit"
-      type="text"
-      placeholder="Cari nama siswa..."
-      style="max-width:280px;"
-    >
+    </div>
 
   </div>
 
-  <div style="overflow:auto;">
+  <canvas
+    id="visitChart"
+    height="120"
+  ></canvas>
 
-    <table class="history-table">
+</section>
+<section class="card">
 
-      <thead>
-        <tr>
-          <th>Tanggal</th>
-          <th>Nama</th>
-          <th>Keluhan</th>
-          <th>Diagnosa</th>
-          <th>Tindakan</th>
-          <th>Aksi</th>
-        </tr>
-      </thead>
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+    flex-wrap:wrap;
+    gap:14px;
+  ">
 
-      <tbody id="visitTableBody">
+    <div>
 
-        <tr>
-          <td colspan="6" style="text-align:center;">
-            Memuat data...
-          </td>
-        </tr>
+      <h2 style="margin-bottom:8px;">
+        Diagnosa Terbanyak
+      </h2>
 
-      </tbody>
+      <p style="color:#64748b;">
+        Distribusi kasus kesehatan siswa
+      </p>
 
-    </table>
+    </div>
+
+  </div>
+
+  <canvas
+    id="diagnosisChart"
+    height="120"
+  ></canvas>
+
+</section>
+<section class="card">
+
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+  ">
+
+    <div>
+
+      <h2 style="margin-bottom:8px;">
+        Aktivitas Terbaru
+      </h2>
+
+      <p style="color:#64748b;">
+        Aktivitas pemeriksaan siswa terbaru
+      </p>
+
+    </div>
+
+  </div>
+
+  <div id="recentActivities">
+
+    <div class="activity-item">
+
+      <div class="activity-dot"></div>
+
+      <div>
+
+        <strong>Loading...</strong>
+
+      </div>
+
+    </div>
 
   </div>
 
 </section>
+
+      <!-- DASHBOARD -->
+<section class="card">
+
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+    flex-wrap:wrap;
+    gap:14px;
+  ">
+
+    <div>
+
+      <h2 style="margin-bottom:8px;">
+        🔔 Jadwal Kontrol
+      </h2>
+
+      <p style="color:#64748b;">
+        Monitoring siswa kontrol RS / Poli
+      </p>
+
+    </div>
+
+  </div>
+
+  <div id="controlAlerts">
+
+    <div class="activity-item">
+
+      <div class="activity-dot"></div>
+
+      <div>
+
+        <strong>Belum ada jadwal kontrol</strong>
+
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+<div class="card">
+
+  <div class="section-header">
+    <h3>🏥 Siswa Paling Sering ke UKS</h3>
+    <p>Monitoring kunjungan terbanyak</p>
+  </div>
+
+  <div
+    id="topStudentsList"
+    class="top-students-list"
+  >
+
+    <div class="empty-state">
+      Belum ada data
+    </div>
+
+  </div>
+
+</div>
+      
+        <section class="card" id="dashboard">
+
+  <div style="
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:20px;
+  ">
+
+    <div>
+
+      <h2 style="
+        font-size:1.5rem;
+        margin-bottom:10px;
+      ">
+        Dashboard UKS
+      </h2>
+
+      <p style="
+        color:#64748b;
+        line-height:1.8;
+        max-width:700px;
+      ">
+        Monitor kesehatan siswa,
+        kunjungan UKS,
+        dan aktivitas medis sekolah
+        secara real-time.
+      </p>
+
+    </div>
+
+    <div style="
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+    ">
+
+      <a
+        href="/students"
+        class="btn btn-primary"
+        style="
+          width:auto;
+          padding:14px 22px;
+          text-decoration:none;
+        "
+      >
+        + Data Siswa
+      </a>
+
+      <a
+        href="/reports"
+        class="btn btn-secondary"
+        style="
+          width:auto;
+          padding:14px 22px;
+          text-decoration:none;
+        "
+      >
+        📄 Laporan
+      </a>
+
+    </div>
+
+  </div>
+
+</section>
+  
     <footer class="footer">
   <div>© 2026 Sekolah Rakyat Health System</div>
   <div>Developed by Nur Indah Fitriana Dewi</div>
 </footer>
+<div id="toastContainer"></div>
 
+<div class="fab-container">
+
+  <button id="fabMain" class="fab-main">
+    +
+  </button>
+
+  <div class="fab-menu" id="fabMenu">
+
+    <a href="/students" class="fab-item">
+      👨‍🎓 Data Siswa
+    </a>
+
+    <a href="/reports" class="fab-item">
+      📄 Laporan
+    </a>
+
+    <button
+      class="fab-item"
+      onclick="location.reload()"
+    >
+      🔄 Refresh
+    </button>
+
+  </div>
+
+</div>
   </main>
 
 </div>
-
-<!-- JAVASCRIPT ASLI KAMU TETAP DIPAKAI -->
-
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 
-let token = "";
+let token = localStorage.getItem("access_token") || "";
 let editingVisitId = null;
 
-const today = new Date().toISOString().slice(0, 10);
-document.getElementById("visitDate").value = today;
-document.getElementById("reportDate").value = today;
 
+if (!token) {
+  window.location.href = "/login";
+}
+
+const today = new Date().toISOString().slice(0, 10);
 function showStatus(id, message, ok) {
   const el = document.getElementById(id);
   el.textContent = message;
@@ -850,296 +1604,11 @@ async function api(path, method = "GET", body = null, useAuth = true) {
   return json;
 }
 
-/* LOGIN */
-
-document.getElementById("btnLogin").addEventListener("click", async () => {
-
-  try {
-
-    const payload = {
-      username: document.getElementById("username").value.trim(),
-      password: document.getElementById("password").value,
-    };
-
-    const data = await api("/api/auth/login", "POST", payload, false);
-
-    token = data.access_token;
-
-loadPatients();
-
-showStatus(
-      "loginStatus",
-      `Login berhasil. Token aktif ${data.expires_in} detik.`,
-      true
-    );
-
-  } catch (err) {
-
-    showStatus(
-      "loginStatus",
-      `Login gagal: ${err.message}`,
-      false
-    );
-
-  }
-
+document.getElementById("btnLogout").addEventListener("click", () => {
+  localStorage.removeItem("access_token");
+  window.location.href = "/login";
 });
 
-/* SISWA */
-
-document.getElementById("btnCreatePatient").addEventListener("click", async () => {
-
-  if (!token) {
-    showStatus("patientStatus", "Silakan login dulu.", false);
-    return;
-  }
-
-  try {
-
-    const body = {
-  id: document.getElementById("patientId").value.trim(),
-      name: document.getElementById("patientName").value.trim(),
-      age: 0,
-      birth_date: document.getElementById("patientBirthDate").value,
-      class_name: document.getElementById("patientClass").value.trim() || null,
-      gender: document.getElementById("patientGender").value.trim(),
-    };
-
-    const data = await api("/api/patients", "POST", body, true);
-
-    showStatus(
-      "patientStatus",
-      `Siswa tersimpan: ${data.id} - ${data.name}`,
-      true
-    );
-
-    document.getElementById("visitPatientId").value = data.id;
-
-  } catch (err) {
-
-    showStatus(
-      "patientStatus",
-      `Gagal simpan siswa: ${err.message}`,
-      false
-    );
-
-  }
-
-});
-/* KUNJUNGAN */
-
-document.getElementById("btnCreateVisit").addEventListener("click", async () => {
-
-  if (!token) {
-    showStatus("visitStatus", "Silakan login dulu.", false);
-    return;
-  }
-
-  try {
-
-    const body = {
-      patient_id: document.getElementById("visitPatientId").value.trim(),
-      visit_date: document.getElementById("visitDate").value,
-      complaint: document.getElementById("visitComplaint").value.trim(),
-      examination: document.getElementById("visitExam").value.trim(),
-      treatment: document.getElementById("visitTreatment").value.trim(),
-      diagnosis: document.getElementById("visitDiagnosis").value.trim() || null,
-      notes: document.getElementById("visitNotes").value.trim() || null,
-    };
-
-let data;
-
-if (editingVisitId) {
-
-  data = await api(
-    `/api/uks/visits/${editingVisitId}`,
-    "PUT",
-    body,
-    true
-  );
-
-  alert("Kunjungan berhasil diupdate");
-
-  editingVisitId = null;
-
-} else {
-
-  data = await api(
-    "/api/uks/visits",
-    "POST",
-    body,
-    true
-  );
-
-  alert("Kunjungan berhasil disimpan");
-
-}
-
-loadVisits();
-
-  } catch (err) {
-
-    showStatus(
-      "visitStatus",
-      `Gagal simpan kunjungan: ${err.message}`,
-      false
-    );
-
-  }
-
-});
-
-/* AI */
-
-document.getElementById("btnSuggestAI").addEventListener("click", async () => {
-
-  if (!token) {
-    showStatus("visitStatus", "Silakan login dulu.", false);
-    return;
-  }
-
-  try {
-
-    const payload = {
-      complaint: document.getElementById("visitComplaint").value.trim(),
-      examination: document.getElementById("visitExam").value.trim(),
-    };
-
-    const data = await api(
-      "/api/ai/suggest-care",
-      "POST",
-      payload,
-      true
-    );
-
-    document.getElementById("visitDiagnosis").value = data.diagnosis;
-
-    document.getElementById("visitTreatment").value = data.intervention;
-
-    document.getElementById("visitNotes").value =
-      `Implementasi: ${data.implementation}
-Tindak lanjut: ${data.follow_up}`;
-
-    showStatus(
-      "visitStatus",
-      "Saran AI berhasil dimuat.",
-      true
-    );
-
-  } catch (err) {
-
-    showStatus(
-      "visitStatus",
-      `Gagal ambil AI: ${err.message}`,
-      false
-    );
-
-  }
-
-});
-
-/* LAPORAN */
-
-document.getElementById("btnDaily").addEventListener("click", async () => {
-
-  if (!token) {
-    showStatus("reportStatus", "Silakan login dulu.", false);
-    return;
-  }
-
-  try {
-
-    const date = document.getElementById("reportDate").value;
-
-    const data = await api(
-      `/api/reports/uks/daily?date=${encodeURIComponent(date)}`,
-      "GET",
-      null,
-      true
-    );
-
-    document.getElementById("reportOutput").textContent =
-      JSON.stringify(data, null, 2);
-
-    showStatus(
-      "reportStatus",
-      "Laporan berhasil diambil.",
-      true
-    );
-
-  } catch (err) {
-
-    showStatus(
-      "reportStatus",
-      `Gagal ambil laporan: ${err.message}`,
-      false
-    );
-
-  }
-
-});
-
-/* DOWNLOAD EXCEL */
-
-document.getElementById("btnDailyExcel").addEventListener("click", async () => {
-
-  if (!token) {
-    showStatus("reportStatus", "Silakan login dulu.", false);
-    return;
-  }
-
-  try {
-
-    const date = document.getElementById("reportDate").value;
-
-    const res = await fetch(
-      `/api/reports/uks/daily/excel?date=${encodeURIComponent(date)}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const blob = await res.blob();
-
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-
-    a.href = url;
-    a.download = `laporan_uks_${date}.xlsx`;
-
-    document.body.appendChild(a);
-
-    a.click();
-
-    a.remove();
-
-    URL.revokeObjectURL(url);
-
-    showStatus(
-      "reportStatus",
-      "Excel berhasil diunduh.",
-      true
-    );
-
-  } catch (err) {
-
-    showStatus(
-      "reportStatus",
-      `Gagal download Excel: ${err.message}`,
-      false
-    );
-
-  }
-
-});
 /* SIDEBAR NAVIGATION */
 
 document.querySelectorAll(".menu-item").forEach(item => {
@@ -1186,9 +1655,14 @@ async function loadVisits() {
     );
 console.log(data);
 
-    const tbody = document.getElementById("visitTableBody");
+    const tbody =
+  document.getElementById("visitTableBody");
 
-    tbody.innerHTML = "";
+if(!tbody){
+  return;
+}
+
+tbody.innerHTML = "";
 
     if (!data.length) {
 
@@ -1218,29 +1692,97 @@ console.log(data);
 </td>
 
 <td>
+  <div style="
+    max-width:180px;
+    font-size:.88rem;
+    line-height:1.6;
+    color:#334155;
+  ">
+    ${
+  item.treatment
+    ? item.treatment
+        .split(".")
+        .filter(t => t.trim())
+        .map(t => `
+          <div style="
+            display:flex;
+            gap:10px;
+            margin-bottom:10px;
+            align-items:flex-start;
+          ">
 
-  <button
-    class="action-btn edit-btn"
-    onclick="showHistory('${item.patient_id}')"
-  >
-    Riwayat
-  </button>
+            <div style="
+              width:8px;
+              height:8px;
+              background:#2563eb;
+              border-radius:999px;
+              margin-top:8px;
+              flex-shrink:0;
+            "></div>
 
-  <button
-    class="action-btn edit-btn"
-    onclick="editVisit(${item.id})"
-  >
-    Edit
-  </button>
+            <div>
+              ${t.trim()}
+            </div>
 
-  <button
-    class="action-btn delete-btn"
-    onclick="deleteVisit(${item.id})"
-  >
-    Hapus
-  </button>
+          </div>
+        `).join("")
+    : "-"
+}
+  </div>
+</td>
+
+<td>
+
+  <div style="
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+">
+
+    <button
+      class="action-btn edit-btn"
+      onclick="showHistory('${item.patient_id}')"
+    >
+      Riwayat
+    </button>
+
+    <button
+      class="action-btn edit-btn"
+      onclick="editVisit(${item.id})"
+    >
+      Edit
+    </button>
+
+    <button
+  class="action-btn referral-btn"
+  onclick="createReferral(${item.id})"
+>
+      Rujukan
+    </button>
+
+    <button
+      class="action-btn referral-btn"
+      onclick="createRestLetter(${item.id})"
+    >
+      Surat Izin
+    </button>
+
+    <button
+  class="action-btn delete-btn"
+
+  style="
+    grid-column:span 2;
+  "
+
+  onclick="deleteVisit(${item.id})"
+>
+  Hapus
+</button>
+
+  </div>
 
 </td>
+
       `;
 
       tbody.appendChild(row);
@@ -1255,15 +1797,447 @@ console.log(data);
 
 }
 
-/* AUTO LOAD AFTER LOGIN */
+window.addEventListener("load", () => {
 
-document.getElementById("btnLogin").addEventListener("click", async () => {
+  if (!token) return;
 
-  setTimeout(() => {
-    loadVisits();
-  }, 1000);
+  loadDashboardStats();
+  loadVisitChart();
+  loadDiagnosisChart();
+  loadRecentActivities();
+  loadControlAlerts();
+  loadPatients();
+  loadTodayPanel();
+  loadTopStudents();
 
 });
+async function loadControlAlerts(){
+
+  try{
+
+    const visits =
+      await api(
+        "/api/uks/visits",
+        "GET",
+        null,
+        true
+      );
+
+    const container =
+      document.getElementById(
+        "controlAlerts"
+      );
+
+    container.innerHTML = "";
+
+   const controls =
+  visits.filter(
+    v =>
+      v.control_date &&
+      !v.control_done
+  );
+
+    if(!controls.length){
+
+      container.innerHTML = `
+
+        <div class="activity-item">
+
+          <div class="activity-dot"></div>
+
+          <div>
+
+            <strong>
+              Belum ada jadwal kontrol
+            </strong>
+
+          </div>
+
+        </div>
+
+      `;
+
+      return;
+
+    }
+
+    controls
+      .slice()
+      .reverse()
+      .slice(0,5)
+      .forEach(v => {
+
+        const item =
+          document.createElement("div");
+
+        item.className =
+          "activity-item";
+
+        const today =
+          new Date();
+
+        const controlDate =
+          new Date(v.control_date);
+
+        const diff =
+          Math.ceil(
+            (
+              controlDate - today
+            ) / (1000*60*60*24)
+          );
+
+        let status =
+          "Jadwal kontrol";
+
+        if(diff < 0){
+
+          status =
+            "⚠️ Sudah lewat";
+
+        }else if(diff === 0){
+
+          status =
+            "🟢 Hari ini";
+
+        }else if(diff === 1){
+
+          status =
+            "🟡 Besok";
+
+        }else{
+
+          status =
+            `📅 ${diff} hari lagi`;
+
+        }
+
+        item.innerHTML = `
+
+          <div class="activity-dot"></div>
+
+          <div>
+
+            <div class="activity-text">
+
+              <strong>
+                ${v.patient_name}
+              </strong>
+
+              kontrol ke
+
+              <strong>
+                ${v.referral_place || "-"}
+              </strong>
+
+            </div>
+
+            <div class="activity-time">
+
+              ${v.control_date}
+              •
+              ${status}
+<button
+  onclick="finishControl(${v.id})"
+  class="action-btn edit-btn"
+  style="
+    margin-top:10px;
+  "
+>
+  Sudah Kontrol
+</button>
+
+            </div>
+
+          </div>
+
+        `;
+
+        container.appendChild(item);
+
+      });
+
+  }catch(err){
+
+    console.error(err);
+
+  }
+
+}
+async function finishControl(id){
+
+  try{
+
+    await api(
+
+      `/api/uks/visits/${id}`,
+
+      "PUT",
+
+      {
+        control_done:true
+      },
+
+      true
+
+    );
+
+    showToast(
+      "Berhasil",
+      "Kontrol selesai"
+    );
+
+    loadControlAlerts();
+
+  }catch(err){
+
+    console.error(err);
+
+    showToast(
+      "Gagal",
+      "Tidak bisa update",
+      "error"
+    );
+
+  }
+
+}
+async function loadRecentActivities(){
+
+  try{
+
+    const visits =
+      await api(
+        "/api/uks/visits",
+        "GET",
+        null,
+        true
+      );
+
+    const container =
+      document.getElementById(
+        "recentActivities"
+      );
+
+    container.innerHTML = "";
+
+    visits
+      .slice()
+      .reverse()
+      .slice(0,5)
+      .forEach(v => {
+
+        const item =
+          document.createElement("div");
+
+        item.className =
+          "activity-item";
+
+        item.innerHTML = `
+
+          <div class="activity-dot"></div>
+
+          <div>
+
+            <div class="activity-text">
+
+              <strong>${v.patient_name}</strong>
+              melakukan pemeriksaan UKS
+              dengan keluhan
+              <strong>${v.complaint}</strong>
+
+            </div>
+
+            <div class="activity-time">
+
+              ${v.visit_date}
+
+            </div>
+
+          </div>
+
+        `;
+
+        container.appendChild(item);
+
+      });
+
+  }catch(err){
+
+    console.error(err);
+
+  }
+
+}
+async function loadTodayPanel(){
+
+  try{
+
+    const visits =
+      await api(
+        "/api/uks/visits",
+        "GET",
+        null,
+        true
+      );
+
+    const today =
+      new Date()
+      .toISOString()
+      .slice(0,10);
+
+    const todayVisits =
+      visits.filter(v =>
+        v.visit_date === today
+      );
+
+    document.getElementById(
+      "todayVisitMini"
+    ).textContent =
+      todayVisits.length;
+
+    const diagnosisMap = {};
+
+    todayVisits.forEach(v => {
+
+      const diagnosis =
+        v.diagnosis || "Lainnya";
+
+      if(!diagnosisMap[diagnosis]){
+
+        diagnosisMap[diagnosis] = 0;
+
+      }
+
+      diagnosisMap[diagnosis]++;
+
+    });
+
+    const topDiagnosis =
+  (
+    Object.keys(diagnosisMap)[0]
+    || "-"
+  )
+  .slice(0,40);
+
+    document.getElementById(
+      "todayDiagnosisMini"
+    ).textContent =
+      topDiagnosis;
+
+    const formattedDate =
+      new Date().toLocaleDateString(
+        "id-ID",
+        {
+          weekday:"long",
+          day:"numeric",
+          month:"long",
+          year:"numeric"
+        }
+      );
+
+    document.getElementById(
+      "todayDate"
+    ).textContent =
+      formattedDate;
+
+  }catch(err){
+
+    console.error(err);
+
+  }
+
+}
+async function loadDiagnosisChart(){
+
+  try{
+
+    const visits =
+      await api(
+        "/api/uks/visits",
+        "GET",
+        null,
+        true
+      );
+
+    const map = {};
+
+    visits.forEach(v => {
+
+      const diagnosis =
+        v.diagnosis || "Lainnya";
+
+      if(!map[diagnosis]){
+
+        map[diagnosis] = 0;
+
+      }
+
+      map[diagnosis]++;
+
+    });
+
+    const labels =
+      Object.keys(map).slice(0,5);
+
+    const values =
+      Object.values(map).slice(0,5);
+
+    const ctx =
+      document
+      .getElementById("diagnosisChart")
+      .getContext("2d");
+
+    new Chart(ctx,{
+
+      type:"doughnut",
+
+      data:{
+
+        labels,
+
+        datasets:[{
+
+          data:values,
+
+          backgroundColor:[
+
+            "#14b8a6",
+            "#0ea5e9",
+            "#8b5cf6",
+            "#f59e0b",
+            "#ef4444"
+
+          ],
+
+          borderWidth:0
+
+        }]
+
+      },
+
+      options:{
+
+        responsive:true,
+
+        plugins:{
+
+          legend:{
+            position:"bottom"
+          }
+
+        }
+
+      }
+
+    });
+
+  }catch(err){
+
+    console.error(err);
+
+  }
+
+}
 /* DELETE VISIT */
 
 async function deleteVisit(id) {
@@ -1283,13 +2257,18 @@ async function deleteVisit(id) {
       true
     );
 
-    alert("Kunjungan berhasil dihapus");
-
-    loadVisits();
+    showToast(
+  "Berhasil",
+  "Pesan sukses"
+);
 
   } catch (err) {
 
-    alert("Gagal hapus: " + err.message);
+    showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
 
   }
 
@@ -1310,7 +2289,11 @@ async function editVisit(id) {
     const visit = data.find(v => v.id === id);
 
     if (!visit) {
-      alert("Data tidak ditemukan");
+      showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
       return;
     }
 
@@ -1331,7 +2314,10 @@ async function editVisit(id) {
     document.getElementById("visitDiagnosis").value =
       visit.diagnosis || "";
 
-    alert("Mode edit aktif");
+    showToast(
+  "Berhasil",
+  "Pesan sukses"
+);
 
     window.scrollTo({
       top: 0,
@@ -1340,7 +2326,11 @@ async function editVisit(id) {
 
   } catch (err) {
 
-    alert("Gagal load data edit");
+    showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
 
   }
 
@@ -1371,7 +2361,7 @@ async function loadDashboardStats() {
 
 }
 
-loadDashboardStats();
+// dipanggil saat window load agar semua fungsi lintas-script sudah tersedia
 </script>
 <script>
 
@@ -1391,55 +2381,7 @@ async function loadPatients() {
 
 }
 
-document
-.getElementById("patientSearch")
-.addEventListener("input", function () {
-
-  const keyword = this.value.toLowerCase();
-
-  const box =
-    document.getElementById("patientSuggestions");
-
-  box.innerHTML = "";
-
-  if (!keyword) return;
-
-  const results = patientsData.filter(patient =>
-    patient.name.toLowerCase().includes(keyword)
-  );
-
-  results.slice(0, 8).forEach(patient => {
-
-    const item = document.createElement("div");
-
-    item.className = "patient-item";
-
-    item.textContent =
-      `${patient.name} - ${patient.class_name}`;
-
-    item.onclick = () => {
-
-      document.getElementById("patientSearch").value =
-        `${patient.name} - ${patient.class_name}`;
-
-      document.getElementById("visitPatientId").value =
-        patient.id;
-
-      document.getElementById("patientName").value =
-        patient.name;
-
-      document.getElementById("patientClass").value =
-        patient.class_name;
-
-      box.innerHTML = "";
-
-    };
-
-    box.appendChild(item);
-
-  });
-
-});
+  
 async function showHistory(patientId) {
 
   try {
@@ -1642,7 +2584,11 @@ let historyHtml = `
 
     console.error(err);
 
-    alert("Gagal ambil riwayat");
+    showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
 
   }
 
@@ -1676,6 +2622,768 @@ function calculateAge(birthDate) {
   }
 
   return age;
+
+}
+async function createReferral(id){
+
+  try{
+
+    const visits = await api(
+      "/api/uks/visits",
+      "GET",
+      null,
+      true
+    );
+
+    const visit = visits.find(v => v.id === id);
+
+    if(!visit){
+      showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
+      return;
+    }
+
+    const html = `
+      <html>
+      <head>
+
+        <title>Surat Rujukan</title>
+
+        <style>
+
+          body{
+            font-family:times new roman;
+            padding:40px;
+            line-height:1.8;
+          }
+
+          h1{
+            text-align:center;
+          }
+
+          .box{
+            margin-top:30px;
+          }
+
+        </style>
+
+      </head>
+
+      <body>
+
+        <h1>SURAT RUJUKAN UKS</h1>
+
+        <div class="box">
+
+          <p>
+            Nama Siswa:
+            <b>${visit.patient_name}</b>
+          </p>
+
+          <p>
+            Tanggal:
+            <b>${visit.visit_date}</b>
+          </p>
+
+          <p>
+            Keluhan:
+            <b>${visit.complaint}</b>
+          </p>
+
+          <p>
+            Diagnosa:
+            <b>${visit.diagnosis}</b>
+          </p>
+
+          <p>
+            Tindakan:
+            <b>${visit.treatment}</b>
+          </p>
+
+          <br>
+
+          <p>
+            Siswa dirujuk untuk pemeriksaan
+            dan penanganan lebih lanjut.
+          </p>
+
+          <br><br>
+
+          <p>
+            Petugas UKS
+          </p>
+
+          <br><br><br>
+
+          <p>
+            ____________________
+          </p>
+
+        </div>
+
+        <script>
+          window.print();
+        <\/script>
+
+      </body>
+
+      </html>
+    `;
+
+    const popup = window.open(
+      "",
+      "",
+      "width=900,height=700"
+    );
+
+    popup.document.write(html);
+
+    popup.document.close();
+
+  }catch(err){
+
+  showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
+
+}
+
+}
+
+async function createRestLetter(id){
+
+  try{
+
+    const visits = await api(
+      "/api/uks/visits",
+      "GET",
+      null,
+      true
+    );
+
+    const visit = visits.find(v => v.id === id);
+
+    if(!visit){
+      showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
+      return;
+    }
+
+    const html = `
+
+<html>
+
+<head>
+
+<title>Surat Izin UKS</title>
+
+<style>
+
+body{
+  margin:0;
+  padding:20px;
+  background:#f1f5f9;
+  font-family:'Poppins',sans-serif;
+}
+
+.card{
+
+  width:360px;
+  height:360px;
+
+  background:white;
+
+  border-radius:28px;
+
+  overflow:hidden;
+
+  box-shadow:
+    0 20px 40px rgba(15,118,110,.18);
+
+  border:1px solid #dbeafe;
+
+  display:flex;
+  flex-direction:column;
+}
+
+.header{
+
+  background:
+    linear-gradient(
+      135deg,
+      #0f766e,
+      #14b8a6
+    );
+
+  color:white;
+
+  padding:24px;
+
+  text-align:center;
+}
+
+.header h1{
+  margin:0;
+  font-size:22px;
+}
+
+.header p{
+  margin-top:6px;
+  font-size:13px;
+  opacity:.9;
+}
+
+.content{
+  flex:1;
+  padding:24px;
+}
+
+.label{
+  font-size:12px;
+  color:#64748b;
+  margin-bottom:4px;
+}
+
+.value{
+  font-size:16px;
+  font-weight:700;
+  color:#0f172a;
+  margin-bottom:16px;
+}
+
+.diagnosis{
+
+  background:#ecfeff;
+
+  padding:14px;
+
+  border-radius:16px;
+
+  color:#0f766e;
+
+  font-weight:600;
+
+  font-size:14px;
+
+  margin-top:10px;
+}
+
+.footer{
+
+  padding:18px 24px;
+
+  border-top:1px solid #e2e8f0;
+
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+
+  font-size:13px;
+}
+
+.signature{
+  margin-top:20px;
+  font-size:12px;
+  color:#64748b;
+}
+
+@media print{
+
+  body{
+    background:white;
+  }
+
+  .card{
+    box-shadow:none;
+  }
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="card">
+
+  <div class="header">
+
+    <h1>🏥 Surat Izin UKS</h1>
+
+    <p>Sekolah Rakyat</p>
+
+  </div>
+
+  <div class="content">
+
+    <div class="label">
+      Nama Siswa
+    </div>
+
+    <div class="value">
+      ${visit.patient_name}
+    </div>
+
+    <div class="label">
+      Tanggal
+    </div>
+
+    <div class="value">
+      ${visit.visit_date}
+    </div>
+
+    <div class="label">
+      Diagnosa
+    </div>
+
+    <div class="diagnosis">
+      ${visit.diagnosis || "-"}
+    </div>
+
+    <div class="signature">
+      Disarankan istirahat
+      di asrama selama 1 hari.
+    </div>
+
+  </div>
+
+  <div class="footer">
+
+    <div>
+      Petugas UKS
+    </div>
+
+    <div>
+      __________
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+window.print();
+<\/script>
+
+</body>
+
+</html>
+
+`;
+
+    const popup = window.open(
+      "",
+      "",
+      "width=900,height=700"
+    );
+
+    popup.document.write(html);
+
+    popup.document.close();
+
+  }catch(err){
+
+    showToast(
+  "Gagal",
+  "Pesan error",
+  "error"
+);
+
+  }
+
+};
+async function loadVisitChart(){
+
+  try{
+
+    const visits =
+      await api(
+        "/api/uks/visits",
+        "GET",
+        null,
+        true
+      );
+
+    console.log("VISITS:", visits);
+
+    const map = {};
+
+    visits.forEach(v => {
+
+      const date =
+        v.visit_date || "Unknown";
+
+      if(!map[date]){
+
+        map[date] = 0;
+
+      }
+
+      map[date]++;
+
+    });
+
+    const sortedDates =
+  Object.keys(map).sort();
+
+const labels =
+  sortedDates.slice(-7);
+
+const values =
+  labels.map(date => map[date]);
+
+    const canvas =
+      document.getElementById(
+        "visitChart"
+      );
+
+    if(!canvas){
+
+      console.error(
+        "Canvas visitChart tidak ditemukan"
+      );
+
+      return;
+    }
+
+    const ctx =
+      canvas.getContext("2d");
+
+    new Chart(ctx,{
+
+      type:"line",
+
+      data:{
+
+        labels:labels,
+
+        datasets:[{
+
+          label:"Jumlah Kunjungan",
+
+          data:values,
+
+          borderColor:"#14b8a6",
+
+          backgroundColor:
+            "rgba(20,184,166,.12)",
+
+          borderWidth:3,
+
+          fill:true,
+
+          tension:.4,
+
+          pointRadius:5
+
+        }]
+
+      },
+
+      options:{
+
+        responsive:true,
+
+        maintainAspectRatio:false,
+
+        plugins:{
+          legend:{
+            display:false
+          }
+        },
+
+        scales:{
+
+          y:{
+            beginAtZero:true
+          }
+
+        }
+
+      }
+
+    });
+
+  }catch(err){
+
+    console.error(
+      "CHART ERROR:",
+      err
+    );
+
+  }
+
+}    
+const themeBtn =
+  document.getElementById(
+    "btnTheme"
+  );
+
+const savedTheme =
+  localStorage.getItem("theme");
+
+if(savedTheme === "dark"){
+
+  document.body.classList.add(
+    "dark"
+  );
+
+  themeBtn.textContent = "☀️";
+
+}
+
+themeBtn.addEventListener(
+  "click",
+  () => {
+
+    document.body.classList.toggle(
+      "dark"
+    );
+
+    const isDark =
+      document.body.classList.contains(
+        "dark"
+      );
+
+    localStorage.setItem(
+      "theme",
+      isDark ? "dark" : "light"
+    );
+
+    themeBtn.textContent =
+      isDark ? "☀️" : "🌙";
+
+  }
+);
+const fabMain =
+  document.getElementById(
+    "fabMain"
+  );
+
+const fabMenu =
+  document.getElementById(
+    "fabMenu"
+  );
+
+if(fabMain){
+
+  fabMain.addEventListener(
+    "click",
+    () => {
+
+      fabMenu.classList.toggle(
+        "show"
+      );
+
+    }
+  );
+
+}
+function showToast(
+  title,
+  message,
+  type = "success"
+){
+
+  const container =
+    document.getElementById(
+      "toastContainer"
+    );
+
+  const toast =
+    document.createElement("div");
+
+  toast.className =
+    `toast toast-${type}`;
+
+  toast.innerHTML = `
+
+    <div class="toast-icon">
+
+      ${
+        type === "success"
+        ? "✅"
+        : "⚠️"
+      }
+
+    </div>
+
+    <div class="toast-content">
+
+      <div class="toast-title">
+        ${title}
+      </div>
+
+      <div class="toast-message">
+        ${message}
+      </div>
+
+    </div>
+
+  `;
+
+  container.appendChild(toast);
+
+  setTimeout(() => {
+
+    toast.remove();
+
+  }, 3500);
+
+}
+const globalSearch =
+  document.getElementById(
+    "globalSearch"
+  );
+
+if(globalSearch){
+
+  globalSearch.addEventListener(
+    "input",
+    async e => {
+
+      const keyword =
+        e.target.value
+          .toLowerCase();
+
+      const container =
+        document.getElementById(
+          "searchResults"
+        );
+
+      container.innerHTML = "";
+
+      if(keyword.length < 2){
+
+        return;
+
+      }
+
+      const results =
+        patientsData.filter(p =>
+
+          p.name
+            .toLowerCase()
+            .includes(keyword)
+
+        );
+
+      results
+        .slice(0,6)
+        .forEach(patient => {
+
+          const item =
+            document.createElement("div");
+
+          item.className =
+            "search-item";
+
+          item.innerHTML = `
+
+            <div class="search-name">
+              ${patient.name}
+            </div>
+
+            <div class="search-class">
+              ${patient.class_name}
+            </div>
+
+          `;
+
+          item.onclick = () => {
+
+            showHistory(patient.id);
+
+          };
+
+          container.appendChild(item);
+
+        });
+
+    }
+  );
+
+}
+async function loadTopStudents(){
+
+  try{
+
+    const visits = await api(
+      "/api/uks/visits",
+      "GET",
+      null,
+      true
+    );
+
+    const counter = {};
+
+    visits.forEach(v => {
+
+      const name =
+        v.patient_name || "Unknown";
+
+      counter[name] =
+        (counter[name] || 0) + 1;
+
+    });
+
+    const sorted = Object.entries(counter)
+
+      .sort((a,b) => b[1] - a[1])
+
+      .slice(0,5);
+
+    const container =
+      document.getElementById(
+        "topStudentsList"
+      );
+
+    if(!sorted.length){
+
+      container.innerHTML = `
+        <div class="empty-state">
+          Belum ada data kunjungan
+        </div>
+      `;
+
+      return;
+    }
+
+    container.innerHTML =
+      sorted.map((s,index) => `
+
+        <div class="top-student-item">
+
+          <div>
+
+            <strong>
+              ${index + 1}. ${s[0]}
+            </strong>
+
+          </div>
+
+          <div class="visit-badge">
+            ${s[1]}x
+          </div>
+
+        </div>
+
+      `).join("");
+
+  }catch(err){
+
+    console.error(err);
+
+  }
 
 }
 </script>

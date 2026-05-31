@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EMR UKS Sekolah Rakyat</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <style>
+    *{
+      margin:0;
+      padding:0;
+      box-sizing:border-box;
+    }
+
+    :root{
+      --primary:#0f766e;
+      --primary-dark:#115e59;
+      --primary-light:#14b8a6;
+      --bg:#f4f7fb;
+      --card:#ffffff;
+      --text:#0f172a;
+      --muted:#64748b;
+      --border:#e2e8f0;
+      --danger:#dc2626;
+      --shadow:0 10px 30px rgba(15,118,110,0.08);
+    }
+
+    body{
+      font-family: 'Inter',sans-serif;
+      background: #f5f7fb;
+      color:var(--text);
+      min-height:100vh;
+    }
+
+    .layout{
+      display:flex;
+      min-height:100vh;
+    }
+#patientSuggestions{
+  margin-top:8px;
+  border-radius:14px;
+  background:white;
+  border:1px solid #e2e8f0;
+  overflow:hidden;
+  max-height:220px;
+  overflow-y:auto;
+}
+
+.patient-item{
+  padding:12px 14px;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.patient-item:hover{
+  background:#ecfeff;
+}
+    /* SIDEBAR */
+
+    .sidebar{
+      width:260px;
+      background:linear-gradient(180deg,var(--primary),var(--primary-dark));
+      color:white;
+      padding:28px 22px;
+      position:fixed;
+      top:0;
+      left:0;
+      bottom:0;
+    }
+
+    .logo-area{
+      display:flex;
+      align-items:center;
+      gap:14px;
+      margin-bottom:40px;
+    }
+
+    .logo{
+      width:54px;
+      height:54px;
+      border-radius:14px;
+      background:white;
+      padding:6px;
+    }
+
+    .logo-title{
+      font-size:1.1rem;
+      font-weight:700;
+      line-height:1.3;
+    }
+
+    .logo-sub{
+      font-size:.82rem;
+      opacity:.8;
+    }
+
+    .menu{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .menu-item{
+      padding:14px 16px;
+      border-radius:14px;
+      cursor:pointer;
+      transition:.2s;
+      font-weight:500;
+      text-decoration:none;
+      color:white;
+      display:block;
+    }
+
+    .menu-item:hover,
+    .menu-item.active{
+      background:rgba(255,255,255,.12);
+      backdrop-filter:blur(10px);
+    }
+
+    /* MAIN */
+
+    .main{
+  margin-left:260px;
+  flex:1;
+  padding:30px;
+  width:calc(100vw - 260px);
+  overflow-x:hidden;
+}
+
+    /* TOPBAR */
+
+    .topbar{
+      background:rgba(255,255,255,.7);
+      backdrop-filter:blur(16px);
+      border:1px solid rgba(255,255,255,.5);
+      border-radius:24px;
+      padding:22px 28px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:28px;
+      box-shadow:var(--shadow);
+    }
+
+    .topbar h1{
+      font-size:1.6rem;
+      margin-bottom:4px;
+    }
+
+    .topbar p{
+      color:var(--muted);
+      font-size:.95rem;
+    }
+
+    .user-box{
+      background:white;
+      padding:10px 16px;
+      border-radius:16px;
+      box-shadow:var(--shadow);
+      font-weight:600;
+    }
+
+    /* STATS */
+
+    .stats{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+      gap:20px;
+      margin-bottom:28px;
+    }
+
+    .stat-card{
+      background:var(--card);
+      padding:24px;
+      border-radius:24px;
+      box-shadow:var(--shadow);
+      border:1px solid rgba(255,255,255,.8);
+    }
+
+    .stat-label{
+      color:var(--muted);
+      font-size:.92rem;
+      margin-bottom:12px;
+    }
+
+    .stat-number{
+      font-size:2rem;
+      font-weight:800;
+      line-height:1.25;
+      word-break:break-word;
+      overflow-wrap:anywhere;
+    }
+
+    /* GRID */
+
+    .grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+  align-items:start;
+}
+    
+
+    /* CARD */
+
+    .card{
+      background:white;
+      backdrop-filter:blur(16px);
+      border-radius:28px;
+      padding:28px;
+      box-shadow:0 10px 30px rgba(15,23,42,.04);
+      border:1px solid #e2e8f0;
+      height:fit-content;
+    }
+
+    .card h2{
+      font-size:1.2rem;
+      margin-bottom:22px;
+    }
+
+    /* FORM */
+
+    .form-group{
+      margin-bottom:18px;
+    }
+
+    label{
+      display:block;
+      margin-bottom:8px;
+      font-size:.92rem;
+      font-weight:600;
+      color:#334155;
+    }
+
+    input,
+    textarea,
+    select{
+      width:100%;
+      padding:14px 16px;
+      border-radius:16px;
+      border:1px solid var(--border);
+      background:white;
+      font-size:.95rem;
+      transition:.2s;
+      outline:none;
+    }
+
+    textarea{
+      min-height:90px;
+      resize:vertical;
+    }
+
+    #visitComplaint,
+    #visitExam{
+      min-height:140px;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus{
+      border-color:var(--primary-light);
+      box-shadow:0 0 0 4px rgba(20,184,166,.15);
+    }
+
+    /* BUTTONS */
+
+    .btn{
+      width:100%;
+      border:none;
+      border-radius:16px;
+      padding:14px;
+      font-size:.95rem;
+      font-weight:700;
+      cursor:pointer;
+      transition:.25s;
+      margin-top:8px;
+    }
+
+    .btn-primary{
+      background:linear-gradient(135deg,var(--primary),var(--primary-light));
+      color:white;
+      box-shadow:0 10px 20px rgba(15,118,110,.18);
+    }
+
+    .btn-primary:hover{
+      transform:translateY(-2px);
+    }
+
+    .btn-secondary{
+      background:#ecfeff;
+      color:var(--primary);
+    }
+
+    .btn-secondary:hover{
+      background:#cffafe;
+    }
+
+    /* STATUS */
+
+    .status{
+      margin-top:14px;
+      font-size:.9rem;
+      color:var(--muted);
+      white-space:pre-wrap;
+    }
+
+    .ok{
+      color:var(--primary-dark);
+    }
+
+    .error{
+      color:var(--danger);
+    }
+/* REPORT TABS */
+
+.report-tabs{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.report-tab{
+  border:none;
+  padding:10px 18px;
+  border-radius:999px;
+  background:#e2e8f0;
+  color:#334155;
+  font-weight:700;
+  cursor:pointer;
+  transition:.2s;
+}
+
+.report-tab:hover{
+  background:#cbd5e1;
+}
+
+#weeklyFilter,
+#monthlyFilter{
+  display:none;
+}
+.report-tab.active{
+  background:linear-gradient(
+    135deg,
+    var(--primary),
+    var(--primary-light)
+  );
+
+  color:white;
+}
+
+    /* REPORT */
+
+    .report-output{
+  margin-top:16px;
+  background:#f8fafc;
+  color:#0f172a;
+  padding:18px;
+  border-radius:18px;
+  border:1px solid #dbeafe;
+  font-family:Consolas, monospace;
+  font-size:.82rem;
+  overflow:auto;
+  max-height:300px;
+}
+    
+     /* HISTORY TABLE */
+
+.history-table{
+  width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  table-layout:fixed;
+}
+
+.history-table th{
+  background:#f8fafc;
+  text-align:left;
+  padding:22px 24px;
+  font-size:.9rem;
+  font-weight:700;
+  color:#475569;
+  border-bottom:1px solid #e2e8f0;
+}
+
+.history-table th:nth-child(1),
+.history-table td:nth-child(1){width:120px;}
+.history-table th:nth-child(2),
+.history-table td:nth-child(2){width:170px;}
+.history-table th:nth-child(3),
+.history-table td:nth-child(3){width:180px;}
+.history-table th:nth-child(4),
+.history-table td:nth-child(4){width:210px;}
+.history-table th:nth-child(5),
+.history-table td:nth-child(5){width:280px;}
+.history-table th:nth-child(6),
+.history-table td:nth-child(6){width:170px;}
+
+.history-table td{
+  padding:28px 24px;
+  border-bottom:1px solid #eef2f7;
+  vertical-align:top;
+  font-size:.95rem;
+  color:#334155;
+  word-break:break-word;
+  overflow-wrap:anywhere;
+}
+
+.history-table tbody tr{
+  transition:.2s;
+}
+
+.history-table tbody tr:hover{
+  background:#f8fafc;
+}
+
+/* BADGE */
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  padding:8px 12px;
+  border-radius:999px;
+  font-size:.8rem;
+  font-weight:700;
+}
+
+.badge-blue{
+  background:#eff6ff;
+  color:#2563eb;
+  padding:14px 18px;
+  border-radius:18px;
+  font-size:.88rem;
+  font-weight:700;
+  display:inline-block;
+  line-height:1.5;
+  max-width:100%;
+  white-space:normal;
+  word-break:break-word;
+}
+
+/* ACTION BUTTON */
+
+.action-btn{
+  border:none;
+  padding:8px 10px;
+  border-radius:12px;
+  cursor:pointer;
+  font-weight:700;
+  font-size:.78rem;
+  transition:.2s;
+  min-width:78px;
+}
+.action-btn:hover{
+  transform:translateY(-1px);
+  opacity:.92;
+}
+.edit-btn{
+  background:#dbeafe;
+  color:#1d4ed8;
+}
+
+.delete-btn{
+  background:#fee2e2;
+  color:#b91c1c;
+}
+    /* FOOTER */
+
+    .footer{
+      margin-top:30px;
+      text-align:center;
+      color:var(--muted);
+      font-size:.9rem;
+    }
+
+    /* MOBILE */
+
+    @media(max-width:900px){
+
+      .sidebar{
+        display:none;
+      }
+
+      .main{
+        margin-left:0;
+        padding:18px;
+      }
+
+      .topbar{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:16px;
+      }
+    }
+
+  </style>
+</head>
+
+<body>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+
+  <aside class="sidebar">
+
+    <div class="logo-area">
+      <img class="logo" src="/ui/assets/sekolah-rakyat.png" alt="">
+      <div>
+        <div class="logo-title">EMR UKS</div>
+        <div class="logo-sub">Sekolah Rakyat</div>
+      </div>
+    </div>
+
+    <div class="menu">
+
+  <a href="/dashboard" class="menu-item">
+    Dashboard
+  </a>
+
+  <a href="/students" class="menu-item">
+    Data Siswa
+  </a>
+
+  <a href="/students" class="menu-item">
+  Kunjungan UKS
+  </a>
+  <a href="/reports" class="menu-item active">
+    Laporan
+  </a>
+<a href="#" class="menu-item">
+  Pengaturan
+</a>
+
+</div>
+
+  </aside>
+
+  <!-- MAIN -->
+
+  <main class="main">
+
+    <!-- TOPBAR -->
+
+    <div class="topbar">
+
+      <div>
+        <h1>Laporan UKS</h1>
+        <p>Laporan Kunjungan dan Stok Obat UKS</p>
+      </div>
+
+      <div class="user-box">
+        <button class="btn btn-secondary" id="btnLogout" style="margin:0;">Logout</button>
+      </div>
+
+    </div>
+
+    <!-- GRID -->
+
+    <div class="grid">
+
+           <!-- LAPORAN -->
+
+      <section class="card" id="laporan">
+
+        <div style="
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:20px;
+  flex-wrap:wrap;
+  gap:12px;
+">
+
+  <div>
+    <h2 style="margin-bottom:6px;">
+      Laporan UKS
+    </h2>
+
+    <p style="
+      color:var(--muted);
+      font-size:.9rem;
+    ">
+      Rekap harian, mingguan, dan bulanan
+    </p>
+  </div>
+
+  <div class="report-tabs">
+
+    <button
+  id="dailyBtn"
+  class="report-tab active"
+  onclick="showDaily()"
+>
+  Harian
+</button>
+
+<button
+  id="weeklyBtn"
+  class="report-tab"
+  onclick="showWeekly()"
+>
+  Mingguan
+</button>
+
+<button
+  id="monthlyBtn"
+  class="report-tab"
+  onclick="showMonthly()"
+>
+  Bulanan
+</button>
+
+  </div>
+
+</div>
+<div id="dailyFilter">
+
+<div class="form-group" style="margin-top:24px;">
+
+  <label>Tanggal Harian</label>
+  <input id="reportDate" type="date">
+</div>
+
+</div>
+
+<div id="weeklyFilter">
+
+<div class="form-group">
+
+  <label>Tanggal Awal</label>
+  <input type="date" id="weekStart">
+
+</div>
+
+<div class="form-group">
+
+  <label>Tanggal Akhir</label>
+  <input type="date" id="weekEnd">
+
+</div>
+
+
+</div>
+
+<div id="monthlyFilter">
+
+  <div class="form-group">
+
+    <label>Bulan</label>
+
+    <input
+      type="month"
+      id="reportMonth"
+    >
+
+  </div>
+
+</div>
+
+<button
+  class="btn btn-primary"
+  id="btnDaily"
+  onclick="ambilLaporan()"
+>
+  Ambil Laporan
+</button>
+
+<button
+  class="btn btn-secondary"
+  id="btnDailyExcel"
+  onclick="downloadExcel()"
+>
+  Download Excel
+</button>
+
+<div id="reportStatus" class="status"></div>
+
+<div id="reportOutput" class="report-output"></div>
+      </section>
+
+      <section class="card" id="obat">
+        <h2>Stok Obat UKS</h2>
+
+        <div class="form-group">
+          <label>Nama Obat</label>
+          <input id="medicineName" placeholder="Contoh: Paracetamol 500mg">
+        </div>
+
+        <div class="form-group">
+          <label>Satuan</label>
+          <input id="medicineUnit" placeholder="tablet/sirup/sachet">
+        </div>
+
+        <div class="form-group">
+          <label>Stok Awal</label>
+          <input id="medicineStock" type="number" min="0" placeholder="0">
+        </div>
+
+        <div class="form-group">
+          <label>Stok Minimum</label>
+          <input id="medicineMinStock" type="number" min="0" value="10">
+        </div>
+
+        <button class="btn btn-primary" id="btnCreateMedicine">Simpan Obat</button>
+        <button class="btn btn-secondary" id="btnReloadMedicines">Refresh Daftar Stok</button>
+        <button class="btn btn-secondary" id="btnMedicinePdf">Download PDF Stok</button>
+        <div id="medicineStatus" class="status"></div>
+        <div id="medicineList" class="report-output"></div>
+      </section>
+
+    </div>
+
+    <footer class="footer">
+  <div>© 2026 Sekolah Rakyat Health System</div>
+  <div>Developed by Nur Indah Fitriana Dewi</div>
+</footer>
+
+  </main>
+
+</div>
+
+<!-- JAVASCRIPT ASLI KAMU TETAP DIPAKAI -->
+
+```html
+<script>
+
+let token =
+  localStorage.getItem("access_token") || "";
+
+if(!token){
+  window.location.href = "/login";
+}
+
+const today =
+  new Date().toISOString().slice(0,10);
+
+document.getElementById("reportDate").value =
+  today;
+
+/* STATUS */
+
+function showStatus(id,message,ok){
+
+  const el =
+    document.getElementById(id);
+
+  el.textContent = message;
+
+  el.className =
+    `status ${ok ? "ok" : "error"}`;
+
+}
+
+/* API */
+
+async function api(
+  path,
+  method="GET",
+  body=null
+){
+
+  const res = await fetch(path,{
+
+    method,
+
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":`Bearer ${token}`
+    },
+
+    body:
+      body
+      ? JSON.stringify(body)
+      : null
+
+  });
+
+  const data =
+    await res.json();
+
+  if(!res.ok){
+
+    throw new Error(
+      data.detail || "Request gagal"
+    );
+
+  }
+
+  return data;
+
+}
+
+/* LOGOUT */
+
+document
+  .getElementById("btnLogout")
+  .addEventListener("click",()=>{
+
+    localStorage.removeItem(
+      "access_token"
+    );
+
+    window.location.href =
+      "/login";
+
+});
+
+/* REPORT TAB */
+
+function resetTabs(){
+
+  document
+    .querySelectorAll(".report-tab")
+    .forEach(btn=>{
+
+      btn.classList.remove("active");
+
+    });
+
+}
+
+function showDaily(){
+
+  resetTabs();
+
+  document
+    .getElementById("dailyBtn")
+    .classList.add("active");
+
+  document
+    .getElementById("dailyFilter")
+    .style.display = "block";
+
+  document
+    .getElementById("weeklyFilter")
+    .style.display = "none";
+
+  document
+    .getElementById("monthlyFilter")
+    .style.display = "none";
+
+}
+
+function showWeekly(){
+
+  resetTabs();
+
+  document
+    .getElementById("weeklyBtn")
+    .classList.add("active");
+
+  document
+    .getElementById("dailyFilter")
+    .style.display = "none";
+
+  document
+    .getElementById("weeklyFilter")
+    .style.display = "block";
+
+  document
+    .getElementById("monthlyFilter")
+    .style.display = "none";
+
+}
+
+function showMonthly(){
+
+  resetTabs();
+
+  document
+    .getElementById("monthlyBtn")
+    .classList.add("active");
+
+  document
+    .getElementById("dailyFilter")
+    .style.display = "none";
+
+  document
+    .getElementById("weeklyFilter")
+    .style.display = "none";
+
+  document
+    .getElementById("monthlyFilter")
+    .style.display = "block";
+
+}
+
+/* AMBIL LAPORAN */
+
+async function ambilLaporan(){
+
+  try{
+
+    const tanggal =
+      document.getElementById(
+        "reportDate"
+      ).value;
+
+    const data =
+      await api(
+        `/api/reports/uks/daily?date=${tanggal}`
+      );
+
+    document
+      .getElementById("reportOutput")
+      .textContent =
+        JSON.stringify(
+          data,
+          null,
+          2
+        );
+
+    showStatus(
+      "reportStatus",
+      "Laporan berhasil diambil",
+      true
+    );
+
+  }catch(err){
+
+    showStatus(
+      "reportStatus",
+      err.message,
+      false
+    );
+
+  }
+
+}
+
+/* DOWNLOAD EXCEL */
+
+async function downloadExcel(){
+
+  try{
+
+    const tanggal =
+      document.getElementById(
+        "reportDate"
+      ).value;
+
+    const res = await fetch(
+
+      `/api/reports/uks/daily/excel?date=${tanggal}`,
+
+      {
+        headers:{
+          Authorization:
+            `Bearer ${token}`
+        }
+      }
+
+    );
+
+    if(!res.ok){
+
+      throw new Error(
+        "Gagal download excel"
+      );
+
+    }
+
+    const blob =
+      await res.blob();
+
+    const url =
+      window.URL
+      .createObjectURL(blob);
+
+    const a =
+      document.createElement("a");
+
+    a.href = url;
+
+    a.download =
+      `laporan_${tanggal}.xlsx`;
+
+    a.click();
+
+    showStatus(
+      "reportStatus",
+      "Excel berhasil diunduh",
+      true
+    );
+
+  }catch(err){
+
+    showStatus(
+      "reportStatus",
+      err.message,
+      false
+    );
+
+  }
+
+}
+
+/* STOK OBAT */
+console.log("LOAD MEDICINES RUNNING");
+async function loadMedicines(){
+
+  const list =
+    document.getElementById(
+      "medicineList"
+    );
+
+  list.innerHTML =
+    "Loading...";
+
+  try{
+
+    const data =
+      await api(
+        "/api/medicines"
+      );
+
+    if(!data.length){
+
+      list.innerHTML =
+        "Belum ada stok obat";
+
+      return;
+
+    }
+
+    list.innerHTML =
+      data.map(item => `
+
+        <div style="
+          padding:14px;
+          border-bottom:1px solid #e2e8f0;
+        ">
+
+          <b>${item.name}</b><br>
+
+          Stok:
+          ${item.stock}
+          ${item.unit}
+
+        </div>
+
+      `).join("");
+
+  }catch(err){
+
+    list.innerHTML =
+      "Gagal load stok obat";
+
+  }
+
+}
+
+/* REFRESH STOK */
+
+document
+  .getElementById("btnReloadMedicines")
+  .addEventListener(
+    "click",
+    loadMedicines
+  );
+document
+  .getElementById("btnMedicinePdf")
+  .addEventListener(
+    "click",
+    downloadMedicinePdf
+  );
+
+/* LOAD PAGE */
+
+window.addEventListener(
+  "load",
+  ()=>{
+
+    loadMedicines();
+
+  }
+);
+/* DOWNLOAD PDF STOK */
+
+async function downloadMedicinePdf(){
+
+  try{
+
+    const res = await fetch(
+
+      "/api/reports/medicines/pdf",
+
+      {
+        headers:{
+          Authorization:
+            `Bearer ${token}`
+        }
+      }
+
+    );
+
+    if(!res.ok){
+
+      throw new Error(
+        "Gagal download PDF"
+      );
+
+    }
+
+    const blob =
+      await res.blob();
+
+    const url =
+      window.URL
+      .createObjectURL(blob);
+
+    const a =
+      document.createElement("a");
+
+    a.href = url;
+
+    a.download =
+      "laporan_stok_obat_uks.pdf";
+
+    a.click();
+
+    showStatus(
+      "medicineStatus",
+      "PDF stok berhasil diunduh",
+      true
+    );
+
+  }catch(err){
+
+    showStatus(
+      "medicineStatus",
+      err.message,
+      false
+    );
+
+  }
+
+}
+
+</script>
+</body>
+</html>

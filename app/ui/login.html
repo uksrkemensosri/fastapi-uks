@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - EMR UKS Sekolah Rakyat</title>
+  <style>
+    *{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+
+body{
+
+  font-family:'Inter',sans-serif;
+
+  background:
+    linear-gradient(
+      135deg,
+      #0f766e,
+      #14b8a6,
+      #ecfeff
+    );
+
+  min-height:100vh;
+
+  display:flex;
+
+  align-items:center;
+
+  justify-content:center;
+
+  overflow:hidden;
+
+}
+
+.wrap{
+
+  width:100%;
+
+  display:flex;
+
+  justify-content:center;
+
+  align-items:center;
+
+  padding:24px;
+
+}
+
+.card{
+
+  width:100%;
+
+  max-width:420px;
+
+  padding:42px;
+
+  border-radius:32px;
+
+  background:
+    rgba(255,255,255,.18);
+
+  backdrop-filter:blur(22px);
+
+  border:
+    1px solid rgba(255,255,255,.25);
+
+  box-shadow:
+    0 20px 60px rgba(15,23,42,.18);
+
+}
+
+h1{
+
+  font-size:2.2rem;
+
+  margin-bottom:10px;
+
+  color:white;
+
+  font-weight:800;
+
+}
+
+p{
+
+  color:rgba(255,255,255,.82);
+
+  margin-bottom:28px;
+
+  line-height:1.6;
+
+}
+
+label{
+
+  display:block;
+
+  margin-bottom:8px;
+
+  margin-top:16px;
+
+  color:white;
+
+  font-weight:600;
+
+}
+
+input{
+
+  width:100%;
+
+  padding:16px 18px;
+
+  border-radius:18px;
+
+  border:
+    1px solid rgba(255,255,255,.25);
+
+  background:
+    rgba(255,255,255,.14);
+
+  color:white;
+
+  font-size:1rem;
+
+  outline:none;
+
+  backdrop-filter:blur(8px);
+
+  transition:.25s;
+
+}
+
+input::placeholder{
+
+  color:rgba(255,255,255,.7);
+
+}
+
+input:focus{
+
+  border-color:white;
+
+  transform:translateY(-2px);
+
+}
+
+button{
+
+  width:100%;
+
+  padding:16px;
+
+  border:none;
+
+  border-radius:18px;
+
+  background:white;
+
+  color:#0f766e;
+
+  font-size:1rem;
+
+  font-weight:800;
+
+  cursor:pointer;
+
+  transition:.25s;
+
+  margin-top:24px;
+
+}
+
+button:hover{
+
+  transform:
+    translateY(-3px);
+
+}
+
+#status{
+
+  margin-top:14px;
+
+  color:white;
+
+}
+
+.bg-circle{
+
+  position:fixed;
+
+  border-radius:999px;
+
+  filter:blur(80px);
+
+  opacity:.35;
+
+}
+
+.circle1{
+
+  width:320px;
+  height:320px;
+
+  background:#99f6e4;
+
+  top:-100px;
+  left:-100px;
+
+}
+
+.circle2{
+
+  width:280px;
+  height:280px;
+
+  background:#67e8f9;
+
+  bottom:-80px;
+  right:-80px;
+
+}
+  </style>
+</head>
+<body>
+<div class="bg-circle circle1"></div>
+<div class="bg-circle circle2"></div>
+  <div class="wrap">
+    <div class="card">
+      <h1>Login EMR UKS</h1>
+      <p>Masuk untuk membuka dashboard UKS.</p>
+      <label for="username">Username</label>
+      <input id="username" />
+      <label for="password">Password</label>
+      <input id="password" type="password" />
+      <button id="btnLogin">Masuk</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById("status");
+
+    if (localStorage.getItem("access_token")) {
+      window.location.href = "/dashboard";
+    }
+const btnLogin =
+  document.getElementById(
+    "btnLogin"
+  );
+    document.getElementById("btnLogin").addEventListener("click", async () => {
+      try {
+        statusEl.textContent = "";
+        const payload = {
+          username: document.getElementById("username").value.trim(),
+          password: document.getElementById("password").value,
+        };
+          btnLogin.disabled = true;
+          btnLogin.textContent =
+          "⏳ Masuk...";
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        localStorage.setItem("access_token", data.access_token);
+        btnLogin.textContent =
+        "✅ Berhasil";
+        window.location.href = "/dashboard";
+      } catch (err) {
+        statusEl.textContent = `Login gagal: ${err.message}`;
+        statusEl.className = "err";
+        btnLogin.disabled = false;
+        btnLogin.textContent =
+        "Masuk";
+      }
+    });
+document.addEventListener(
+  "keydown",
+  function(event){
+
+    if(event.key === "Enter"){
+
+      btnLogin.click();
+
+    }
+
+  }
+);
+  </script>
+</body>
+</html>

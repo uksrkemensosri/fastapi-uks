@@ -1,7 +1,11 @@
 from datetime import datetime
 import os
+import requests
 from dotenv import load_dotenv
-from openai import OpenAI
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover
+    OpenAI = None
 load_dotenv()
 from io import BytesIO
 
@@ -10,6 +14,10 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy.orm import Session
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.auth.dependencies import get_current_user, require_roles
 from app.auth.security import (
@@ -22,6 +30,7 @@ from app.core.expert_system import NursingExpertSystem
 from app.db.dependencies import get_db
 from app.db.models import (
     AssessmentORM,
+    MedicineInventoryORM,
     PatientORM,
     RecommendationORM,
     UKSMedicationORM,
@@ -36,6 +45,9 @@ from app.models.schemas import (
     ChangePasswordRequest,
     ComplaintStat,
     LoginRequest,
+    MedicineInventoryCreate,
+    MedicineInventoryResponse,
+    MedicineInventoryUpdate,
     NursingAssessment,
     Patient,
     PatientCreate,
@@ -55,9 +67,13 @@ from app.models.schemas import (
 
 router = APIRouter(prefix="/api", tags=["EMR Keperawatan"])
 expert_system = NursingExpertSystem()
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY"),
+client = (
+    OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+    )
+    if OpenAI is not None
+    else None
 )
 
 
@@ -84,6 +100,14 @@ def _validate_month_yyyy_mm(value: str) -> str:
     except ValueError:
         raise HTTPException(status_code=400, detail="Month format must be YYYY-MM")
     return value
+
+
+def _find_inventory_by_name(db: Session, medicine_name: str) -> MedicineInventoryORM | None:
+    return (
+        db.query(MedicineInventoryORM)
+        .filter(MedicineInventoryORM.name.ilike(medicine_name.strip()))
+        .first()
+    )
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -216,8 +240,10 @@ def suggest_care_with_ai(
     prompt = f"""
 Anda adalah perawat UKS Indonesia.
 
-Gunakan SDKI secara singkat dan praktis.
+Gunakan SDKI (Standar Diagnosis Keperawatan Indonesia).
 
+WAJIB menggunakan diagnosa keperawatan,
+BUKAN diagnosa medis.
 Keluhan:
 {payload.complaint}
 
@@ -226,10 +252,10 @@ Pemeriksaan:
 
 Jawab SINGKAT dengan format:
 
-Diagnosa:
+Diagnosa Keperawatan:
 ...
 
-Tindakan:
+Tindakan Keperawatan:
 ...
 
 Catatan:
@@ -239,6 +265,8 @@ Maksimal 2 kalimat tiap bagian.
 """
 
     try:
+        if client is None:
+            raise RuntimeError("OpenAI SDK not installed")
 
         response = client.chat.completions.create(
             model="openai/gpt-oss-20b:free",
@@ -264,12 +292,12 @@ Maksimal 2 kalimat tiap bagian.
     intervention = ""
     implementation = ""
 
-    parts = result.split("Tindakan:")
+    parts = result.split("Tindakan Keperawatan:")
 
     if len(parts) > 1:
 
         diagnosis = parts[0].replace(
-            "Diagnosa:",
+            "Diagnosa Keperawatan:",
             ""
         ).strip()
 
@@ -286,6 +314,13 @@ Maksimal 2 kalimat tiap bagian.
     else:
 
         diagnosis = result
+
+    if not diagnosis:
+        diagnosis = "Gangguan kenyamanan akut."
+    if not intervention:
+        intervention = "Observasi tanda vital, anjurkan istirahat, dan berikan cairan oral sesuai kondisi."
+    if not implementation:
+        implementation = "Pantau respons siswa 15-30 menit dan dokumentasikan perubahan kondisi."
 
     return AICareSuggestionResponse(
         diagnosis=diagnosis,
@@ -391,7 +426,44 @@ def get_patient_detail(
         gender=patient.gender,
         class_name=patient.class_name,
     )
+@router.put("/patients/{patient_id}")
+def update_patient(
+    patient_id: str,
+    payload: PatientCreate,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(
+        require_roles(
+            "admin",
+            "perawat"
+        )
+    ),
+):
 
+    patient = db.get(
+        PatientORM,
+        patient_id
+    )
+
+    if patient is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Patient not found"
+        )
+
+    patient.name = payload.name
+    patient.age = payload.age
+    patient.gender = payload.gender
+    patient.class_name = payload.class_name
+    patient.birth_date = payload.birth_date
+
+    db.commit()
+    db.refresh(patient)
+
+    return {
+        "message":
+        "Patient updated"
+    }
 
 @router.post("/uks/visits", response_model=UKSVisitResponse, status_code=status.HTTP_201_CREATED)
 def create_uks_visit(
@@ -416,7 +488,61 @@ def create_uks_visit(
     )
     db.add(visit)
     db.commit()
-    db.refresh(visit)
+
+    patient = db.get(
+        PatientORM,
+        payload.patient_id
+    )
+
+    if patient and patient.parent_phone:
+
+        phone = patient.parent_phone
+
+        if phone.startswith("08"):
+            phone = "62" + phone[1:]
+
+        message = f"""
+[UKS SRMA 13 Bekasi]
+
+Yth. Wali Asuh {patient.name},
+
+Siswa melakukan kunjungan ke UKS.
+
+Keluhan:
+{payload.complaint}
+
+Tindakan:
+{payload.treatment}
+
+Tanggal:
+{payload.visit_date}
+
+Pesan ini adalah pesan otomatis.
+Mohon bantuannya untuk meneruskan kepada wali asuh terkait.
+
+Terima kasih.
+- UKS Sekolah Rakyat
+"""
+
+        response = requests.post(
+
+            "https://api.fonnte.com/send",
+
+            headers={
+                "Authorization":
+                os.getenv("FONNTE_TOKEN")
+            },
+
+            data={
+                "target":
+                phone,
+                "message":
+                message
+            }
+
+        )
+
+        print(response.text)
 
     return UKSVisitResponse(
         id=visit.id,
@@ -429,7 +555,8 @@ def create_uks_visit(
         notes=visit.notes,
         referral_to=visit.referral_to,
         referral_status=visit.referral_status,
-)
+    )
+    
 @router.get("/patients/{patient_id}/visits")
 def get_patient_visits(
     patient_id: str,
@@ -445,6 +572,7 @@ def get_patient_visits(
     )
 
     return visits
+
 @router.get("/uks/visits")
 def get_all_uks_visits(
     db: Session = Depends(get_db),
@@ -471,6 +599,9 @@ def get_all_uks_visits(
             "complaint": visit.complaint,
             "diagnosis": visit.diagnosis,
             "treatment": visit.treatment,
+            "referral_place": visit.referral_place,
+            "control_date": visit.control_date,
+            "control_done": visit.control_done,
         })
 
     return results
@@ -562,16 +693,28 @@ def add_uks_medication(
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
 
+    inventory = _find_inventory_by_name(db, payload.medicine_name)
+    if inventory is None:
+        raise HTTPException(status_code=404, detail="Medicine not found in inventory")
+    if inventory.stock < payload.quantity:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient stock for {inventory.name}. Remaining: {inventory.stock}",
+        )
+
     medication = UKSMedicationORM(
         visit_id=visit_id,
-        medicine_name=payload.medicine_name,
+        medicine_name=inventory.name,
         dosage=payload.dosage,
         quantity=payload.quantity,
         notes=payload.notes,
     )
+    inventory.stock -= payload.quantity
     db.add(medication)
+    db.add(inventory)
     db.commit()
     db.refresh(medication)
+    db.refresh(inventory)
 
     return UKSMedicationResponse(
         id=medication.id,
@@ -580,6 +723,7 @@ def add_uks_medication(
         dosage=medication.dosage,
         quantity=medication.quantity,
         notes=medication.notes,
+        remaining_stock=inventory.stock,
     )
 
 
@@ -607,9 +751,180 @@ def list_uks_medications(
             dosage=m.dosage,
             quantity=m.quantity,
             notes=m.notes,
+            remaining_stock=None,
         )
         for m in medications
     ]
+
+
+@router.post("/medicines", response_model=MedicineInventoryResponse, status_code=status.HTTP_201_CREATED)
+def create_medicine_inventory(
+    payload: MedicineInventoryCreate,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> MedicineInventoryResponse:
+    existing = _find_inventory_by_name(
+        db,
+        payload.name
+    )
+
+    # kalau obat sudah ada → tambah stok
+    if existing is not None:
+
+        existing.stock += payload.stock
+        existing.unit = payload.unit.strip()
+        existing.minimum_stock = payload.minimum_stock
+
+        db.commit()
+        db.refresh(existing)
+
+        return MedicineInventoryResponse(
+            id=existing.id,
+            name=existing.name,
+            unit=existing.unit,
+            stock=existing.stock,
+            minimum_stock=existing.minimum_stock,
+            is_low_stock=(
+                existing.stock
+                <= existing.minimum_stock
+            ),
+        )
+
+    # kalau belum ada → buat baru
+    med = MedicineInventoryORM(
+        name=payload.name.strip(),
+        unit=payload.unit.strip(),
+        stock=payload.stock,
+        minimum_stock=payload.minimum_stock,
+    )
+
+    db.add(med)
+    db.commit()
+    db.refresh(med)
+
+    return MedicineInventoryResponse(
+        id=med.id,
+        name=med.name,
+        unit=med.unit,
+        stock=med.stock,
+        minimum_stock=med.minimum_stock,
+        is_low_stock=(
+            med.stock
+            <= med.minimum_stock
+        ),
+    )
+
+@router.get("/medicines", response_model=list[MedicineInventoryResponse])
+def list_medicines_inventory(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> list[MedicineInventoryResponse]:
+    meds = db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
+    return [
+        MedicineInventoryResponse(
+            id=m.id,
+            name=m.name,
+            unit=m.unit,
+            stock=m.stock,
+            minimum_stock=m.minimum_stock,
+            is_low_stock=m.stock <= m.minimum_stock,
+        )
+        for m in meds
+    ]
+
+
+@router.patch("/medicines/{medicine_id}", response_model=MedicineInventoryResponse)
+def update_medicine_inventory(
+    medicine_id: int,
+    payload: MedicineInventoryUpdate,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> MedicineInventoryResponse:
+    med = db.get(MedicineInventoryORM, medicine_id)
+    if med is None:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+
+    if payload.unit is not None:
+        med.unit = payload.unit.strip()
+    if payload.stock is not None:
+        med.stock = payload.stock
+    if payload.minimum_stock is not None:
+        med.minimum_stock = payload.minimum_stock
+
+    db.add(med)
+    db.commit()
+    db.refresh(med)
+    return MedicineInventoryResponse(
+        id=med.id,
+        name=med.name,
+        unit=med.unit,
+        stock=med.stock,
+        minimum_stock=med.minimum_stock,
+        is_low_stock=med.stock <= med.minimum_stock,
+    )
+
+
+@router.get("/reports/medicines/pdf")
+def get_medicines_report_pdf(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> StreamingResponse:
+    medicines = db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=24,
+        rightMargin=24,
+        topMargin=24,
+        bottomMargin=24,
+    )
+
+    styles = getSampleStyleSheet()
+    elements = []
+    elements.append(Paragraph("Laporan Stok Obat UKS", styles["Title"]))
+    elements.append(Paragraph(f"Total item: {len(medicines)}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    data = [["No", "Nama Obat", "Stok", "Satuan", "Stok Minimum", "Status"]]
+    for idx, med in enumerate(medicines, start=1):
+        status_text = "Perlu Restok" if med.stock <= med.minimum_stock else "Aman"
+        data.append(
+            [
+                str(idx),
+                med.name,
+                str(med.stock),
+                med.unit,
+                str(med.minimum_stock),
+                status_text,
+            ]
+        )
+
+    table = Table(data, repeatRows=1, colWidths=[28, 220, 50, 70, 80, 90])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("ALIGN", (1, 1), (1, -1), "LEFT"),
+                ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#94a3b8")),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
+    )
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="laporan_stok_obat_uks.pdf"'},
+    )
 
 
 @router.patch("/uks/visits/{visit_id}/referral", response_model=UKSVisitResponse)
@@ -628,6 +943,69 @@ def update_uks_referral(
     db.add(visit)
     db.commit()
     db.refresh(visit)
+    patient = db.get(
+        PatientORM,
+        payload.patient_id
+    )
+
+    if patient and patient.parent_phone:
+
+        message = f"""
+[UKS SRMA 13 Bekasi]
+
+Yth. Wali Asuh {patient.name},
+
+Siswa melakukan kunjungan ke UKS.
+
+Keluhan:
+{payload.complaint}
+
+Tindakan:
+{payload.treatment}
+
+Tanggal:
+{payload.visit_date}
+
+Ini adalah pesan otomatis.
+
+Terima kasih.
+- UKS Sekolah Rakyat
+"""
+        phone = patient.parent_phone
+
+        if phone.startswith("08"):
+            phone = "62" + phone[1:]
+        requests.post(
+
+            "https://api.fonnte.com/send",
+
+            headers={
+                "Authorization":
+                os.getenv("FONNTE_TOKEN")
+            },
+
+            data={
+                "target":
+                phone,
+
+                "message":
+                message
+            }
+
+        )
+
+    return UKSVisitResponse(
+        id=visit.id,
+        patient_id=visit.patient_id,
+        visit_date=str(visit.visit_date),
+        complaint=visit.complaint,
+        examination=visit.examination,
+        treatment=visit.treatment,
+        diagnosis=visit.diagnosis,
+        notes=visit.notes,
+        referral_to=visit.referral_to,
+        referral_status=visit.referral_status,
+    )
 
     return UKSVisitResponse(
         id=visit.id,
@@ -889,18 +1267,42 @@ def update_uks_visit(
             detail="Visit not found"
         )
 
-    visit.patient_id = payload.patient_id
-    visit.visit_date = payload.visit_date
-    visit.complaint = payload.complaint
-    visit.examination = payload.examination
-    visit.treatment = payload.treatment
-    visit.diagnosis = payload.diagnosis
-    visit.notes = payload.notes
+    if payload.patient_id is not None:
+        visit.patient_id = payload.patient_id
+
+    if payload.visit_date is not None:
+        visit.visit_date = payload.visit_date
+
+    if payload.complaint is not None:
+        visit.complaint = payload.complaint
+
+    if payload.examination is not None:
+        visit.examination = payload.examination
+
+    if payload.treatment is not None:
+        visit.treatment = payload.treatment
+
+    if payload.diagnosis is not None:
+        visit.diagnosis = payload.diagnosis
+
+    if payload.notes is not None:
+        visit.notes = payload.notes
+
+    if payload.referral_place is not None:
+        visit.referral_place = payload.referral_place
+
+    if payload.control_date is not None:
+        visit.control_date = payload.control_date
+
+    if payload.control_done is not None:
+        visit.control_done = payload.control_done
 
     db.commit()
     db.refresh(visit)
 
-    return {"message": "Visit updated"}
+    return {
+        "message": "Visit updated"
+    }
 from sqlalchemy import func
 from datetime import date
 
@@ -913,7 +1315,7 @@ def dashboard_stats(
     total_students = db.query(PatientORM).count()
 
     today_visits = db.query(UKSVisitORM).filter(
-        UKSVisitORM.visit_date == date.today()
+        UKSVisitORM.visit_date == date.today().isoformat()
     ).count()
 
     top_case = (
@@ -932,4 +1334,3 @@ def dashboard_stats(
         "top_case": top_case[0] if top_case else "-",
         "active_reports": today_visits
     }
-

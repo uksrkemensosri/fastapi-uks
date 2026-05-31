@@ -61,12 +61,28 @@ Segera ganti password untuk environment produksi.
 - `GET /api/uks/visits/{visit_id}`
 - `POST /api/uks/visits/{visit_id}/medications`
 - `GET /api/uks/visits/{visit_id}/medications`
+- `POST /api/medicines`
+- `GET /api/medicines`
+- `PATCH /api/medicines/{medicine_id}`
 - `PATCH /api/uks/visits/{visit_id}/referral`
 - `GET /api/patients/{patient_id}/uks-visits`
-- `GET /api/reports/uks/daily?date=YYYY-MM-DD`n- `GET /api/reports/uks/daily/excel?date=YYYY-MM-DD``
+- `GET /api/reports/uks/daily?date=YYYY-MM-DD`
+- `GET /api/reports/uks/daily/excel?date=YYYY-MM-DD`
 - `GET /api/reports/uks/monthly?month=YYYY-MM`
 - `GET /api/patients/{patient_id}/assessments`
 - `GET /api/assessments/{assessment_id}`
+
+## Import Stok Obat dari Excel
+1. Export Google Sheet stok obat menjadi file `.xlsx`.
+2. Pastikan header minimal punya kolom `Nama Obat` dan `Stok`.
+3. Jalankan:
+```powershell
+.\.venv\Scripts\python.exe .\import_medicines.py "C:\path\stok_obat.xlsx"
+```
+Opsional jika nama sheet spesifik:
+```powershell
+.\.venv\Scripts\python.exe .\import_medicines.py "C:\path\stok_obat.xlsx" --sheet "Sheet1"
+```
 
 ## Catatan penting klinis
 - Prototype ini untuk dukungan keputusan awal, bukan pengganti clinical judgment.

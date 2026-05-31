@@ -1,5 +1,5 @@
-from typing import List, Optional
-
+from typing import Optional, List
+from datetime import date
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -48,16 +48,21 @@ class PatientCreate(BaseModel):
     birth_date: Optional[str] = None
 
 class UKSVisitCreate(BaseModel):
-    patient_id: str = Field(min_length=1, max_length=50)
-    visit_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    complaint: str = Field(min_length=2, max_length=255)
-    examination: str = Field(min_length=2, max_length=255)
-    treatment: Optional[str] = Field(default=None, max_length=255)
-    diagnosis: Optional[str] = Field(default=None, max_length=255)
-    notes: Optional[str] = Field(default=None, max_length=1000)
-    referral_to: Optional[str] = Field(default=None, max_length=255)
-    referral_status: Optional[str] = Field(default=None, max_length=50)
 
+    patient_id: Optional[str] = None
+    visit_date: Optional[date] = None
+
+    complaint: Optional[str] = None
+    examination: Optional[str] = None
+    treatment: Optional[str] = None
+    diagnosis: Optional[str] = None
+    notes: Optional[str] = None
+
+    referral_to: Optional[str] = None
+    referral_place: Optional[str] = None
+    referral_status: Optional[str] = None
+    control_date: Optional[date] = None
+    control_done: Optional[bool] = None
 
 class UKSVisitResponse(BaseModel):
     id: int
@@ -99,6 +104,29 @@ class UKSMedicationResponse(BaseModel):
     dosage: str
     quantity: int
     notes: Optional[str] = None
+    remaining_stock: Optional[int] = None
+
+
+class MedicineInventoryCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    unit: str = Field(min_length=1, max_length=50)
+    stock: int = Field(ge=0, le=100000)
+    minimum_stock: int = Field(default=10, ge=0, le=100000)
+
+
+class MedicineInventoryUpdate(BaseModel):
+    unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    stock: Optional[int] = Field(default=None, ge=0, le=100000)
+    minimum_stock: Optional[int] = Field(default=None, ge=0, le=100000)
+
+
+class MedicineInventoryResponse(BaseModel):
+    id: int
+    name: str
+    unit: str
+    stock: int
+    minimum_stock: int
+    is_low_stock: bool
 
 
 class UKSReferralUpdate(BaseModel):
@@ -175,4 +203,3 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     is_active: bool
-
