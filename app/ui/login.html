@@ -3,296 +3,760 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login - EMR UKS Sekolah Rakyat</title>
+  <title>SEHATI - Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    *{
-  margin:0;
-  padding:0;
-  box-sizing:border-box;
-}
-
-body{
-
-  font-family:'Inter',sans-serif;
-
-  background:
-    linear-gradient(
-      135deg,
-      #0f766e,
-      #14b8a6,
-      #ecfeff
-    );
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{
 
   min-height:100vh;
 
-  display:flex;
+  font-family:'Plus Jakarta Sans',sans-serif;
 
-  align-items:center;
-
-  justify-content:center;
+  display:grid;
+  place-items:center;
 
   overflow:hidden;
 
-}
-
-.wrap{
-
-  width:100%;
-
-  display:flex;
-
-  justify-content:center;
-
-  align-items:center;
-
   padding:24px;
 
-}
-
-.card{
-
-  width:100%;
-
-  max-width:420px;
-
-  padding:42px;
-
-  border-radius:32px;
+  position:relative;
 
   background:
-    rgba(255,255,255,.18);
-
-  backdrop-filter:blur(22px);
-
-  border:
-    1px solid rgba(255,255,255,.25);
-
-  box-shadow:
-    0 20px 60px rgba(15,23,42,.18);
+linear-gradient(
+  135deg,
+  #f8f5ff 0%,
+  #efe7ff 35%,
+  #e9d5ff 70%,
+  #dbeafe 100%
+);
 
 }
+ body::before{
 
-h1{
+  content:"";
 
-  font-size:2.2rem;
+  position:fixed;
 
-  margin-bottom:10px;
-
-  color:white;
-
-  font-weight:800;
-
-}
-
-p{
-
-  color:rgba(255,255,255,.82);
-
-  margin-bottom:28px;
-
-  line-height:1.6;
-
-}
-
-label{
-
-  display:block;
-
-  margin-bottom:8px;
-
-  margin-top:16px;
-
-  color:white;
-
-  font-weight:600;
-
-}
-
-input{
-
-  width:100%;
-
-  padding:16px 18px;
-
-  border-radius:18px;
-
-  border:
-    1px solid rgba(255,255,255,.25);
+  inset:0;
 
   background:
-    rgba(255,255,255,.14);
+    linear-gradient(
+      rgba(255,255,255,.12),
+      rgba(15,23,42,.25)
+    ),
 
-  color:white;
+    url('/ui/assets/gedung-kemensos.jpg')
+    center/cover no-repeat;
 
-  font-size:1rem;
-
-  outline:none;
-
-  backdrop-filter:blur(8px);
-
-  transition:.25s;
-
-}
-
-input::placeholder{
-
-  color:rgba(255,255,255,.7);
-
-}
-
-input:focus{
-
-  border-color:white;
-
-  transform:translateY(-2px);
-
-}
-
-button{
-
-  width:100%;
-
-  padding:16px;
-
-  border:none;
-
-  border-radius:18px;
-
-  background:white;
-
-  color:#0f766e;
-
-  font-size:1rem;
-
-  font-weight:800;
-
-  cursor:pointer;
-
-  transition:.25s;
-
-  margin-top:24px;
-
-}
-
-button:hover{
+  filter:
+    blur(2px);
 
   transform:
-    translateY(-3px);
+    scale(1.03);
+
+  z-index:-3;
 
 }
-
-#status{
-
-  margin-top:14px;
-
-  color:white;
-
-}
-
-.bg-circle{
+    .orb{
 
   position:fixed;
 
   border-radius:999px;
 
-  filter:blur(80px);
+  filter:blur(90px);
 
-  opacity:.35;
+  opacity:.65;
+
+  z-index:-2;
+
+}
+ .o1{
+
+  width:420px;
+  height:420px;
+
+  left:-120px;
+  top:-120px;
+
+  background:#e9d5ff;
+opacity:.55;
+
+}
+ .o2{
+
+  width:420px;
+  height:420px;
+
+  right:-120px;
+  bottom:-120px;
+
+  background:#dbeafe;
+opacity:.5;
+
+}
+.float-icon{
+
+  position:fixed;
+
+  width:74px;
+  height:74px;
+
+  border-radius:24px;
+
+  display:grid;
+  place-items:center;
+
+  font-size:2rem;
+
+  color:white;
+
+  background:
+    rgba(255,255,255,.12);
+
+  backdrop-filter:
+    blur(14px);
+
+  border:
+    1px solid rgba(255,255,255,.28);
+
+  box-shadow:
+    0 10px 30px rgba(255,255,255,.08);
+
+  animation:
+    floating 6s ease-in-out infinite;
+
+}
+.fi1{
+  left:70px;
+  top:230px;
+}
+
+.fi2{
+  left:90px;
+  bottom:180px;
+}
+
+.fi3{
+  right:90px;
+  top:230px;
+}
+
+.fi4{
+  right:120px;
+  bottom:170px;
+}
+@keyframes floating{
+
+  0%{
+    transform:translateY(0px);
+  }
+
+  50%{
+    transform:translateY(-12px);
+  }
+
+  100%{
+    transform:translateY(0px);
+  }
+
+}
+body::after{
+
+  content:"";
+
+  position:fixed;
+
+  inset:0;
+
+  background:
+
+    radial-gradient(
+      circle at top left,
+      rgba(255,255,255,.22),
+      transparent 28%
+    ),
+
+    radial-gradient(
+      circle at bottom right,
+      rgba(255,255,255,.18),
+      transparent 28%
+    );
+
+  z-index:-1;
+
+  pointer-events:none;
 
 }
 
-.circle1{
+    .panel{
 
-  width:320px;
-  height:320px;
+  width:min(650px,100%);
 
-  background:#99f6e4;
+  position:relative;
 
-  top:-100px;
-  left:-100px;
+  overflow:hidden;
+
+  border-radius:38px;
+
+  padding:38px 42px 30px;
+
+  border:
+    1px solid rgba(255,255,255,.35);
+
+  background:
+  linear-gradient(
+    180deg,
+    rgba(255,255,255,.55),
+    rgba(255,255,255,.28)
+  );
+
+  backdrop-filter:
+    blur(24px);
+
+  box-shadow:
+
+    0 30px 90px rgba(15,23,42,.30),
+
+    inset 0 1px 1px rgba(255,255,255,.28),
+
+    0 0 40px rgba(255,255,255,.12);
+animation:
+  panelFade .8s ease;
+@keyframes panelFade{
+
+  from{
+
+    opacity:0;
+
+    transform:
+      translateY(30px)
+      scale(.96);
+
+  }
+
+  to{
+
+    opacity:1;
+
+    transform:
+      translateY(0)
+      scale(1);
+
+  }
 
 }
 
-.circle2{
+}
+.panel::before{
 
-  width:280px;
-  height:280px;
+  content:"";
 
-  background:#67e8f9;
+  position:absolute;
 
-  bottom:-80px;
-  right:-80px;
+  inset:0;
+
+  border-radius:38px;
+
+  padding:1px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,255,255,.75),
+      rgba(255,255,255,.08)
+    );
+
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+
+  -webkit-mask-composite:xor;
+
+  pointer-events:none;
+
+}
+.panel::after{
+
+  content:"";
+
+  position:absolute;
+
+  width:260px;
+  height:260px;
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(255,255,255,.18),
+      transparent 72%
+    );
+
+  top:-120px;
+  right:-120px;
+
+  pointer-events:none;
+
+}
+    .brand-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:14px;margin-bottom:18px}
+    .logo-wrap{display:flex;align-items:center;gap:10px}
+    .logo-wrap.right{justify-content:flex-end}
+    .logo-wrap img{
+
+  width:68px;
+  height:68px;
+
+  object-fit:contain;
+
+  background:
+    rgba(255,255,255,.72);
+
+  border-radius:20px;
+
+  padding:8px;
+
+  box-shadow:
+    0 12px 30px rgba(255,255,255,.16);
+
+  backdrop-filter:
+    blur(10px);
+
+}
+    .brand-center{font-weight:800;color:#1d2c7d;font-size:1.55rem;white-space:nowrap}
+
+    .title{
+
+  margin-top:10px;
+
+  text-align:center;
+
+  font-size:
+    clamp(4rem,8vw,6.2rem);
+
+  font-weight:900;
+
+  letter-spacing:6px;
+
+  line-height:1;
+
+  background:
+  linear-gradient(
+    90deg,
+    #a78bfa,
+    #8b5cf6,
+    #c4b5fd
+  );
+
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+
+  text-shadow:
+    0 8px 30px rgba(168,85,247,.35);
+letter-spacing:8px;
+font-weight:800;
+filter:
+  drop-shadow(
+    0 10px 30px rgba(168,85,247,.35)
+  );
+
+animation:
+  glowTitle 4s ease-in-out infinite;
+
+}
+@keyframes glowTitle{
+
+  0%{
+    filter:
+      drop-shadow(
+        0 10px 24px rgba(168,85,247,.28)
+      );
+  }
+
+  50%{
+    filter:
+      drop-shadow(
+        0 18px 38px rgba(168,85,247,.48)
+      );
+  }
+
+  100%{
+    filter:
+      drop-shadow(
+        0 10px 24px rgba(168,85,247,.28)
+      );
+  }
+
+}
+.btn:hover{
+
+  transform:
+    translateY(-4px) scale(1.01);
+
+  box-shadow:
+    0 24px 55px rgba(139,92,246,.45);
+
+}
+.btn:active{
+
+  transform:
+    scale(.98);
+
+}
+.input::placeholder{
+
+  color:#64748b;
+
+  font-weight:500;
+
+}
+
+ .subtitle{
+
+  text-align:center;
+
+  margin-top:8px;
+
+  font-size:1.15rem;
+
+  font-weight:700;
+
+  color:#1e3a8a;
+
+  opacity:.92;
+}
+ .desc{
+
+  text-align:center;
+
+  margin-top:10px;
+
+  color:#475569;
+
+  font-size:1rem;
+
+  line-height:1.6;
+
+  margin-bottom:22px;
+}
+
+    .form{width:min(560px,100%);margin:0 auto;display:grid;gap:10px}
+    .field{position:relative}
+    .input{
+
+  width:100%;
+
+  height:62px;
+
+  border-radius:20px;
+
+  border:
+    1px solid rgba(255,255,255,.45);
+
+  background:
+    rgba(255,255,255,.72);
+
+  backdrop-filter:
+    blur(12px);
+
+  padding:
+    0 56px;
+
+  font-size:1rem;
+
+  color:#0f172a;
+
+  font-weight:600;
+
+  transition:.25s ease;
+
+  box-shadow:
+    inset 0 1px 2px rgba(255,255,255,.4);
+
+}
+.input:focus{
+
+  outline:none;
+
+  border-color:#c084fc;
+
+  box-shadow:
+
+    0 0 0 4px rgba(192,132,252,.16),
+
+    0 10px 24px rgba(192,132,252,.14);
+
+}
+.field-icon{
+
+  position:absolute;
+
+  left:18px;
+  top:50%;
+
+  transform:translateY(-50%);
+
+  font-size:1.2rem;
+
+  opacity:.75;
+
+}
+.field-eye{
+
+  position:absolute;
+
+  right:18px;
+  top:50%;
+
+  transform:translateY(-50%);
+
+  font-size:1.2rem;
+
+  opacity:.75;
+
+  cursor:pointer;
+transition:.2s ease;
+user-select:none;
+
+}
+.field-eye:hover{
+
+  transform:
+    translateY(-50%) scale(1.08);
+
+  opacity:1;
+
+}
+ .btn{
+
+  height:60px;
+
+  border:none;
+
+  border-radius:18px;
+
+  cursor:pointer;
+
+ background:
+  linear-gradient(
+    135deg,
+    #c4b5fd,
+    #a78bfa,
+    #93c5fd
+  );
+
+  color:#fff;
+
+  font-size:1.12rem;
+
+  font-weight:800;
+
+  letter-spacing:.3px;
+
+  box-shadow:
+    0 16px 40px rgba(139,92,246,.35);
+
+  transition:.25s ease;
+
+}
+.btn:hover{
+
+  transform:
+    translateY(-3px);
+
+  box-shadow:
+    0 24px 50px rgba(139,92,246,.45);
+
+}
+    .btn:disabled{opacity:.7;cursor:not-allowed}
+    .status{min-height:24px;text-align:center;font-weight:600;color:#b91c1c}
+
+    .pill-row{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px;color:#1d2c7d;font-weight:700;font-size:.95rem}
+
+    @media(max-width:760px){
+      .panel{padding:22px 18px}
+      .brand-row{grid-template-columns:1fr}
+      .logo-wrap,.logo-wrap.right{justify-content:center}
+      .brand-center{font-size:1.5rem;text-align:center}
+      .desc{font-size:1rem}
+    }
+.hero-divider{
+
+  width:120px;
+  height:4px;
+
+  margin:18px auto 20px;
+
+  border-radius:999px;
+
+  background:
+  linear-gradient(
+    90deg,
+    #c4b5fd,
+    #a78bfa,
+    #bfdbfe
+  );
+
+  opacity:.9;
+
+  box-shadow:
+    0 0 18px rgba(168,85,247,.45);
 
 }
   </style>
 </head>
 <body>
-<div class="bg-circle circle1"></div>
-<div class="bg-circle circle2"></div>
-  <div class="wrap">
-    <div class="card">
-      <h1>Login EMR UKS</h1>
-      <p>Masuk untuk membuka dashboard UKS.</p>
-      <label for="username">Username</label>
-      <input id="username" />
-      <label for="password">Password</label>
-      <input id="password" type="password" />
-      <button id="btnLogin">Masuk</button>
-      <div id="status"></div>
+  <div class="orb o1"></div>
+  <div class="orb o2"></div>
+<div class="float-icon fi1">🩺</div>
+<div class="float-icon fi2">🏥</div>
+<div class="float-icon fi3">💊</div>
+<div class="float-icon fi4">📋</div>
+
+  <div class="panel">
+    <div class="brand-row">
+      <div class="logo-wrap">
+        <img src="/ui/assets/logo-kemensoss.png" alt="Kemensos">
+      </div>
+      <div class="brand-center">Kementerian Sosial RI</div>
+      <div class="logo-wrap right">
+        <img src="/ui/assets/logo-sekolah-rakyat.png" alt="Sekolah Rakyat">
+      </div>
+    </div>
+
+    <h1 class="title">SEHATI</h1>
+    <div class="subtitle">Sistem Pelayanan Kesehatan Digital Terintegrasi untuk Sekolah Rakyat</div>
+    <div class="hero-divider"></div>
+    <p class="desc">Smart Healthcare System for Student Care</p>
+
+    <div class="form">
+      <div class="field">
+
+  <span class="field-icon">👤</span>
+
+  <input
+    id="username"
+    class="input"
+    placeholder="Username"
+    autocomplete="username"
+  >
+
+</div>
+      <div class="field">
+
+  <span class="field-icon">🔒</span>
+
+  <input
+    id="password"
+    class="input"
+    type="password"
+    placeholder="Password"
+    autocomplete="current-password"
+  >
+
+  <span
+  class="field-eye"
+  id="togglePassword"
+>
+  👁
+</span>
+
+</div>
+      <button id="btnLogin" class="btn">Masuk</button>
+      <div id="status" class="status"></div>
+    </div>
+
+    <div class="pill-row">
+      <span>Aman</span>
+      <span>Terintegrasi</span>
+      <span>Profesional</span>
     </div>
   </div>
 
   <script>
-    const statusEl = document.getElementById("status");
+    const statusEl = document.getElementById('status');
+    const btnLogin = document.getElementById('btnLogin');
 
-    if (localStorage.getItem("access_token")) {
-      window.location.href = "/dashboard";
+    if (localStorage.getItem('access_token')) {
+      window.location.href = '/dashboard';
     }
-const btnLogin =
-  document.getElementById(
-    "btnLogin"
-  );
-    document.getElementById("btnLogin").addEventListener("click", async () => {
+
+    async function doLogin() {
       try {
-        statusEl.textContent = "";
+        statusEl.textContent = '';
+        btnLogin.disabled = true;
+        btnLogin.textContent = 'Masuk...';
+
         const payload = {
-          username: document.getElementById("username").value.trim(),
-          password: document.getElementById("password").value,
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value,
         };
-          btnLogin.disabled = true;
-          btnLogin.textContent =
-          "⏳ Masuk...";
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-        localStorage.setItem("access_token", data.access_token);
-        btnLogin.textContent =
-        "✅ Berhasil";
-        window.location.href = "/dashboard";
+
+        localStorage.setItem('access_token', data.access_token);
+        window.location.href = '/dashboard';
       } catch (err) {
         statusEl.textContent = `Login gagal: ${err.message}`;
-        statusEl.className = "err";
         btnLogin.disabled = false;
-        btnLogin.textContent =
-        "Masuk";
+        btnLogin.textContent = 'Masuk';
       }
-    });
-document.addEventListener(
-  "keydown",
-  function(event){
-
-    if(event.key === "Enter"){
-
-      btnLogin.click();
-
     }
 
-  }
+    btnLogin.addEventListener(
+  'click',
+  doLogin
 );
+
+document.addEventListener(
+  'keydown',
+  (e) => {
+
+    if(e.key === 'Enter'){
+      doLogin();
+    }
+
+});
+
+const togglePassword =
+  document.getElementById(
+    'togglePassword'
+  );
+
+const passwordInput =
+  document.getElementById(
+    'password'
+  );
+
+togglePassword.addEventListener(
+  'click',
+  () => {
+
+    const isPassword =
+      passwordInput.type === 'password';
+
+    passwordInput.type =
+      isPassword
+      ? 'text'
+      : 'password';
+
+    togglePassword.textContent =
+      isPassword
+      ? '🙈'
+      : '👁';
+
+});
   </script>
 </body>
 </html>
