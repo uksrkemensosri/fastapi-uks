@@ -174,9 +174,6 @@ def students_page() -> FileResponse:
 @app.get("/reports", response_class=FileResponse)
 def reports_page() -> FileResponse:
     return FileResponse(UI_REPORTS_PATH)
-@app.get("/settings")
-def settings_page():
-
-    return {
-        "settings": "MASUK"
-    }
+@app.get("/settings", response_class=FileResponse)
+def settings_page() -> FileResponse:
+    return FileResponse(UI_SETTINGS_PATH)

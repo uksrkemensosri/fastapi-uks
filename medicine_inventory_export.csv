@@ -1,0 +1,49 @@
+id,name,unit,stock,minimum_stock
+1,Antangin,tab,21,10
+2,Acetylcystein,Sachet,54,10
+3,Alpara,tab,300,10
+4,Ambroxol 30 mg,tab,129,10
+5,Amoxicillin 500mg,tab,10,10
+6,Antasida Doen,tab,49,10
+7,Antimo,tab,43,10
+8,Asam mefenamat,tab,122,10
+9,Attapulgite,tab,0,10
+10,Becom Zet,tab,0,10
+11,Becom C,tab,0,10
+12,Betahistine mesilate,tab,3,10
+13,Bronchitin,tab,0,10
+14,Calortusin,tab,0,10
+15,Caviplex,tab,70,10
+16,Caviplex Cdez,tab,70,10
+17,Cetirizine,tab,164,10
+18,Ciprofloxacin 500mg,tab,25,10
+19,Cortidex,tab,9,10
+20,CTM,tab,193,10
+21,Dexametasone,tab,106,10
+22,Dexteem plus,tab,95,10
+23,Dextral,tab,0,10
+24,Diapet,tab,86,10
+25,Diclofenac Sodium,tab,11,10
+26,Domperidone,tab,90,10
+27,Emturnas pct forte 650mg,tab,2,10
+28,Grantusif,tab,137,10
+29,Ibuprofen,tab,112,10
+30,Lodecon,tab,100,10
+31,Loperamide,tab,142,10
+32,Loratadine,tab,90,10
+33,Meloxicam,tab,25,10
+34,Methylprednisolone 4 mg,tab,63,10
+35,Omegdiar,tab,170,10
+36,Omeprazole 20 mg,tab,144,10
+37,Ondancentron,tab,20,10
+38,Opistan,tab,18,10
+39,Oralit,Sachet,85,10
+40,Paracetamol 500mg,tab,290,10
+41,Polycrol,pcs,148,10
+42,POT OBATPOT URINE,tab,6,10
+43,Ranitidine,tab,100,10
+44,Sangobion,tab,27,10
+45,Scopma & scopma plus,tab,0,10
+46,Selkom C,tab,0,10
+47,Spasminal,tab,117,10
+48,Tera-F,tab,80,10
