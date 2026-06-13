@@ -149,7 +149,9 @@ body.dark .table tbody tr:hover{
       <a href="/dashboard" class="menu-item">Dashboard</a>
       <a href="/students" class="menu-item">Data Siswa</a>
       <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item">CKG</a>
       <a href="/users" class="menu-item active">Pengguna</a>
+      <a href="/audit-logs" class="menu-item">Audit Log</a>
       <a href="/settings" class="menu-item">Pengaturan</a>
     </div>
 
@@ -234,6 +236,8 @@ body.dark .table tbody tr:hover{
             <th>Username</th>
             <th>Nama Lengkap</th>
             <th>Role</th>
+            <th>Status</th>
+            <th>Aksi</th>
           </tr>
         </thead>
 
@@ -345,11 +349,87 @@ console.log("USERS =", users);
         <td>${user.username}</td>
         <td>${user.full_name}</td>
         <td>${user.role}</td>
+        <td>${user.is_active ? "Aktif" : "Nonaktif"}</td>
+        <td>
+          <button class="btn btn-secondary" type="button" onclick="editUser(${user.id})">Edit</button>
+          <button class="btn btn-secondary" type="button" onclick="resetPassword(${user.id})">Reset Password</button>
+          <button class="btn btn-secondary" type="button" onclick="toggleUser(${user.id}, ${user.is_active})">
+            ${user.is_active ? "Nonaktifkan" : "Aktifkan"}
+          </button>
+        </td>
       </tr>
     `;
 
   });
 
+}
+
+async function editUser(id){
+  const users = await fetch("/api/users", {
+    headers:{ Authorization:`Bearer ${token}` }
+  }).then(res => res.json());
+  const user = users.find(item => item.id === id);
+  if(!user){ return; }
+
+  const full_name = prompt("Nama lengkap", user.full_name);
+  if(full_name === null){ return; }
+  const username = prompt("Username", user.username);
+  if(username === null){ return; }
+  const role = prompt("Role (admin/perawat)", user.role);
+  if(role === null){ return; }
+
+  const res = await fetch(`/api/users/${id}`, {
+    method:"PATCH",
+    headers:{
+      "Content-Type":"application/json",
+      Authorization:`Bearer ${token}`
+    },
+    body:JSON.stringify({
+      full_name:full_name.trim(),
+      username:username.trim(),
+      role:role.trim().toLowerCase()
+    })
+  });
+
+  if(!res.ok){
+    alert(getErrorMessage(await res.json()));
+    return;
+  }
+  loadUsers();
+}
+
+async function resetPassword(id){
+  const new_password = prompt("Password baru minimal 6 karakter");
+  if(!new_password){ return; }
+
+  const res = await fetch(`/api/users/${id}/reset-password`, {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      Authorization:`Bearer ${token}`
+    },
+    body:JSON.stringify({new_password})
+  });
+
+  if(!res.ok){
+    alert(getErrorMessage(await res.json()));
+    return;
+  }
+  alert("Password berhasil direset");
+}
+
+async function toggleUser(id, isActive){
+  const action = isActive ? "deactivate" : "activate";
+  const res = await fetch(`/api/users/${id}/${action}`, {
+    method:"POST",
+    headers:{ Authorization:`Bearer ${token}` }
+  });
+
+  if(!res.ok){
+    alert(getErrorMessage(await res.json()));
+    return;
+  }
+  loadUsers();
 }
 
 loadUsers();
@@ -470,5 +550,6 @@ async function saveUser(){
 }
 
 </script>
+<script src="/ui/assets/rbac.js?v=1" defer></script>
 </body>
 </html>

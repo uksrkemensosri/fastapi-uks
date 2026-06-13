@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CKG</title>
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
+  <style>
+    .ckg-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+    .ckg-tab{border:none;border-radius:16px;padding:12px 18px;font-weight:800;cursor:pointer;background:rgba(255,255,255,.82);color:#6d28d9}
+    .ckg-tab.active{background:linear-gradient(135deg,#f472b6,#c084fc,#60a5fa);color:white}
+    .ckg-panel{display:none}
+    .ckg-panel.active{display:block}
+    .form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}
+    .form-grid input,.form-grid select,.form-grid textarea{width:100%;padding:14px 16px;border-radius:16px;border:1px solid #dbe3ef;background:white}
+    .form-grid textarea{grid-column:span 3;min-height:90px}
+    .cards-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:22px}
+    .mini-card{background:rgba(255,255,255,.68);border:1px solid rgba(255,255,255,.55);border-radius:22px;padding:20px;box-shadow:var(--shadow)}
+    .mini-label{color:#64748b;font-weight:700;margin-bottom:8px}
+    .mini-value{font-size:2rem;font-weight:900;color:#4c1d95}
+    .station-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .table td{vertical-align:top}
+    .admin-only{display:none}
+    body[data-role="admin"] .admin-only{display:block}
+    body[data-role="admin"] tr.admin-only{display:table-row}
+    @media(max-width:900px){.form-grid{grid-template-columns:1fr}.form-grid textarea{grid-column:span 1}.topbar{flex-direction:column;align-items:flex-start}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo-area">
+      <img src="/ui/assets/logo-sekolah-rakyat.png" class="sidebar-logo" alt="">
+      <div><div class="logo-title">EMR UKS</div><div class="logo-sub">Sekolah Rakyat</div></div>
+    </div>
+    <div class="menu">
+      <a href="/dashboard" class="menu-item">Dashboard</a>
+      <a href="/students" class="menu-item">Data Siswa</a>
+      <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item active">CKG</a>
+      <a href="/users" class="menu-item">Pengguna</a>
+      <a href="/audit-logs" class="menu-item">Audit Log</a>
+      <a href="/settings" class="menu-item">Pengaturan</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>CKG</h1>
+        <p>Cek Kesehatan Gratis siswa berbasis station dan queue</p>
+      </div>
+      <div class="user-box">
+        <button class="btn btn-secondary" id="btnLogout" type="button">Logout</button>
+      </div>
+    </div>
+
+    <div class="ckg-tabs">
+      <button class="ckg-tab active" data-panel="dashboard">Dashboard</button>
+      <button class="ckg-tab" data-panel="registration">Registrasi</button>
+      <button class="ckg-tab" data-panel="queue">Queue Station</button>
+      <button class="ckg-tab admin-only" data-panel="events">Event</button>
+      <button class="ckg-tab admin-only" data-panel="assignments">Assignment</button>
+    </div>
+
+    <section class="ckg-panel active" id="panel-dashboard">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <button class="btn btn-primary" id="btnPrintCkgReport" type="button">Cetak Laporan PDF</button>
+      </div>
+      <div class="cards-grid">
+        <div class="mini-card"><div class="mini-label">Total Terdaftar</div><div class="mini-value" id="totalRegistered">0</div></div>
+        <div class="mini-card"><div class="mini-label">Completed</div><div class="mini-value" id="completed">0</div></div>
+        <div class="mini-card"><div class="mini-label">In Progress</div><div class="mini-value" id="inProgress">0</div></div>
+        <div class="mini-card"><div class="mini-label">Waiting Queue</div><div class="mini-value" id="waitingQueue">0</div></div>
+      </div>
+      <section class="card">
+        <h2>Follow-Up Rujukan</h2>
+        <table class="table">
+          <thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th></tr></thead>
+          <tbody id="referralRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="ckg-panel" id="panel-registration">
+      <section class="card">
+        <h2>Registrasi Siswa CKG</h2>
+        <div class="form-grid">
+          <input id="nis" placeholder="NIS">
+          <input id="fullName" placeholder="Nama lengkap">
+          <select id="gender"><option value="Laki-Laki">Laki-Laki</option><option value="Perempuan">Perempuan</option></select>
+          <input id="birthDate" type="date">
+          <input id="className" placeholder="Kelas">
+          <input id="section" placeholder="Section">
+          <input id="parentName" placeholder="Nama orang tua">
+        </div>
+        <button class="btn btn-primary" id="btnRegisterStudent" type="button">Daftarkan</button>
+      </section>
+      <section class="card" style="margin-top:24px;">
+        <h2>Siswa CKG</h2>
+        <table class="table">
+          <thead><tr><th>No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th></tr></thead>
+          <tbody id="studentRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="ckg-panel" id="panel-queue">
+      <section class="card">
+        <div class="form-grid">
+          <select id="stationSelect">
+            <option value="ANTROPOMETRI">Antropometri</option>
+            <option value="TTV">TTV</option>
+            <option value="VISUS">Visus</option>
+            <option value="GIGI">Gigi</option>
+            <option value="SCREENING_UMUM">Screening Umum</option>
+          </select>
+          <button class="btn btn-primary" id="btnLoadQueue" type="button">Muat Queue</button>
+        </div>
+        <table class="table">
+          <thead><tr><th>No</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th><th>Aksi</th></tr></thead>
+          <tbody id="queueRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="ckg-panel admin-only" id="panel-events">
+      <section class="card">
+        <h2>Event CKG</h2>
+        <div class="form-grid">
+          <input id="academicYear" placeholder="Tahun ajaran, contoh 2026/2027">
+          <input id="eventName" placeholder="Nama event">
+          <input id="startDate" type="date">
+          <input id="endDate" type="date">
+          <select id="eventActive"><option value="true">Aktif</option><option value="false">Tidak Aktif</option></select>
+        </div>
+        <button class="btn btn-primary" id="btnCreateEvent" type="button">Buat Event</button>
+      </section>
+    </section>
+
+    <section class="ckg-panel admin-only" id="panel-assignments">
+      <section class="card">
+        <h2>Assignment Station</h2>
+        <div class="form-grid">
+          <select id="assignmentUser"></select>
+          <select id="assignmentStation">
+            <option value="REGISTRATION">Registration</option>
+            <option value="ANTROPOMETRI">Antropometri</option>
+            <option value="TTV">TTV</option>
+            <option value="VISUS">Visus</option>
+            <option value="GIGI">Gigi</option>
+            <option value="SCREENING_UMUM">Screening Umum</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="btnAssignStation" type="button">Assign</button>
+        <table class="table" style="margin-top:22px;">
+          <thead><tr><th>User</th><th>Nama</th><th>Station</th></tr></thead>
+          <tbody id="assignmentRows"></tbody>
+        </table>
+      </section>
+    </section>
+  </main>
+</div>
+
+<script>
+const token = localStorage.getItem("access_token") || "";
+if(!token){ window.location.href = "/login"; }
+
+async function api(path, options = {}){
+  const headers = options.headers || {};
+  headers.Authorization = `Bearer ${token}`;
+  if(options.body && !headers["Content-Type"]){ headers["Content-Type"] = "application/json"; }
+  const res = await fetch(path, {...options, headers});
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok){ throw new Error(data.detail || data.message || `HTTP ${res.status}`); }
+  return data;
+}
+
+document.querySelectorAll(".ckg-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".ckg-tab").forEach(item => item.classList.remove("active"));
+    document.querySelectorAll(".ckg-panel").forEach(item => item.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(`panel-${tab.dataset.panel}`).classList.add("active");
+  });
+});
+
+async function loadDashboard(){
+  try{
+    const data = await api("/api/ckg/dashboard");
+    totalRegistered.textContent = data.total_registered;
+    completed.textContent = data.completed;
+    inProgress.textContent = data.in_progress;
+    waitingQueue.textContent = data.waiting_queue;
+    referralRows.innerHTML = data.students_needing_referral.map(s => `
+      <tr><td>${s.nis}</td><td>${s.full_name}</td><td>${s.class_name || "-"}</td><td>${s.status}</td></tr>
+    `).join("") || `<tr><td colspan="4">Belum ada rujukan</td></tr>`;
+  }catch(err){ console.warn(err.message); }
+}
+
+async function loadStudents(){
+  try{
+    const students = await api("/api/ckg/students");
+    studentRows.innerHTML = students.map(s => `
+      <tr>
+        <td>${s.queue_number || "-"}</td>
+        <td>${s.nis}</td>
+        <td>${s.full_name}</td>
+        <td>${s.class_name || "-"} ${s.section || ""}</td>
+        <td>${s.status}</td>
+        <td>${s.next_station || "-"}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="6">Belum ada siswa CKG</td></tr>`;
+  }catch(err){ console.warn(err.message); }
+}
+
+async function registerStudent(){
+  try{
+    await api("/api/ckg/students", {
+      method:"POST",
+      body:JSON.stringify({
+        nis:nis.value.trim(),
+        full_name:fullName.value.trim(),
+        gender:gender.value,
+        birth_date:birthDate.value || null,
+        class_name:className.value.trim() || null,
+        section:section.value.trim() || null,
+        parent_name:parentName.value.trim() || null
+      })
+    });
+    alert("Siswa terdaftar");
+    loadStudents();
+    loadDashboard();
+  }catch(err){ alert(err.message); }
+}
+
+async function loadQueue(){
+  try{
+    const station = stationSelect.value;
+    const queue = await api(`/api/ckg/stations/${station}/queue`);
+    queueRows.innerHTML = queue.map(item => `
+      <tr>
+        <td>${item.queue_number || "-"}</td>
+        <td>${item.student_name}</td>
+        <td>${item.class_name || "-"} ${item.section || ""}</td>
+        <td>${item.current_status}</td>
+        <td>${item.next_station || "-"}</td>
+        <td><div class="station-actions">${actionButtons(station, item.id)}</div></td>
+      </tr>
+    `).join("") || `<tr><td colspan="6">Queue kosong</td></tr>`;
+  }catch(err){ alert(err.message); }
+}
+
+function actionButtons(station, id){
+  return `
+    <button class="btn btn-secondary" type="button" onclick="submitStation('${station}', ${id})">Complete Station</button>
+    <button class="btn btn-secondary" type="button" onclick="createReferral(${id}, '${station}')">Rujukan</button>
+    <button class="btn btn-secondary" type="button" onclick="openSummary(${id})">Summary</button>
+  `;
+}
+
+async function submitStation(station, id){
+  try{
+    let path = "";
+    let body = {};
+    if(station === "ANTROPOMETRI"){
+      path = `/api/ckg/students/${id}/anthropometry`;
+      body = {weight:Number(prompt("Berat badan (kg)")), height:Number(prompt("Tinggi badan (cm)"))};
+    }else if(station === "TTV"){
+      path = `/api/ckg/students/${id}/ttv`;
+      body = {
+        blood_pressure:prompt("Tekanan darah", "120/80"),
+        pulse:Number(prompt("Nadi")),
+        respiratory_rate:Number(prompt("Respiratory rate")),
+        temperature:Number(prompt("Suhu"))
+      };
+    }else if(station === "VISUS"){
+      path = `/api/ckg/students/${id}/vision`;
+      body = {right_eye:prompt("Mata kanan", "6/6"), left_eye:prompt("Mata kiri", "6/6")};
+    }else if(station === "GIGI"){
+      path = `/api/ckg/students/${id}/dental`;
+      body = {caries:prompt("Caries", "Tidak ada"), oral_hygiene:prompt("Oral hygiene", "Baik"), notes:prompt("Catatan", "")};
+    }else{
+      path = `/api/ckg/students/${id}/general-screening`;
+      body = {physical_findings:prompt("Temuan fisik", "-"), notes:prompt("Catatan", ""), recommendation:prompt("Rekomendasi", "Sehat")};
+    }
+    await api(path, {method:"POST", body:JSON.stringify(body)});
+    if(station === "SCREENING_UMUM" && confirm("Tandai siswa COMPLETED?")){
+      await api(`/api/ckg/students/${id}/complete`, {method:"POST"});
+    }
+    loadQueue();
+    loadDashboard();
+    loadStudents();
+  }catch(err){ alert(err.message); }
+}
+
+async function createReferral(id, station){
+  try{
+    await api(`/api/ckg/students/${id}/referrals`, {
+      method:"POST",
+      body:JSON.stringify({
+        station,
+        reason:prompt("Alasan rujukan"),
+        referral_destination:prompt("Tujuan rujukan"),
+        notes:prompt("Catatan", "")
+      })
+    });
+    alert("Rujukan tersimpan");
+    loadDashboard();
+  }catch(err){ alert(err.message); }
+}
+
+function openSummary(id){
+  downloadPdf(`/api/ckg/students/${id}/summary/pdf`, `ringkasan_ckg_${id}.pdf`);
+}
+
+async function downloadPdf(path, filename){
+  try{
+    const res = await fetch(path, {
+      headers:{ Authorization:`Bearer ${token}` }
+    });
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Gagal membuat PDF");
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }catch(err){
+    alert(err.message);
+  }
+}
+
+async function createEvent(){
+  try{
+    await api("/api/ckg/events", {
+      method:"POST",
+      body:JSON.stringify({
+        academic_year:academicYear.value.trim(),
+        event_name:eventName.value.trim(),
+        start_date:startDate.value,
+        end_date:endDate.value,
+        is_active:eventActive.value === "true"
+      })
+    });
+    alert("Event CKG dibuat");
+  }catch(err){ alert(err.message); }
+}
+
+async function loadUsersAndAssignments(){
+  try{
+    const users = await api("/api/users");
+    assignmentUser.innerHTML = users.filter(u => u.is_active).map(u => `<option value="${u.id}">${u.username} - ${u.full_name}</option>`).join("");
+    const assignments = await api("/api/ckg/assignments");
+    assignmentRows.innerHTML = assignments.map(a => `<tr><td>${a.username}</td><td>${a.full_name}</td><td>${a.station}</td></tr>`).join("");
+  }catch(err){ console.warn(err.message); }
+}
+
+async function assignStation(){
+  try{
+    await api("/api/ckg/assignments", {
+      method:"POST",
+      body:JSON.stringify({user_id:Number(assignmentUser.value), station:assignmentStation.value})
+    });
+    alert("Station assigned");
+    loadUsersAndAssignments();
+  }catch(err){ alert(err.message); }
+}
+
+btnRegisterStudent.addEventListener("click", registerStudent);
+btnLoadQueue.addEventListener("click", loadQueue);
+btnCreateEvent.addEventListener("click", createEvent);
+btnAssignStation.addEventListener("click", assignStation);
+btnPrintCkgReport.addEventListener("click", () => {
+  downloadPdf("/api/ckg/report/pdf", "laporan_ckg.pdf");
+});
+
+loadDashboard();
+loadStudents();
+loadQueue();
+loadUsersAndAssignments();
+setInterval(() => {
+  loadDashboard();
+  loadStudents();
+  loadQueue();
+}, 30000);
+</script>
+<script src="/ui/assets/rbac.js?v=1" defer></script>
+</body>
+</html>

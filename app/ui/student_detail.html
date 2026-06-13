@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detail Siswa</title>
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
+  <style>
+    .tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+    .tab{border:none;border-radius:16px;padding:12px 18px;font-weight:800;cursor:pointer;background:rgba(255,255,255,.82);color:#6d28d9}
+    .tab.active{background:linear-gradient(135deg,#f472b6,#c084fc,#60a5fa);color:white}
+    .panel{display:none}
+    .panel.active{display:block}
+    .kv{display:grid;grid-template-columns:180px 1fr;gap:12px;margin-bottom:10px}
+    .kv strong{color:#4c1d95}
+    .actions{display:flex;gap:8px;flex-wrap:wrap}
+    @media(max-width:800px){.kv{grid-template-columns:1fr}.topbar{flex-direction:column;align-items:flex-start}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo-area">
+      <img src="/ui/assets/logo-sekolah-rakyat.png" class="sidebar-logo" alt="">
+      <div><div class="logo-title">EMR UKS</div><div class="logo-sub">Sekolah Rakyat</div></div>
+    </div>
+    <div class="menu">
+      <a href="/dashboard" class="menu-item">Dashboard</a>
+      <a href="/students" class="menu-item active">Data Siswa</a>
+      <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item">CKG</a>
+      <a href="/users" class="menu-item">Pengguna</a>
+      <a href="/audit-logs" class="menu-item">Audit Log</a>
+      <a href="/settings" class="menu-item">Pengaturan</a>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="pageTitle">Detail Siswa</h1>
+        <p>Riwayat kesehatan terpadu siswa</p>
+      </div>
+      <div class="user-box">
+        <button class="btn btn-secondary" onclick="window.location.href='/students'" type="button">Kembali</button>
+        <button class="btn btn-secondary" id="btnLogout" type="button">Logout</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-panel="biodata">Biodata</button>
+      <button class="tab" data-panel="uks">Riwayat UKS</button>
+      <button class="tab" data-panel="ckg">Riwayat CKG</button>
+      <button class="tab" data-panel="obat">Riwayat Obat</button>
+      <button class="tab" data-panel="rekomendasi">Riwayat Rekomendasi</button>
+    </div>
+
+    <section class="panel active card" id="panel-biodata"></section>
+
+    <section class="panel card" id="panel-uks">
+      <table class="table">
+        <thead><tr><th>Tanggal</th><th>Keluhan</th><th>Tindakan</th><th>Obat</th><th>Petugas</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="uksRows"></tbody>
+      </table>
+    </section>
+
+    <section class="panel card" id="panel-ckg">
+      <table class="table">
+        <thead><tr><th>Tahun</th><th>Event</th><th>Status</th><th>Tanggal</th><th>Action</th></tr></thead>
+        <tbody id="ckgRows"></tbody>
+      </table>
+    </section>
+
+    <section class="panel card" id="panel-obat">
+      <table class="table">
+        <thead><tr><th>Tanggal</th><th>Nama Obat</th><th>Jumlah</th><th>Petugas</th></tr></thead>
+        <tbody id="medicineRows"></tbody>
+      </table>
+    </section>
+
+    <section class="panel card" id="panel-rekomendasi">
+      <table class="table">
+        <thead><tr><th>Nomor Surat</th><th>Tanggal</th><th>Sumber</th><th>Action</th></tr></thead>
+        <tbody id="recommendationRows"></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script>
+const token = localStorage.getItem("access_token") || "";
+if(!token){ window.location.href = "/login"; }
+const params = new URLSearchParams(window.location.search);
+const studentId = params.get("id");
+if(!studentId){ window.location.href = "/students"; }
+
+async function api(path, options = {}){
+  const headers = options.headers || {};
+  headers.Authorization = `Bearer ${token}`;
+  if(options.body && !headers["Content-Type"]){ headers["Content-Type"] = "application/json"; }
+  const res = await fetch(path, {...options, headers});
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok){ throw new Error(data.detail || data.message || `HTTP ${res.status}`); }
+  return data;
+}
+
+async function downloadPdf(path, filename){
+  const res = await fetch(path, {headers:{Authorization:`Bearer ${token}`}});
+  if(!res.ok){ throw new Error("Gagal download PDF"); }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(item => item.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(item => item.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(`panel-${tab.dataset.panel}`).classList.add("active");
+  });
+});
+
+function dateText(value){
+  if(!value){ return "-"; }
+  return new Date(value).toLocaleDateString("id-ID");
+}
+
+async function loadHistory(){
+  try{
+    const data = await api(`/api/students/${encodeURIComponent(studentId)}/health-history`);
+    pageTitle.textContent = data.biodata.nama_lengkap || "Detail Siswa";
+    document.getElementById("panel-biodata").innerHTML = `
+      <div class="kv"><strong>NIS</strong><span>${data.biodata.nis || "-"}</span></div>
+      <div class="kv"><strong>Nama Lengkap</strong><span>${data.biodata.nama_lengkap || "-"}</span></div>
+      <div class="kv"><strong>Jenis Kelamin</strong><span>${data.biodata.jenis_kelamin || "-"}</span></div>
+      <div class="kv"><strong>Tanggal Lahir</strong><span>${data.biodata.tanggal_lahir || "-"}</span></div>
+      <div class="kv"><strong>Kelas</strong><span>${data.biodata.kelas || "-"}</span></div>
+      <div class="kv"><strong>Wali Asuh</strong><span>${data.biodata.wali_asuh || "-"}</span></div>
+      <div class="kv"><strong>Tanggal Terdaftar</strong><span>${data.biodata.tanggal_terdaftar || "-"}</span></div>
+    `;
+    uksRows.innerHTML = data.uks_visits.map(item => `
+      <tr>
+        <td>${item.tanggal || "-"}</td>
+        <td>${item.keluhan || "-"}</td>
+        <td>${item.tindakan || "-"}</td>
+        <td>${item.obat || "-"}</td>
+        <td>${item.petugas || "-"}</td>
+        <td>${item.status || "-"}</td>
+        <td><div class="actions">
+          <button class="btn btn-secondary" type="button" onclick="alert('Keluhan: ${item.keluhan || "-"}\\nTindakan: ${item.tindakan || "-"}\\nObat: ${item.obat || "-"}')">Lihat Detail</button>
+          <button class="btn btn-primary" type="button" onclick="generateUksRecommendation(${item.id})">Cetak Rekomendasi</button>
+        </div></td>
+      </tr>
+    `).join("") || `<tr><td colspan="7">Belum ada riwayat UKS</td></tr>`;
+
+    ckgRows.innerHTML = data.ckg_history.map(item => `
+      <tr>
+        <td>${item.tahun || "-"}</td>
+        <td>${item.event || "-"}</td>
+        <td>${item.status || "-"}</td>
+        <td>${dateText(item.tanggal)}</td>
+        <td><div class="actions">
+          <button class="btn btn-secondary" type="button" onclick="downloadPdf('/api/ckg/students/${item.id}/summary/pdf','ringkasan_ckg_${item.id}.pdf')">Lihat Hasil</button>
+          ${item.needs_referral ? `<button class="btn btn-primary" type="button" onclick="generateCkgRecommendation(${item.id})">Cetak Rekomendasi</button>` : ""}
+        </div></td>
+      </tr>
+    `).join("") || `<tr><td colspan="5">Belum ada riwayat CKG</td></tr>`;
+
+    medicineRows.innerHTML = data.medicine_history.map(item => `
+      <tr><td>${item.tanggal || "-"}</td><td>${item.nama_obat || "-"}</td><td>${item.jumlah || "-"}</td><td>${item.petugas || "-"}</td></tr>
+    `).join("") || `<tr><td colspan="4">Belum ada riwayat obat</td></tr>`;
+
+    recommendationRows.innerHTML = data.recommendations.map(item => `
+      <tr>
+        <td>${item.letter_number}</td>
+        <td>${dateText(item.created_at)}</td>
+        <td>${item.source_type}</td>
+        <td><div class="actions">
+          <button class="btn btn-secondary" type="button" onclick="downloadPdf('/api/recommendations/${item.id}/pdf','${item.letter_number.replaceAll('/','-')}.pdf')">Lihat PDF</button>
+          <button class="btn btn-primary" type="button" onclick="downloadPdf('/api/recommendations/${item.id}/pdf','${item.letter_number.replaceAll('/','-')}.pdf')">Download PDF</button>
+        </div></td>
+      </tr>
+    `).join("") || `<tr><td colspan="4">Belum ada surat rekomendasi</td></tr>`;
+  }catch(err){
+    alert(err.message);
+  }
+}
+
+async function generateUksRecommendation(visitId){
+  const recommendation_text = prompt("Isi rekomendasi", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.");
+  if(!recommendation_text){ return; }
+  const item = await api(`/api/recommendations/from-uks/${visitId}`, {
+    method:"POST",
+    body:JSON.stringify({recommendation_text})
+  });
+  await downloadPdf(`/api/recommendations/${item.id}/pdf`, `${item.letter_number.replaceAll("/","-")}.pdf`);
+  loadHistory();
+}
+
+async function generateCkgRecommendation(ckgStudentId){
+  const recommendation_text = prompt("Isi rekomendasi", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.");
+  if(!recommendation_text){ return; }
+  const item = await api(`/api/recommendations/from-ckg/${ckgStudentId}`, {
+    method:"POST",
+    body:JSON.stringify({recommendation_text})
+  });
+  await downloadPdf(`/api/recommendations/${item.id}/pdf`, `${item.letter_number.replaceAll("/","-")}.pdf`);
+  loadHistory();
+}
+
+loadHistory();
+</script>
+<script src="/ui/assets/rbac.js?v=1" defer></script>
+</body>
+</html>

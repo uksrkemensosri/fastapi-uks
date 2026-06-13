@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from html import escape
 import os
 import requests
 from dotenv import load_dotenv
@@ -9,13 +10,13 @@ except ImportError:  # pragma: no cover
 load_dotenv()
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy.orm import Session
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -30,6 +31,7 @@ from app.core.expert_system import NursingExpertSystem
 from app.db.dependencies import get_db
 from app.db.models import (
     AssessmentORM,
+    AuditLogORM,
     MedicineInventoryORM,
     PatientORM,
     RecommendationORM,
@@ -46,6 +48,8 @@ from app.models.schemas import (
     ComplaintStat,
     LoginRequest,
     MedicineInventoryCreate,
+    AuditLogListResponse,
+    AuditLogResponse,
     MedicineInventoryResponse,
     MedicineInventoryUpdate,
     NursingAssessment,
@@ -53,6 +57,7 @@ from app.models.schemas import (
     PatientCreate,
     PatientAssessmentsResponse,
     PatientSummary,
+    PasswordResetRequest,
     TokenResponse,
     UKSDailyReportResponse,
     UKSMedicationCreate,
@@ -62,6 +67,8 @@ from app.models.schemas import (
     UKSVisitCreate,
     UKSVisitResponse,
     UserCreate,
+    UserProfileUpdate,
+    UserUpdate,
     UserResponse,
 )
 
@@ -75,6 +82,52 @@ client = (
     if OpenAI is not None
     else None
 )
+
+ROLE_ADMIN = "admin"
+ROLE_PERAWAT = "perawat"
+
+
+def _user_response(user: UserORM) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        role=user.role,
+        is_active=user.is_active,
+        nip=getattr(user, "nip", None),
+        jabatan=getattr(user, "jabatan", None),
+        signature_image=getattr(user, "signature_image", None),
+        created_at=getattr(user, "created_at", None),
+        updated_at=getattr(user, "updated_at", None),
+    )
+
+
+def write_audit_log(
+    db: Session,
+    user: UserORM | None,
+    action: str,
+    entity_type: str,
+    entity_id: str | int | None = None,
+    details: str | None = None,
+) -> None:
+    db.add(
+        AuditLogORM(
+            user_id=user.id if user else None,
+            username=user.username if user else None,
+            action=action,
+            entity_type=entity_type,
+            entity_id=str(entity_id) if entity_id is not None else None,
+            details=details,
+        )
+    )
+
+
+def _active_admin_count(db: Session) -> int:
+    return (
+        db.query(UserORM)
+        .filter(UserORM.role == ROLE_ADMIN, UserORM.is_active.is_(True))
+        .count()
+    )
 
 
 def _build_top_complaints(visits: list[UKSVisitORM], limit: int = 5) -> list[ComplaintStat]:
@@ -111,7 +164,11 @@ def _find_inventory_by_name(db: Session, medicine_name: str) -> MedicineInventor
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
+def register_user(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> UserResponse:
     existing = db.query(UserORM).filter(UserORM.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
@@ -124,20 +181,16 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserRes
         is_active=True,
     )
     db.add(user)
+    db.flush()
+    write_audit_log(db, current_user, "create_user", "user", user.id, f"Created user {user.username}")
     db.commit()
     db.refresh(user)
 
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        full_name=user.full_name,
-        role=user.role,
-        is_active=user.is_active,
-    )
+    return _user_response(user)
 
 
 @router.post("/auth/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.query(UserORM).filter(UserORM.username == payload.username).first()
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
@@ -146,7 +199,37 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
 
     token = create_access_token(subject=str(user.id), role=user.role)
+    request.session["user"] = {
+        "id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+        "role": user.role,
+    }
+    response.set_cookie(
+        "access_token",
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+        max_age=get_access_token_expire_seconds(),
+    )
+    write_audit_log(db, user, "login", "session", user.id, "User logged in")
+    db.commit()
     return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds())
+
+
+@router.post("/auth/logout")
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> dict:
+    write_audit_log(db, current_user, "logout", "session", current_user.id, "User logged out")
+    db.commit()
+    request.session.clear()
+    response.delete_cookie("access_token")
+    return {"message": "Logged out"}
 
 
 @router.post("/auth/refresh", response_model=TokenResponse)
@@ -156,14 +239,14 @@ def refresh_token(current_user: UserORM = Depends(get_current_user)) -> TokenRes
 
 
 @router.get("/auth/me", response_model=UserResponse)
-def get_me(current_user: UserORM = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(
-        id=current_user.id,
-        username=current_user.username,
-        full_name=current_user.full_name,
-        role=current_user.role,
-        is_active=current_user.is_active,
-    )
+def get_me(request: Request, current_user: UserORM = Depends(get_current_user)) -> UserResponse:
+    request.session["user"] = {
+        "id": current_user.id,
+        "username": current_user.username,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+    }
+    return _user_response(current_user)
 
 
 @router.post("/auth/change-password")
@@ -179,6 +262,29 @@ def change_password(
     db.add(current_user)
     db.commit()
     return {"message": "Password updated successfully"}
+
+
+@router.patch("/auth/profile", response_model=UserResponse)
+def update_profile(
+    payload: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(get_current_user),
+) -> UserResponse:
+    if payload.full_name is not None:
+        current_user.full_name = payload.full_name
+    if payload.nip is not None:
+        current_user.nip = payload.nip
+    if payload.jabatan is not None:
+        current_user.jabatan = payload.jabatan
+    if payload.signature_image is not None:
+        if payload.signature_image and not payload.signature_image.startswith("data:image/"):
+            raise HTTPException(status_code=400, detail="Signature image must be a PNG/JPG data URL")
+        current_user.signature_image = payload.signature_image
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return _user_response(current_user)
 
 
 @router.post("/assessment", response_model=AssessmentResponse)
@@ -333,7 +439,7 @@ Maksimal 2 kalimat tiap bagian.
 def create_patient(
     payload: PatientCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> PatientSummary:
     existing = db.get(PatientORM, payload.id)
     if existing is not None:
@@ -348,6 +454,7 @@ def create_patient(
         birth_date=payload.birth_date,
     )
     db.add(patient)
+    write_audit_log(db, current_user, "create_patient", "patient", patient.id, f"Created patient {patient.name}")
     db.commit()
     db.refresh(patient)
     return PatientSummary(
@@ -431,10 +538,10 @@ def update_patient(
     patient_id: str,
     payload: PatientCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(
+    current_user: UserORM = Depends(
         require_roles(
-            "admin",
-            "perawat"
+            ROLE_ADMIN,
+            ROLE_PERAWAT
         )
     ),
 ):
@@ -457,6 +564,7 @@ def update_patient(
     patient.class_name = payload.class_name
     patient.birth_date = payload.birth_date
 
+    write_audit_log(db, current_user, "edit_patient", "patient", patient.id, f"Edited patient {patient.name}")
     db.commit()
     db.refresh(patient)
 
@@ -465,11 +573,28 @@ def update_patient(
         "Patient updated"
     }
 
+
+@router.delete("/patients/{patient_id}")
+def delete_patient(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    patient = db.get(PatientORM, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    patient_name = patient.name
+    db.delete(patient)
+    write_audit_log(db, current_user, "delete_patient", "patient", patient_id, f"Deleted patient {patient_name}")
+    db.commit()
+    return {"message": "Patient deleted"}
+
 @router.post("/uks/visits", response_model=UKSVisitResponse, status_code=status.HTTP_201_CREATED)
 def create_uks_visit(
     payload: UKSVisitCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UKSVisitResponse:
     patient = db.get(PatientORM, payload.patient_id)
     if patient is None:
@@ -487,6 +612,15 @@ def create_uks_visit(
         referral_status=payload.referral_status,
     )
     db.add(visit)
+    db.flush()
+    write_audit_log(
+        db,
+        current_user,
+        "create_uks_visit",
+        "uks_visit",
+        visit.id,
+        f"Created UKS visit for patient {visit.patient_id}",
+    )
     db.commit()
 
     patient = db.get(
@@ -575,12 +709,17 @@ def get_patient_visits(
 
 @router.get("/uks/visits")
 def get_all_uks_visits(
+    month: str | None = None,
     db: Session = Depends(get_db),
     _: UserORM = Depends(require_roles("admin", "perawat")),
 ):
+    query = db.query(UKSVisitORM)
+    if month:
+        month = _validate_month_yyyy_mm(month)
+        query = query.filter(UKSVisitORM.visit_date.like(f"{month}%"))
 
     visits = (
-        db.query(UKSVisitORM)
+        query
         .order_by(UKSVisitORM.id.desc())
         .all()
     )
@@ -609,7 +748,7 @@ def get_all_uks_visits(
 def delete_uks_visit(
     visit_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
 
     visit = db.get(UKSVisitORM, visit_id)
@@ -621,6 +760,7 @@ def delete_uks_visit(
         )
 
     db.delete(visit)
+    write_audit_log(db, current_user, "delete_uks_visit", "uks_visit", visit_id, "Deleted UKS visit")
     db.commit()
 
     return {"message": "Visit deleted"}
@@ -1160,6 +1300,211 @@ def get_uks_monthly_report(
     )
 
 
+def _visit_report_bounds(
+    period: str,
+    report_date: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    month: str | None,
+) -> tuple[str, str, str]:
+    if period == "daily":
+        if not report_date:
+            raise HTTPException(status_code=400, detail="date is required for daily report")
+        safe_date = _validate_date_yyyy_mm_dd(report_date)
+        return safe_date, safe_date, f"Harian {safe_date}"
+    if period == "weekly":
+        if not start_date or not end_date:
+            raise HTTPException(status_code=400, detail="start_date and end_date are required for weekly report")
+        safe_start = _validate_date_yyyy_mm_dd(start_date)
+        safe_end = _validate_date_yyyy_mm_dd(end_date)
+        if safe_start > safe_end:
+            raise HTTPException(status_code=400, detail="start_date cannot be after end_date")
+        return safe_start, safe_end, f"Mingguan {safe_start} s/d {safe_end}"
+    if period == "monthly":
+        if not month:
+            raise HTTPException(status_code=400, detail="month is required for monthly report")
+        safe_month = _validate_month_yyyy_mm(month)
+        start_dt = datetime.strptime(f"{safe_month}-01", "%Y-%m-%d")
+        if start_dt.month == 12:
+            end_dt = datetime(start_dt.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_dt = datetime(start_dt.year, start_dt.month + 1, 1) - timedelta(days=1)
+        return start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d"), f"Bulanan {safe_month}"
+    raise HTTPException(status_code=400, detail="period must be daily, weekly, or monthly")
+
+
+def _visit_report_rows(db: Session, start: str, end: str) -> list[dict]:
+    visits = (
+        db.query(UKSVisitORM)
+        .filter(UKSVisitORM.visit_date >= start)
+        .filter(UKSVisitORM.visit_date <= end)
+        .order_by(UKSVisitORM.visit_date.asc(), UKSVisitORM.id.asc())
+        .all()
+    )
+    patient_ids = [visit.patient_id for visit in visits if visit.patient_id]
+    patients = {
+        patient.id: patient
+        for patient in db.query(PatientORM).filter(PatientORM.id.in_(patient_ids)).all()
+    } if patient_ids else {}
+    rows = []
+    for visit in visits:
+        patient = patients.get(visit.patient_id)
+        rows.append(
+            {
+                "tanggal": visit.visit_date,
+                "nama_siswa": patient.name if patient else visit.patient_id,
+                "kelas": patient.class_name if patient and patient.class_name else "-",
+                "keluhan": visit.complaint or "-",
+                "diagnosa": visit.diagnosis or "-",
+                "tindakan": visit.treatment or "-",
+                "petugas": "-",
+            }
+        )
+    return rows
+
+
+def _visit_report_payload(
+    db: Session,
+    period: str,
+    report_date: str | None,
+    start_date: str | None,
+    end_date: str | None,
+    month: str | None,
+) -> dict:
+    start, end, label = _visit_report_bounds(period, report_date, start_date, end_date, month)
+    rows = _visit_report_rows(db, start, end)
+    return {
+        "period": period,
+        "label": label,
+        "start_date": start,
+        "end_date": end,
+        "total": len(rows),
+        "rows": rows,
+    }
+
+
+@router.get("/reports/uks/visits")
+def get_uks_visit_report(
+    period: str = Query(..., pattern="^(daily|weekly|monthly)$"),
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    month: str | None = None,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> dict:
+    return _visit_report_payload(db, period, date, start_date, end_date, month)
+
+
+@router.get("/reports/uks/visits/pdf")
+def get_uks_visit_report_pdf(
+    period: str = Query(..., pattern="^(daily|weekly|monthly)$"),
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    month: str | None = None,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> StreamingResponse:
+    payload = _visit_report_payload(db, period, date, start_date, end_date, month)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=28, rightMargin=28, topMargin=24, bottomMargin=24)
+    styles = getSampleStyleSheet()
+    body = styles["BodyText"]
+    body.fontSize = 7
+    body.leading = 8.5
+    title = styles["Title"]
+    title.fontSize = 14
+    elements = [
+        Paragraph("LAPORAN KUNJUNGAN UKS", title),
+        Paragraph(escape(payload["label"]), body),
+        Spacer(1, 10),
+    ]
+    headers = ["Tanggal", "Nama Siswa", "Kelas", "Keluhan", "Diagnosa", "Tindakan", "Petugas"]
+    table_rows = [[Paragraph(escape(header), body) for header in headers]]
+    for row in payload["rows"]:
+        table_rows.append([Paragraph(escape(str(row[key])), body) for key in ["tanggal", "nama_siswa", "kelas", "keluhan", "diagnosa", "tindakan", "petugas"]])
+    if len(table_rows) == 1:
+        table_rows.append([Paragraph("Tidak ada data", body), "", "", "", "", "", ""])
+    table = Table(table_rows, repeatRows=1, colWidths=[58, 130, 45, 115, 130, 235, 60])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#9ca3af")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    elements.append(table)
+    doc.build(elements)
+    buffer.seek(0)
+    filename = f"laporan_kunjungan_uks_{period}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/reports/uks/visits/excel")
+def get_uks_visit_report_excel(
+    period: str = Query(..., pattern="^(daily|weekly|monthly)$"),
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    month: str | None = None,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> StreamingResponse:
+    payload = _visit_report_payload(db, period, date, start_date, end_date, month)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Laporan Kunjungan"
+    headers = ["Tanggal", "Nama Siswa", "Kelas", "Keluhan", "Diagnosa", "Tindakan", "Petugas"]
+    sheet.append(headers)
+
+    thin = Side(style="thin", color="000000")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill(fill_type="solid", fgColor="E5E7EB")
+    header_font = Font(bold=True)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    wrap = Alignment(vertical="top", wrap_text=True)
+
+    for col, _ in enumerate(headers, start=1):
+        cell = sheet.cell(row=1, column=col)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center
+        cell.border = border
+
+    for row in payload["rows"]:
+        sheet.append([row[key] for key in ["tanggal", "nama_siswa", "kelas", "keluhan", "diagnosa", "tindakan", "petugas"]])
+
+    widths = {"A": 14, "B": 28, "C": 12, "D": 28, "E": 30, "F": 48, "G": 20}
+    for col, width in widths.items():
+        sheet.column_dimensions[col].width = width
+    for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row, min_col=1, max_col=7):
+        for cell in row:
+            cell.border = border
+            cell.alignment = center if cell.column in (1, 3, 7) else wrap
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    filename = f"laporan_kunjungan_uks_{period}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/patients/{patient_id}/assessments", response_model=PatientAssessmentsResponse)
 def get_patient_assessments(
     patient_id: str,
@@ -1256,7 +1601,7 @@ def update_uks_visit(
     visit_id: int,
     payload: UKSVisitCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
 
     visit = db.get(UKSVisitORM, visit_id)
@@ -1297,6 +1642,7 @@ def update_uks_visit(
     if payload.control_done is not None:
         visit.control_done = payload.control_done
 
+    write_audit_log(db, current_user, "edit_uks_visit", "uks_visit", visit.id, f"Edited UKS visit for patient {visit.patient_id}")
     db.commit()
     db.refresh(visit)
 
@@ -1310,6 +1656,7 @@ from datetime import date
 @router.get("/dashboard/stats")
 def dashboard_stats(
     db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
 
     total_students = db.query(PatientORM).count()
@@ -1337,7 +1684,7 @@ def dashboard_stats(
 @router.get("/users")
 def list_users(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin"))
+    _: UserORM = Depends(require_roles(ROLE_ADMIN))
 ):
 
     users = (
@@ -1353,6 +1700,8 @@ def list_users(
             "full_name": user.full_name,
             "role": user.role,
             "is_active": user.is_active,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at,
         }
         for user in users
     ]
@@ -1362,7 +1711,7 @@ def list_users(
 def create_user_from_admin(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ) -> UserResponse:
     existing = db.query(UserORM).filter(UserORM.username == payload.username).first()
     if existing:
@@ -1376,13 +1725,185 @@ def create_user_from_admin(
         is_active=True,
     )
     db.add(user)
+    db.flush()
+    write_audit_log(db, current_user, "create_user", "user", user.id, f"Created user {user.username}")
     db.commit()
     db.refresh(user)
 
-    return UserResponse(
-        id=user.id,
-        username=user.username,
-        full_name=user.full_name,
-        role=user.role,
-        is_active=user.is_active,
+    return _user_response(user)
+
+
+@router.patch("/users/{user_id}", response_model=UserResponse)
+def update_user_from_admin(
+    user_id: int,
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> UserResponse:
+    user = db.get(UserORM, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if payload.username is not None and payload.username != user.username:
+        existing = db.query(UserORM).filter(UserORM.username == payload.username).first()
+        if existing is not None:
+            raise HTTPException(status_code=400, detail="Username already exists")
+        user.username = payload.username
+
+    if payload.full_name is not None:
+        user.full_name = payload.full_name
+
+    if payload.role is not None:
+        if user.role == ROLE_ADMIN and payload.role != ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:
+            raise HTTPException(status_code=400, detail="Cannot remove the last active admin")
+        user.role = payload.role
+
+    if payload.is_active is not None:
+        if user.id == current_user.id and payload.is_active is False:
+            raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+        if user.role == ROLE_ADMIN and user.is_active and payload.is_active is False and _active_admin_count(db) <= 1:
+            raise HTTPException(status_code=400, detail="Cannot deactivate the last active admin")
+        user.is_active = payload.is_active
+
+    write_audit_log(db, current_user, "edit_user", "user", user.id, f"Edited user {user.username}")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _user_response(user)
+
+
+@router.post("/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: int,
+    payload: PasswordResetRequest,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> dict:
+    user = db.get(UserORM, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password_hash = hash_password(payload.new_password)
+    write_audit_log(db, current_user, "reset_password", "user", user.id, f"Reset password for {user.username}")
+    db.add(user)
+    db.commit()
+    return {"message": "Password reset successfully"}
+
+
+@router.post("/users/{user_id}/activate", response_model=UserResponse)
+def activate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> UserResponse:
+    user = db.get(UserORM, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = True
+    write_audit_log(db, current_user, "activate_user", "user", user.id, f"Activated user {user.username}")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _user_response(user)
+
+
+@router.post("/users/{user_id}/deactivate", response_model=UserResponse)
+def deactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> UserResponse:
+    user = db.get(UserORM, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    if user.role == ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:
+        raise HTTPException(status_code=400, detail="Cannot deactivate the last active admin")
+    user.is_active = False
+    write_audit_log(db, current_user, "deactivate_user", "user", user.id, f"Deactivated user {user.username}")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _user_response(user)
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> dict:
+    user = db.get(UserORM, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    if user.role == ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the last active admin")
+    username = user.username
+    db.delete(user)
+    write_audit_log(db, current_user, "delete_user", "user", user_id, f"Deleted user {username}")
+    db.commit()
+    return {"message": "User deleted"}
+
+
+@router.get("/audit-logs", response_model=AuditLogListResponse)
+def list_audit_logs(
+    user: str | None = None,
+    action: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    search: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> AuditLogListResponse:
+    query = db.query(AuditLogORM)
+
+    if user:
+        like_user = f"%{user.strip()}%"
+        query = query.filter(AuditLogORM.username.ilike(like_user))
+    if action:
+        query = query.filter(AuditLogORM.action == action.strip())
+    if date_from:
+        query = query.filter(AuditLogORM.timestamp >= datetime.strptime(date_from, "%Y-%m-%d"))
+    if date_to:
+        query = query.filter(AuditLogORM.timestamp < datetime.strptime(date_to, "%Y-%m-%d").replace(hour=23, minute=59, second=59))
+    if search:
+        like_search = f"%{search.strip()}%"
+        query = query.filter(
+            (AuditLogORM.username.ilike(like_search))
+            | (AuditLogORM.action.ilike(like_search))
+            | (AuditLogORM.entity_type.ilike(like_search))
+            | (AuditLogORM.entity_id.ilike(like_search))
+            | (AuditLogORM.details.ilike(like_search))
+        )
+
+    total = query.count()
+    logs = (
+        query.order_by(AuditLogORM.timestamp.desc(), AuditLogORM.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
     )
+    return AuditLogListResponse(
+        items=[
+            AuditLogResponse(
+                id=log.id,
+                user_id=log.user_id,
+                username=log.username,
+                action=log.action,
+                entity_type=log.entity_type,
+                entity_id=log.entity_id,
+                details=log.details,
+                timestamp=log.timestamp,
+            )
+            for log in logs
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+    PasswordResetRequest,

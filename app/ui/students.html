@@ -45,7 +45,9 @@
   <a href="/reports" class="menu-item">
   Laporan
 </a>
+<a href="/ckg" class="menu-item">CKG</a>
 <a href="/users" class="menu-item">Pengguna</a>
+  <a href="/audit-logs" class="menu-item">Audit Log</a>
   <a href="/settings" class="menu-item">
     Pengaturan
   </a>
@@ -639,18 +641,39 @@ overflow:auto;
       </p>
     </div>
 
-    <input
-      id="searchVisit"
-      type="text"
-      placeholder="Cari nama siswa..."
-      style="
-      max-width:320px;
-      border-radius:18px;
-      background:white;
-      border:1px solid #e2e8f0;
-      padding:16px 20px;
-    "
-    >
+    <div style="
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+      align-items:center;
+    ">
+      <input
+        id="visitMonthFilter"
+        type="month"
+        title="Filter bulan kunjungan"
+        style="
+        width:180px;
+        border-radius:18px;
+        background:white;
+        border:1px solid #e2e8f0;
+        padding:16px 20px;
+      "
+      >
+
+      <input
+        id="searchVisit"
+        type="text"
+        placeholder="Cari nama siswa..."
+        style="
+        max-width:320px;
+        border-radius:18px;
+        background:white;
+        border:1px solid #e2e8f0;
+        padding:16px 20px;
+      "
+      >
+    </div>
 
   </div>
 
@@ -2535,6 +2558,12 @@ if(keyword.length < 2){
               >
                 Edit
               </button>
+              <button
+                class="action-btn history-btn"
+                onclick="window.location.href='/student-detail?id=${patient.id}'"
+              >
+                Detail
+              </button>
 
             </td>
 
@@ -3088,5 +3117,6 @@ window.print();
 
 };
 </script>
+<script src="/ui/assets/rbac.js?v=1" defer></script>
 </body>
 </html>

@@ -71,7 +71,9 @@
       <a href="/dashboard" class="menu-item">Dashboard</a>
       <a href="/students" class="menu-item">Data Siswa</a>
       <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item">CKG</a>
       <a href="/users" class="menu-item">Pengguna</a>
+      <a href="/audit-logs" class="menu-item">Audit Log</a>
       <a href="/settings" class="menu-item active">Pengaturan</a>
     </div>
   </aside>
@@ -96,7 +98,7 @@
 
   <div class="form-group">
     <label>Nama Lengkap</label>
-    <input id="fullName" type="text" readonly>
+    <input id="fullName" type="text">
   </div>
 
   <div class="form-group">
@@ -108,6 +110,29 @@
     <label>Role</label>
     <input id="role" type="text" readonly>
   </div>
+
+  <div class="form-group">
+    <label>NIP</label>
+    <input id="nip" type="text">
+  </div>
+
+  <div class="form-group">
+    <label>Jabatan</label>
+    <input id="jabatan" type="text" placeholder="Perawat Pemeriksa">
+  </div>
+
+  <div class="form-group">
+    <label>Upload Tanda Tangan (PNG/JPG)</label>
+    <input id="signatureFile" type="file" accept="image/png,image/jpeg">
+  </div>
+
+  <div class="form-group">
+    <img id="signaturePreview" alt="" style="max-width:220px;display:none;border-radius:12px;background:white;padding:8px;">
+  </div>
+
+  <button class="btn btn-primary" id="btnSaveProfile" type="button">
+    Simpan Profil
+  </button>
 
 </section>
 
@@ -142,6 +167,7 @@
 <script>
 const token = localStorage.getItem('access_token') || '';
 if(!token){ window.location.href = '/login'; }
+let signatureImage = null;
 
 document.getElementById('btnLogout').addEventListener('click',()=>{
   localStorage.removeItem('access_token');
@@ -206,9 +232,61 @@ async function loadProfile(){
   document.getElementById('role').value =
     user.role || '';
 
+  document.getElementById('nip').value =
+    user.nip || '';
+
+  document.getElementById('jabatan').value =
+    user.jabatan || '';
+
+  signatureImage = user.signature_image || null;
+  if(signatureImage){
+    signaturePreview.src = signatureImage;
+    signaturePreview.style.display = 'block';
+  }
+
 }
 
 loadProfile();
+
+signatureFile.addEventListener('change', () => {
+  const file = signatureFile.files[0];
+  if(!file){ return; }
+  if(!['image/png','image/jpeg'].includes(file.type)){
+    alert('Tanda tangan harus PNG atau JPG.');
+    signatureFile.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    signatureImage = reader.result;
+    signaturePreview.src = signatureImage;
+    signaturePreview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
+btnSaveProfile.addEventListener('click', async () => {
+  const res = await fetch('/api/auth/profile', {
+    method:'PATCH',
+    headers:{
+      'Content-Type':'application/json',
+      Authorization:`Bearer ${token}`
+    },
+    body:JSON.stringify({
+      full_name:fullName.value.trim(),
+      nip:nip.value.trim(),
+      jabatan:jabatan.value.trim(),
+      signature_image:signatureImage
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok){
+    alert(data.detail || 'Gagal menyimpan profil');
+    return;
+  }
+  alert('Profil tersimpan');
+});
+
 document
 .getElementById('btnChangePassword')
 .addEventListener('click', async()=>{
@@ -279,5 +357,6 @@ document
 
 });
 </script>
+<script src="/ui/assets/rbac.js?v=1" defer></script>
 </body>
 </html>

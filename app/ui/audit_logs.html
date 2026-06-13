@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit Log</title>
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
+  <style>
+    .filters{
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:12px;
+      margin-bottom:18px;
+    }
+    .filters input{
+      min-width:0;
+      padding:14px 16px;
+      border:1px solid #dbe3ef;
+      border-radius:14px;
+      background:white;
+    }
+    .topbar-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+    .audit-table td{vertical-align:top;word-break:break-word;}
+    .pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:18px;}
+    @media(max-width:900px){.filters{grid-template-columns:1fr}.topbar{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo-area">
+      <img src="/ui/assets/logo-sekolah-rakyat.png" class="sidebar-logo" alt="">
+      <div><div class="logo-title">EMR UKS</div><div class="logo-sub">Sekolah Rakyat</div></div>
+    </div>
+    <div class="menu">
+      <a href="/dashboard" class="menu-item">Dashboard</a>
+      <a href="/students" class="menu-item">Data Siswa</a>
+      <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item">CKG</a>
+      <a href="/users" class="menu-item">Pengguna</a>
+      <a href="/audit-logs" class="menu-item active">Audit Log</a>
+      <a href="/settings" class="menu-item">Pengaturan</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Audit Log</h1>
+        <p>Riwayat aktivitas sistem dan perubahan data</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary" id="btnLogout" type="button">Logout</button>
+      </div>
+    </div>
+
+    <section class="card">
+      <div class="filters">
+        <input id="filterUser" placeholder="User">
+        <input id="filterAction" placeholder="Action">
+        <input id="filterFrom" type="date">
+        <input id="filterTo" type="date">
+        <input id="filterSearch" placeholder="Search">
+      </div>
+      <button class="btn btn-primary" id="btnFilter" type="button">Filter</button>
+    </section>
+
+    <section class="card users-card" style="margin-top:24px;">
+      <table class="table audit-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Entity</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody id="auditTable"></tbody>
+      </table>
+      <div class="pager">
+        <button class="btn btn-secondary" id="prevPage" type="button">Sebelumnya</button>
+        <span id="pageInfo"></span>
+        <button class="btn btn-secondary" id="nextPage" type="button">Berikutnya</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const token = localStorage.getItem("access_token") || "";
+if(!token){ window.location.href = "/login"; }
+let page = 1;
+const pageSize = 20;
+
+function value(id){ return document.getElementById(id).value.trim(); }
+
+async function loadAuditLogs(){
+  const params = new URLSearchParams({
+    page:String(page),
+    page_size:String(pageSize)
+  });
+  if(value("filterUser")) params.set("user", value("filterUser"));
+  if(value("filterAction")) params.set("action", value("filterAction"));
+  if(value("filterFrom")) params.set("date_from", value("filterFrom"));
+  if(value("filterTo")) params.set("date_to", value("filterTo"));
+  if(value("filterSearch")) params.set("search", value("filterSearch"));
+
+  const res = await fetch(`/api/audit-logs?${params.toString()}`, {
+    headers:{ Authorization:`Bearer ${token}` }
+  });
+  if(!res.ok){
+    alert("Gagal memuat audit log");
+    return;
+  }
+  const data = await res.json();
+  const tbody = document.getElementById("auditTable");
+  tbody.innerHTML = "";
+  data.items.forEach(log => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${new Date(log.timestamp).toLocaleString("id-ID")}</td>
+        <td>${log.username || "-"}</td>
+        <td>${log.action}</td>
+        <td>${log.entity_type}${log.entity_id ? " #" + log.entity_id : ""}</td>
+        <td>${log.details || "-"}</td>
+      </tr>
+    `;
+  });
+  const totalPages = Math.max(1, Math.ceil(data.total / data.page_size));
+  document.getElementById("pageInfo").textContent = `Halaman ${data.page} dari ${totalPages}`;
+  document.getElementById("prevPage").disabled = page <= 1;
+  document.getElementById("nextPage").disabled = page >= totalPages;
+}
+
+document.getElementById("btnFilter").addEventListener("click", () => {
+  page = 1;
+  loadAuditLogs();
+});
+document.getElementById("prevPage").addEventListener("click", () => {
+  if(page > 1){ page--; loadAuditLogs(); }
+});
+document.getElementById("nextPage").addEventListener("click", () => {
+  page++;
+  loadAuditLogs();
+});
+loadAuditLogs();
+</script>
+<script src="/ui/assets/rbac.js?v=1" defer></script>
+</body>
+</html>

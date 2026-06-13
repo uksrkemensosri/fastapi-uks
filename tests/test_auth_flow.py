@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,12 @@ def _auth_headers(client: TestClient) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _login_headers(client: TestClient, username: str, password: str) -> dict:
+    login = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert login.status_code == 200
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
 def test_login_returns_expiry(client: TestClient):
     res = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
     assert res.status_code == 200
@@ -40,6 +47,13 @@ def test_login_returns_expiry(client: TestClient):
     assert payload["token_type"] == "bearer"
     assert isinstance(payload["access_token"], str) and len(payload["access_token"]) > 20
     assert payload["expires_in"] == 1800
+
+
+def test_protected_ui_redirects_without_login(client: TestClient):
+    isolated = TestClient(app)
+    res = isolated.get("/dashboard", follow_redirects=False)
+    assert res.status_code == 303
+    assert res.headers["location"] == "/login"
 
 
 def test_auth_me_and_refresh(client: TestClient):
@@ -85,6 +99,13 @@ def test_register_role_normalization_and_access(client: TestClient):
     patients = client.get("/api/patients", headers=headers)
     assert patients.status_code == 200
 
+    users = client.get("/api/users", headers=headers)
+    assert users.status_code == 403
+
+    settings_page = client.get("/settings")
+    assert settings_page.status_code == 403
+    assert "Akses Ditolak" in settings_page.text
+
 
 def test_create_and_search_patient(client: TestClient):
     headers = _auth_headers(client)
@@ -101,6 +122,11 @@ def test_create_and_search_patient(client: TestClient):
     detail = client.get("/api/patients/SISWA-001", headers=headers)
     assert detail.status_code == 200
     assert detail.json()["class_name"] == "7A"
+
+    logs = client.get("/api/audit-logs?search=SISWA-001", headers=headers)
+    assert logs.status_code == 200
+    actions = {item["action"] for item in logs.json()["items"]}
+    assert "create_patient" in actions
 
 
 def test_create_and_list_uks_visits(client: TestClient):
@@ -207,3 +233,249 @@ def test_medicine_inventory_and_stock_deduction(client: TestClient):
     med = next((m for m in medicines.json() if m["id"] == medicine_id), None)
     assert med is not None
     assert med["stock"] == 16
+
+
+def test_user_crud_and_audit_log(client: TestClient):
+    headers = _auth_headers(client)
+
+    create = client.post(
+        "/api/users",
+        headers=headers,
+        json={
+            "username": "crud_user",
+            "full_name": "CRUD User",
+            "role": "perawat",
+            "password": "rahasia123",
+        },
+    )
+    assert create.status_code == 201
+    user_id = create.json()["id"]
+
+    update = client.patch(
+        f"/api/users/{user_id}",
+        headers=headers,
+        json={
+            "username": "crud_user_edit",
+            "full_name": "CRUD User Edit",
+            "role": "admin",
+        },
+    )
+    assert update.status_code == 200
+    assert update.json()["role"] == "admin"
+
+    reset = client.post(
+        f"/api/users/{user_id}/reset-password",
+        headers=headers,
+        json={"new_password": "passwordbaru"},
+    )
+    assert reset.status_code == 200
+    assert _login_headers(client, "crud_user_edit", "passwordbaru")
+
+    deactivate = client.post(f"/api/users/{user_id}/deactivate", headers=headers)
+    assert deactivate.status_code == 200
+    assert deactivate.json()["is_active"] is False
+
+    activate = client.post(f"/api/users/{user_id}/activate", headers=headers)
+    assert activate.status_code == 200
+    assert activate.json()["is_active"] is True
+
+    logs = client.get("/api/audit-logs?search=crud_user", headers=headers)
+    assert logs.status_code == 200
+    actions = {item["action"] for item in logs.json()["items"]}
+    assert {"create_user", "edit_user", "reset_password", "deactivate_user", "activate_user"} <= actions
+
+
+def test_cannot_disable_self_or_last_active_admin(client: TestClient):
+    headers = _auth_headers(client)
+    me = client.get("/api/auth/me", headers=headers).json()
+
+    deactivate_self = client.post(f"/api/users/{me['id']}/deactivate", headers=headers)
+    assert deactivate_self.status_code == 400
+    assert deactivate_self.json()["detail"] == "Cannot deactivate your own account"
+
+
+def test_ckg_event_registration_queue_and_anthropometry(client: TestClient):
+    admin_headers = _auth_headers(client)
+
+    event = client.post(
+        "/api/ckg/events",
+        headers=admin_headers,
+        json={
+            "academic_year": "2026/2027",
+            "event_name": "CKG 2026/2027",
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-10",
+            "is_active": True,
+        },
+    )
+    assert event.status_code == 201
+    assert event.json()["is_active"] is True
+
+    perawat = client.post(
+        "/api/users",
+        headers=admin_headers,
+        json={
+            "username": "ckg_antropometri",
+            "full_name": "CKG Antropometri",
+            "role": "perawat",
+            "password": "rahasia123",
+        },
+    )
+    assert perawat.status_code == 201
+    perawat_id = perawat.json()["id"]
+
+    assignment = client.post(
+        "/api/ckg/assignments",
+        headers=admin_headers,
+        json={"user_id": perawat_id, "station": "ANTROPOMETRI"},
+    )
+    assert assignment.status_code == 201
+
+    student = client.post(
+        "/api/ckg/students",
+        headers=admin_headers,
+        json={
+            "nis": "CKG-001",
+            "full_name": "Siswa CKG Satu",
+            "gender": "Laki-Laki",
+            "birth_date": "2011-01-01",
+            "class_name": "7A",
+            "section": "A",
+            "parent_name": "Orang Tua",
+        },
+    )
+    assert student.status_code == 201
+    student_id = student.json()["id"]
+    assert student.json()["status"] == "REGISTERED"
+
+    perawat_headers = _login_headers(client, "ckg_antropometri", "rahasia123")
+    queue = client.get("/api/ckg/stations/ANTROPOMETRI/queue", headers=perawat_headers)
+    assert queue.status_code == 200
+    assert queue.json()[0]["student_name"] == "Siswa CKG Satu"
+
+    forbidden_queue = client.get("/api/ckg/stations/TTV/queue", headers=perawat_headers)
+    assert forbidden_queue.status_code == 403
+
+    antropometri = client.post(
+        f"/api/ckg/students/{student_id}/anthropometry",
+        headers=perawat_headers,
+        json={"weight": 40, "height": 150},
+    )
+    assert antropometri.status_code == 200
+    assert antropometri.json()["status"] == "ANTROPOMETRI_DONE"
+    assert antropometri.json()["next_station"] == "TTV"
+
+    dashboard = client.get("/api/ckg/dashboard", headers=admin_headers)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["total_registered"] == 1
+    assert dashboard.json()["in_progress"] == 1
+    assert dashboard.json()["students_per_station"]["TTV"] == 1
+
+    summary = client.get(f"/api/ckg/students/{student_id}/summary", headers=admin_headers)
+    assert summary.status_code == 200
+    assert summary.json()["anthropometry"]["bmi"] == 17.78
+
+
+def test_health_history_recommendation_pdf_and_signature(client: TestClient):
+    headers = _auth_headers(client)
+    tiny_png = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+
+    profile = client.patch(
+        "/api/auth/profile",
+        headers=headers,
+        json={
+            "full_name": "Administrator",
+            "nip": "198700000001",
+            "jabatan": "Perawat Pemeriksa",
+            "signature_image": tiny_png,
+        },
+    )
+    assert profile.status_code == 200
+    assert profile.json()["nip"] == "198700000001"
+
+    history = client.get("/api/students/SISWA-001/health-history", headers=headers)
+    assert history.status_code == 200
+    assert history.json()["biodata"]["nis"] == "SISWA-001"
+
+    uks_recommendation = client.post(
+        "/api/recommendations/from-uks/1",
+        headers=headers,
+        json={"recommendation_text": "Pemeriksaan dokter umum lanjutan."},
+    )
+    assert uks_recommendation.status_code == 200
+    recommendation_id = uks_recommendation.json()["id"]
+    assert uks_recommendation.json()["letter_number"].startswith("SR-UKS/")
+
+    pdf = client.get(f"/api/recommendations/{recommendation_id}/pdf", headers=headers)
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+    assert len(pdf.content) > 1000
+
+    ckg_students = client.get("/api/ckg/students?q=CKG-001", headers=headers)
+    assert ckg_students.status_code == 200
+    ckg_id = ckg_students.json()[0]["id"]
+    ckg_recommendation = client.post(
+        f"/api/recommendations/from-ckg/{ckg_id}",
+        headers=headers,
+        json={"recommendation_text": "Pemeriksaan gizi lanjutan."},
+    )
+    assert ckg_recommendation.status_code == 200
+
+    recommendations = client.get("/api/recommendations?student_id=CKG-001", headers=headers)
+    assert recommendations.status_code == 200
+    assert recommendations.json()[0]["source_type"] == "CKG"
+
+
+def test_monthly_report_preview_and_pdf(client: TestClient):
+    headers = _auth_headers(client)
+
+    report = client.get("/reports/monthly?month=5&year=2026", headers=headers)
+    assert report.status_code == 200
+    payload = report.json()
+    assert payload["period"] == "Mei 2026"
+    assert payload["summary"]["total_visits"] >= 1
+    assert payload["top_students"][0]["nis"] == "SISWA-001"
+    assert payload["top_diagnoses"][0]["name"] == "Belum terdapat diagnosa dominan pada periode ini."
+    assert "Pada bulan Mei 2026" in payload["conclusion"]
+
+    pdf = client.get("/reports/monthly/pdf?month=5&year=2026", headers=headers)
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+    assert len(pdf.content) > 1000
+    assert len(re.findall(rb"/Type\s*/Page\b", pdf.content)) == 2
+
+
+def test_reports_page_keeps_legacy_visit_and_medicine_reports(client: TestClient):
+    headers = _auth_headers(client)
+
+    page = client.get("/reports", headers=headers)
+    assert page.status_code == 200
+    html = page.text
+    assert "Laporan Bulanan" in html
+    assert "Laporan Kunjungan" in html
+    assert "Laporan Obat" in html
+    assert "/api/reports/uks/visits" in html
+    assert "/api/reports/uks/visits/pdf" in html
+    assert "/api/reports/uks/visits/excel" in html
+    assert "/api/reports/medicines/pdf" in html
+
+
+def test_visit_report_preview_pdf_and_excel(client: TestClient):
+    headers = _auth_headers(client)
+
+    preview = client.get("/api/reports/uks/visits?period=monthly&month=2026-05", headers=headers)
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["total"] >= 1
+    assert {"tanggal", "nama_siswa", "kelas", "keluhan", "diagnosa", "tindakan", "petugas"} <= set(payload["rows"][0])
+
+    pdf = client.get("/api/reports/uks/visits/pdf?period=daily&date=2026-05-17", headers=headers)
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+
+    excel = client.get("/api/reports/uks/visits/excel?period=daily&date=2026-05-17", headers=headers)
+    assert excel.status_code == 200
+    assert excel.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

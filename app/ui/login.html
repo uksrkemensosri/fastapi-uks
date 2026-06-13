@@ -681,8 +681,17 @@ user-select:none;
     const statusEl = document.getElementById('status');
     const btnLogin = document.getElementById('btnLogin');
 
-    if (localStorage.getItem('access_token')) {
-      window.location.href = '/dashboard';
+    const existingToken = localStorage.getItem('access_token');
+    if (existingToken) {
+      fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${existingToken}` },
+      }).then((res) => {
+        if (res.ok) {
+          window.location.href = '/dashboard';
+        } else {
+          localStorage.removeItem('access_token');
+        }
+      });
     }
 
     async function doLogin() {

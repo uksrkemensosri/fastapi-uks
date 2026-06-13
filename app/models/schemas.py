@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -191,6 +191,24 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(default=None, min_length=3, max_length=50)
+    full_name: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    role: Optional[str] = Field(default=None, pattern="^(admin|perawat)$")
+    is_active: Optional[bool] = None
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_role(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+
+class PasswordResetRequest(BaseModel):
+    new_password: str = Field(min_length=6)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -203,6 +221,36 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     is_active: bool
+    nip: Optional[str] = None
+    jabatan: Optional[str] = None
+    signature_image: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = Field(default=None, min_length=2, max_length=100)
+    nip: Optional[str] = Field(default=None, max_length=50)
+    jabatan: Optional[str] = Field(default=None, max_length=100)
+    signature_image: Optional[str] = None
+
+
+class AuditLogResponse(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    action: str
+    entity_type: str
+    entity_id: Optional[str] = None
+    details: Optional[str] = None
+    timestamp: datetime
+
+
+class AuditLogListResponse(BaseModel):
+    items: List[AuditLogResponse]
+    total: int
+    page: int
+    page_size: int
 class SchoolSettingUpdate(BaseModel):
     school_name: Optional[str] = None
     address: Optional[str] = None

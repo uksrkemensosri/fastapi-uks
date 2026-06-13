@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -10,18 +10,25 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> UserORM:
-    if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
+    user_id = None
+    if credentials is not None:
+        token = credentials.credentials
+        try:
+            payload = parse_access_token(token)
+            user_id = payload.get("sub")
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+    else:
+        session_user = request.session.get("user") if hasattr(request, "session") else None
+        if session_user:
+            user_id = session_user.get("id")
 
-    token = credentials.credentials
-    try:
-        payload = parse_access_token(token)
-        user_id = payload.get("sub")
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
 
     user = db.get(UserORM, int(user_id)) if user_id else None
     if user is None or not user.is_active:
