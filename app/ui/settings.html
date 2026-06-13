@@ -65,12 +65,13 @@
     <div class="logo-area"><img
   src="/ui/assets/logo-sekolah-rakyat.png"
   class="sidebar-logo"alt="">
-   <div><div style="font-weight:700">EMR UKS</div><div style="font-size:.82rem;opacity:.8">Sekolah Rakyat</div></div>
+   <div><div class="logo-title">EMR UKS</div><div class="logo-sub">Sekolah Rakyat</div></div>
     </div>
     <div class="menu">
       <a href="/dashboard" class="menu-item">Dashboard</a>
       <a href="/students" class="menu-item">Data Siswa</a>
       <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/users" class="menu-item">Pengguna</a>
       <a href="/settings" class="menu-item active">Pengaturan</a>
     </div>
   </aside>
@@ -89,25 +90,49 @@
       </div>
 
     </div>
-    <section class="card settings-card">
+    <section class="card">
 
-  <div class="form-group settings-form">
-    <label>Nama Sekolah</label>
-    <input type="text">
+  <h2>Profil Saya</h2>
+
+  <div class="form-group">
+    <label>Nama Lengkap</label>
+    <input id="fullName" type="text" readonly>
   </div>
 
   <div class="form-group">
-    <label>Nama Petugas UKS</label>
-    <input type="text">
+    <label>Username</label>
+    <input id="username" type="text" readonly>
   </div>
 
   <div class="form-group">
-    <label>Nomor Telepon</label>
-    <input type="text">
+    <label>Role</label>
+    <input id="role" type="text" readonly>
   </div>
 
-  <button class="btn btn-primary">
-    Simpan Pengaturan
+</section>
+
+<br>
+
+<section class="card">
+
+  <h2>Ubah Password</h2>
+
+  <div class="form-group">
+    <label>Password Lama</label>
+    <input id="currentPassword" type="password">
+  </div>
+
+  <div class="form-group">
+    <label>Password Baru</label>
+    <input id="newPassword" type="password">
+  </div>
+
+  <button
+    class="btn btn-primary"
+    id="btnChangePassword">
+
+    Ubah Password
+
   </button>
 
 </section>
@@ -138,6 +163,120 @@ themeBtn.addEventListener('click',()=>{
   isDark
   ? '🌙'
   : '☀️';
+});
+function syncThemeButton(){
+  themeBtn.textContent =
+    document.body.classList.contains('dark')
+      ? '☀️'
+      : '🌙';
+}
+
+if(localStorage.getItem('theme') === 'true'){
+  document.body.classList.add('dark');
+  localStorage.setItem('theme', 'dark');
+}
+
+syncThemeButton();
+themeBtn.addEventListener('click', syncThemeButton);
+
+async function loadProfile(){
+
+  const res = await fetch(
+    '/api/auth/me',
+    {
+      headers:{
+        Authorization:
+          `Bearer ${token}`
+      }
+    }
+  );
+
+  if(!res.ok){
+    return;
+  }
+
+  const user = await res.json();
+
+  document.getElementById('fullName').value =
+    user.full_name || '';
+
+  document.getElementById('username').value =
+    user.username || '';
+
+  document.getElementById('role').value =
+    user.role || '';
+
+}
+
+loadProfile();
+document
+.getElementById('btnChangePassword')
+.addEventListener('click', async()=>{
+
+  const currentPassword =
+    document.getElementById(
+      'currentPassword'
+    ).value;
+
+  const newPassword =
+    document.getElementById(
+      'newPassword'
+    ).value;
+
+  const res = await fetch(
+
+    '/api/auth/change-password',
+
+    {
+      method:'POST',
+
+      headers:{
+        'Content-Type':
+          'application/json',
+
+        Authorization:
+          `Bearer ${token}`
+      },
+
+      body:JSON.stringify({
+
+        current_password:
+          currentPassword,
+
+        new_password:
+          newPassword
+
+      })
+
+    }
+
+  );
+
+  const data = await res.json();
+
+  if(res.ok){
+
+    alert(
+      'Password berhasil diubah'
+    );
+
+    document.getElementById(
+      'currentPassword'
+    ).value='';
+
+    document.getElementById(
+      'newPassword'
+    ).value='';
+
+  }else{
+
+    alert(
+      data.detail ||
+      'Gagal mengubah password'
+    );
+
+  }
+
 });
 </script>
 </body>

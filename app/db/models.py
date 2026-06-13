@@ -6,7 +6,8 @@ from sqlalchemy import (
     JSON,
     String,
     Column,
-    Date
+    Date,
+    Text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -108,11 +109,11 @@ class UKSVisitORM(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False, index=True)
     visit_date: Mapped[str] = mapped_column(String(10), nullable=False)
-    complaint: Mapped[str] = mapped_column(String(255), nullable=False)
-    examination: Mapped[str] = mapped_column(String(255), nullable=False)
-    treatment: Mapped[str] = mapped_column(String(255), nullable=False)
-    diagnosis: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    notes: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    complaint = mapped_column(String(255), nullable=False)
+    examination = mapped_column(Text, nullable=False)
+    treatment = mapped_column(Text, nullable=False)
+    diagnosis = mapped_column(Text, nullable=True)
+    notes = mapped_column(Text, nullable=True)
     referral_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
     referral_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     referral_place: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -147,3 +148,36 @@ class MedicineInventoryORM(Base):
     unit: Mapped[str] = mapped_column(String(50), nullable=False, default="tablet")
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     minimum_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+class SchoolSettingORM(Base):
+    __tablename__ = "school_settings"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        default=1
+    )
+
+    school_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
+    address: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True
+    )
+
+    logo_url: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True
+    )

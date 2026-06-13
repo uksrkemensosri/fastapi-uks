@@ -18,6 +18,19 @@ Opsional PostgreSQL via environment variable:
 $env:DATABASE_URL="postgresql+psycopg://postgres:postgres@localhost:5432/emr_keperawatan"
 ```
 
+## Migrasi SQLite ke PostgreSQL Railway
+1. Ambil `DATABASE_URL` PostgreSQL dari Railway.
+2. Jalankan migrasi. Script akan membuat backup SQLite otomatis sebelum copy data:
+```powershell
+$env:DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DB"
+.\.venv\Scripts\python.exe .\scripts\migrate_sqlite_to_postgres.py
+```
+3. Jika database Railway sudah berisi data dan ingin diganti dengan isi SQLite lokal:
+```powershell
+.\.venv\Scripts\python.exe .\scripts\migrate_sqlite_to_postgres.py --replace
+```
+4. Setelah migrasi selesai, jalankan aplikasi dengan `DATABASE_URL` yang sama agar API memakai PostgreSQL Railway.
+
 ## Jalankan
 ```powershell
 py -m venv .venv

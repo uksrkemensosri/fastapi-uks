@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pengguna</title>
+
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=11">
+  <style>
+    #btnAddUser{
+      width:auto;
+      min-width:170px;
+      position:relative;
+      z-index:2;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      text-decoration:none;
+    }
+
+    .user-form-card{
+      display:none;
+      margin-bottom:24px;
+    }
+
+    .user-form-card:target,
+    .user-form-card.is-open{
+      display:block;
+    }
+
+    .user-form-grid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:14px;
+      margin-bottom:16px;
+      max-width:100%;
+    }
+
+    .user-form-card input,
+    .user-form-card select{
+      min-width:0;
+      width:100%;
+      padding:14px 16px;
+      border:1px solid #dbe3ef;
+      border-radius:12px;
+      font-size:1rem;
+    }
+
+    @media(max-width:720px){
+      .user-form-grid{
+        grid-template-columns:1fr;
+      }
+    }
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:20px;
+  flex-wrap:wrap;
+}
+.user-form-card{
+  overflow:hidden;
+}
+
+.users-card{
+  max-width:100%;
+}
+
+.user-actions{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+.theme-toggle,
+.logout-button{
+  margin:0;
+  width:auto;
+  padding:12px 16px;
+}
+
+.logout-button{
+  padding-inline:18px;
+}
+
+body.dark{
+  background:linear-gradient(180deg,#cbd5e1,#94a3b8);
+  color:#0f172a;
+}
+
+body.dark .sidebar{
+  background:linear-gradient(180deg,#334155,#0f172a);
+}
+
+body.dark .main{
+  background:transparent;
+}
+
+body.dark .card,
+body.dark .topbar{
+  background:rgba(255,255,255,.72);
+  backdrop-filter:blur(18px);
+  border:1px solid rgba(255,255,255,.65);
+}
+
+body.dark .table tbody tr:hover{
+  background:rgba(255,255,255,.65);
+}
+
+@media(max-width:720px){
+  .user-actions{
+    width:100%;
+  }
+
+  #btnAddUser{
+    flex:1 1 220px;
+  }
+}
+
+  </style>
+</head>
+
+<body>
+
+<div class="layout">
+
+  <aside class="sidebar">
+
+    <div class="logo-area">
+      <img
+        src="/ui/assets/logo-sekolah-rakyat.png"
+        class="sidebar-logo"
+      >
+
+      <div>
+        <div style="font-weight:700">
+          EMR UKS
+        </div>
+
+        <div style="font-size:.82rem;opacity:.8">
+          Sekolah Rakyat
+        </div>
+      </div>
+
+    </div>
+
+    <div class="menu">
+      <a href="/dashboard" class="menu-item">Dashboard</a>
+      <a href="/students" class="menu-item">Data Siswa</a>
+      <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/users" class="menu-item active">Pengguna</a>
+      <a href="/settings" class="menu-item">Pengaturan</a>
+    </div>
+
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+
+      <div>
+        <h1>Pengguna</h1>
+        <p>Kelola akun petugas UKS</p>
+      </div>
+
+      <div class="user-actions">
+
+        <button
+          class="btn btn-secondary theme-toggle"
+          id="themeToggle"
+          type="button"
+          title="Mode malam"
+        >
+          🌙
+        </button>
+
+        <button
+          class="btn btn-secondary logout-button"
+          id="btnLogout"
+          type="button"
+        >
+          Logout
+        </button>
+
+        <a
+  class="btn btn-primary"
+  id="btnAddUser"
+  href="#userFormCard">
+
+  + Tambah Pengguna
+
+</a>
+
+      </div>
+
+    </div>
+
+    <section class="card user-form-card" id="userFormCard">
+
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px;">
+        <div>
+          <h2>Tambah Pengguna</h2>
+          <p style="color:#64748b;margin-top:4px;">Buat akun petugas UKS baru.</p>
+        </div>
+
+        <a href="#" class="btn" id="btnCloseInlineForm">
+          Tutup
+        </a>
+      </div>
+
+      <div class="user-form-grid">
+        <input id="fullName" placeholder="Nama Lengkap">
+        <input id="username" placeholder="Username">
+        <input id="password" type="password" placeholder="Password">
+        <select id="role">
+          <option value="perawat">Perawat</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+
+      <button class="btn btn-primary" id="btnSaveUser" type="button">
+        Simpan Pengguna
+      </button>
+
+    </section>
+
+    <section class="card users-card">
+
+      <table class="table">
+
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Nama Lengkap</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+
+        <tbody id="userTable">
+</tbody>
+
+      </table>
+
+    </section>
+
+  </main>
+
+</div>
+<script>
+
+const token =
+  localStorage.getItem("access_token");
+
+if(!token){
+  window.location.href = "/login";
+}
+
+const savedTheme =
+  localStorage.getItem("theme");
+
+if(savedTheme === "dark" || savedTheme === "true"){
+  document.body.classList.add("dark");
+  localStorage.setItem("theme", "dark");
+}
+
+const themeToggle =
+  document.getElementById("themeToggle");
+
+function updateThemeToggle(){
+  themeToggle.textContent =
+    document.body.classList.contains("dark")
+      ? "☀️"
+      : "🌙";
+}
+
+updateThemeToggle();
+
+themeToggle.addEventListener("click", () => {
+  document.body.classList.toggle("dark");
+  const isDark =
+    document.body.classList.contains("dark");
+
+  localStorage.setItem(
+    "theme",
+    isDark ? "dark" : "light"
+  );
+
+  updateThemeToggle();
+});
+
+document
+  .getElementById("btnLogout")
+  .addEventListener("click", () => {
+    localStorage.removeItem("access_token");
+    window.location.href = "/login";
+  });
+
+function getErrorMessage(payload){
+  if(Array.isArray(payload.detail)){
+    return payload.detail
+      .map(item => item.msg || item.message || "Data tidak valid")
+      .join("\n");
+  }
+
+  return payload.detail || payload.message || "Terjadi kesalahan";
+}
+
+async function loadUsers(){
+
+  const res = await fetch(
+
+    "/api/users",
+
+    {
+      headers:{
+        Authorization:
+          `Bearer ${token}`
+      }
+    }
+
+  );
+
+  if(!res.ok){
+
+    alert("Gagal memuat data pengguna");
+
+    return;
+  }
+
+  const users =
+    await res.json();
+console.log("USERS =", users);
+  const tbody =
+    document.getElementById(
+      "userTable"
+    );
+
+  tbody.innerHTML = "";
+
+  users.forEach(user => {
+
+    tbody.innerHTML += `
+      <tr>
+        <td>${user.username}</td>
+        <td>${user.full_name}</td>
+        <td>${user.role}</td>
+      </tr>
+    `;
+
+  });
+
+}
+
+loadUsers();
+const btnAddUser =
+  document.getElementById(
+    "btnAddUser"
+  );
+const btnSaveUser =
+  document.getElementById(
+    "btnSaveUser"
+  );
+const btnCloseInlineForm =
+  document.getElementById(
+    "btnCloseInlineForm"
+  );
+const userFormCard =
+  document.getElementById(
+    "userFormCard"
+  );
+
+function openUserForm() {
+
+  userFormCard.classList.add("is-open");
+
+}
+function closeUserForm(){
+
+  userFormCard.classList.remove("is-open");
+  if(location.hash === "#userFormCard"){
+    history.replaceState(null, "", location.pathname);
+  }
+}
+
+btnAddUser.addEventListener("click", () => {
+  setTimeout(openUserForm, 0);
+});
+btnSaveUser.addEventListener("click", saveUser);
+btnCloseInlineForm.addEventListener("click", (event) => {
+  event.preventDefault();
+  closeUserForm();
+});
+async function saveUser(){
+
+  const full_name =
+    document.getElementById(
+      "fullName"
+    ).value.trim();
+
+  const username =
+    document.getElementById(
+      "username"
+    ).value.trim();
+
+  const password =
+    document.getElementById(
+      "password"
+    ).value;
+
+  const role =
+    document.getElementById(
+      "role"
+    ).value;
+
+  if(!full_name || !username || !password){
+    alert("Nama lengkap, username, dan password wajib diisi.");
+    return;
+  }
+
+  const res = await fetch(
+
+    "/api/users",
+
+    {
+      method:"POST",
+
+      headers:{
+        "Content-Type":
+        "application/json",
+        Authorization:
+          `Bearer ${token}`
+      },
+
+      body:JSON.stringify({
+        full_name,
+        username,
+        password,
+        role
+      })
+    }
+
+  );
+
+  if(!res.ok){
+
+    const err =
+      await res.json();
+
+    alert(
+      getErrorMessage(err)
+    );
+
+    return;
+  }
+
+  alert(
+    "Pengguna berhasil dibuat"
+  );
+
+  closeUserForm();
+
+  document.getElementById("fullName").value = "";
+  document.getElementById("username").value = "";
+  document.getElementById("password").value = "";
+  document.getElementById("role").value = "perawat";
+
+  loadUsers();
+
+}
+
+</script>
+</body>
+</html>

@@ -203,3 +203,17 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     is_active: bool
+class SchoolSettingUpdate(BaseModel):
+    school_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    logo_url: Optional[str] = None
+
+
+class SchoolSettingResponse(BaseModel):
+    school_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    logo_url: Optional[str] = None

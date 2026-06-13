@@ -71,6 +71,7 @@ UI_LOGIN_PATH = Path(__file__).resolve().parent / "ui" / "login.html"
 UI_STUDENTS_PATH = Path(__file__).resolve().parent / "ui" / "students.html"
 UI_SETTINGS_PATH = Path(__file__).resolve().parent / "ui" / "settings.html"
 UI_REPORTS_PATH = Path(__file__).resolve().parent / "ui" / "reports.html"
+UI_USERS_PATH = Path(__file__).resolve().parent / "ui" / "users.html"
 UI_ASSETS_PATH = Path(__file__).resolve().parent / "ui" / "assets"
 
 app.mount("/ui/assets", StaticFiles(directory=UI_ASSETS_PATH), name="ui-assets")
@@ -177,3 +178,6 @@ def reports_page() -> FileResponse:
 @app.get("/settings", response_class=FileResponse)
 def settings_page() -> FileResponse:
     return FileResponse(UI_SETTINGS_PATH)
+@app.get("/users", response_class=FileResponse)
+def users_page() -> FileResponse:
+    return FileResponse(UI_USERS_PATH)

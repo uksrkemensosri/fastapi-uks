@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=99">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
 
   <style>
     *{
@@ -988,7 +988,7 @@ body.dark .activity-item{
   <a href="/reports" class="menu-item">
   Laporan
 </a>
-
+<a href="/users" class="menu-item">Pengguna</a>
  <a href="/settings" class="menu-item">
   Pengaturan
 </a>
@@ -1915,7 +1915,6 @@ async function loadRecentActivities(){
 
     visits
       .slice()
-      .reverse()
       .slice(0,5)
       .forEach(v => {
 
@@ -2006,11 +2005,8 @@ async function loadTodayPanel(){
     });
 
     const topDiagnosis =
-  (
-    Object.keys(diagnosisMap)[0]
-    || "-"
-  )
-  .slice(0,40);
+Object.entries(diagnosisMap)
+.sort((a,b)=>b[1]-a[1])[0]?.[0] || "-";
 
     document.getElementById(
       "todayDiagnosisMini"

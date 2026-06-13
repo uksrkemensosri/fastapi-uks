@@ -70,8 +70,10 @@ body.dark .sidebar{
 
     .main{
   flex:1;
+  min-width:0;
   padding:34px;
-  width:calc(100vw - 260px);
+  width:auto;
+  max-width:100%;
   overflow-x:hidden;
 background:var(--bg);
 transition:.3s;
@@ -138,11 +140,18 @@ z-index:10;
     /* GRID */
 
     .grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(380px,1fr));
-      gap:24px;
-      align-items:start;
-    }
+  display:grid;
+  grid-template-columns:
+    minmax(0,1fr)
+    minmax(0,1fr);
+  gap:28px;
+}
+
+@media (max-width:1400px){
+  .grid{
+    grid-template-columns:1fr;
+  }
+}
 
     /* CARD */
 
@@ -152,6 +161,8 @@ z-index:10;
     }
 .card{
   transition:.25s;
+  min-width:0;
+  max-width:100%;
 }
 
 .card:hover{
@@ -175,8 +186,13 @@ z-index:10;
 .form-grid{
   display:grid;
   grid-template-columns:
-    repeat(2,1fr);
+    repeat(2,minmax(0,1fr));
   gap:16px;
+  max-width:100%;
+}
+
+.form-group{
+  min-width:0;
 }
 
 @media(max-width:700px){
@@ -198,6 +214,7 @@ z-index:10;
     input,
     textarea,
     select{
+      min-width:0;
       width:100%;
       padding:14px 16px;
       border-radius:16px;
@@ -211,6 +228,7 @@ z-index:10;
 
     textarea{
   min-height:110px;
+  max-width:100%;
   resize:vertical;
 
   background:#f8fafc;
@@ -309,10 +327,47 @@ background:white;
     
     /* HISTORY TABLE */
 
+.table-scroll{
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:visible;
+}
+
+.visit-actions{
+  display:flex;
+  gap:12px;
+  margin-top:18px;
+  max-width:100%;
+}
+
+.visit-actions .btn{
+  min-width:0;
+}
+
+#btnSuggestAI{
+  flex:0 1 220px;
+}
+
+#btnCreateVisit{
+  flex:1 1 240px;
+}
+
+@media(max-width:700px){
+  .visit-actions{
+    flex-direction:column;
+  }
+
+  .visit-actions .btn{
+    width:100% !important;
+  }
+}
+
 .history-table{
   width:100%;
+  min-width:960px;
   border-collapse:separate;
   border-spacing:0 14px;
+  table-layout:fixed;
 }
 
 .history-table thead th{
@@ -355,6 +410,8 @@ z-index:2;
   border:none;
   color:#334155;
   line-height:1.7;
+  overflow-wrap:anywhere;
+  word-break:normal;
 }
 
 /* rounded row */

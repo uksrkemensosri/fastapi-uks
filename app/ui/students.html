@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/ui/assets/theme.css?v=1">
-<link rel="stylesheet" href="/ui/assets/students.css?v=1">
+<link rel="stylesheet" href="/ui/assets/students.css?v=2">
   
   
 </head>
@@ -45,7 +45,7 @@
   <a href="/reports" class="menu-item">
   Laporan
 </a>
-
+<a href="/users" class="menu-item">Pengguna</a>
   <a href="/settings" class="menu-item">
     Pengaturan
   </a>
@@ -333,6 +333,8 @@ overflow:auto;
 
         <div id="patientStatus" class="status"></div>
 
+        </div>
+
       </section>
 
       <!-- KUNJUNGAN -->
@@ -483,18 +485,13 @@ overflow:auto;
           <label>Jumlah Obat</label>
           <input id="visitMedicineQty" type="number" min="1" placeholder="Contoh: 4">
         </div>
-<div style="
-  display:flex;
-  gap:12px;
-  margin-top:18px;
-">
+<div class="visit-actions">
 
   <button
     class="btn btn-secondary"
     id="btnSuggestAI"
     style="
       margin-top:0;
-      width:40%;
     "
   >
     ✨ Cek Saran
@@ -505,7 +502,6 @@ overflow:auto;
     id="btnCreateVisit"
     style="
       margin-top:0;
-      flex:1;
     "
   >
     Simpan Kunjungan
@@ -658,7 +654,7 @@ overflow:auto;
 
   </div>
 
-  <div style="overflow-x:auto;">
+  <div class="table-scroll">
 
     <table class="history-table">
 
@@ -2496,6 +2492,8 @@ if(keyword.length < 2){
 
   container.innerHTML = `
 
+    <div class="table-scroll">
+
     <table class="history-table">
 
       <thead>
@@ -2547,6 +2545,8 @@ if(keyword.length < 2){
       </tbody>
 
     </table>
+
+    </div>
 
   `;
 
@@ -2663,17 +2663,25 @@ themeToggle.addEventListener(
       "dark"
     );
 
-    localStorage.setItem(
-      "theme",
+    const isDark =
       document.body.classList.contains(
         "dark"
-      )
+      );
+
+    localStorage.setItem(
+      "theme",
+      isDark ? "dark" : "light"
     );
+
+    themeToggle.textContent =
+      isDark ? "☀️" : "🌙";
 
   }
 );
 
 if(
+  localStorage.getItem("theme")
+  === "dark" ||
   localStorage.getItem("theme")
   === "true"
 ){
@@ -2682,7 +2690,17 @@ if(
     "dark"
   );
 
+  localStorage.setItem(
+    "theme",
+    "dark"
+  );
+
 }
+
+themeToggle.textContent =
+  document.body.classList.contains("dark")
+    ? "☀️"
+    : "🌙";
 document
 .getElementById("fabVisit")
 .addEventListener("click", () => {

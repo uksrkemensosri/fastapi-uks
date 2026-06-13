@@ -1334,3 +1334,55 @@ def dashboard_stats(
         "top_case": top_case[0] if top_case else "-",
         "active_reports": today_visits
     }
+@router.get("/users")
+def list_users(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin"))
+):
+
+    users = (
+        db.query(UserORM)
+        .order_by(UserORM.full_name.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": user.id,
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user.role,
+            "is_active": user.is_active,
+        }
+        for user in users
+    ]
+
+
+@router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user_from_admin(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin")),
+) -> UserResponse:
+    existing = db.query(UserORM).filter(UserORM.username == payload.username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already exists")
+
+    user = UserORM(
+        username=payload.username,
+        full_name=payload.full_name,
+        role=payload.role,
+        password_hash=hash_password(payload.password),
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        role=user.role,
+        is_active=user.is_active,
+    )
