@@ -11,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.recommendations import letterhead_flowable, qr_code_flowable
 from app.auth.dependencies import get_current_user, require_roles
 from app.db.dependencies import get_db
 from app.db.models import (
@@ -80,6 +81,53 @@ NEXT_STATION_BY_STATUS = {
     "SCREENING_DONE": "COMPLETED",
     "COMPLETED": None,
 }
+
+
+def append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, subtitle: str | None, styles) -> None:
+    letterhead = letterhead_flowable(doc.width)
+    if letterhead:
+        elements.append(letterhead)
+        elements.append(Spacer(1, 8))
+    elements.append(Paragraph(title, styles["Title"]))
+    if subtitle:
+        elements.append(Paragraph(subtitle, styles["Normal"]))
+    elements.append(Paragraph(f"Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+
+def append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS") -> None:
+    generated_at = datetime.now()
+    signer_name = current_user.full_name or "-"
+    signer_nip = current_user.nip or "-"
+    signer_title = current_user.jabatan or label
+    qr_payload = "\n".join(
+        [
+            f"Nama: {signer_name}",
+            f"NIP: {signer_nip}",
+            f"Jabatan: {signer_title}",
+            f"Tanggal cetak: {generated_at.strftime('%d/%m/%Y')}",
+        ]
+    )
+    signature_qr = qr_code_flowable(qr_payload, size=58)
+    signature_qr.hAlign = "RIGHT"
+    table = Table(
+        [
+            [
+                "",
+                [
+                    Paragraph(f"Bekasi, {generated_at.strftime('%d/%m/%Y')}", styles["Normal"]),
+                    Paragraph(signer_title, styles["Normal"]),
+                    signature_qr,
+                    Paragraph(signer_name, styles["Normal"]),
+                    Paragraph(f"NIP. {signer_nip}", styles["Normal"]),
+                ],
+            ]
+        ],
+        colWidths=[doc.width - 190, 190],
+    )
+    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
+    elements.append(Spacer(1, 18))
+    elements.append(table)
 
 
 def write_ckg_audit(
@@ -653,10 +701,10 @@ def dashboard(
 def event_report_pdf(
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> StreamingResponse:
     event = get_event_or_active(db, event_id)
-    dashboard_data = dashboard(event.id, db, _)
+    dashboard_data = dashboard(event.id, db, current_user)
     students = (
         db.query(CKGStudentORM)
         .filter(CKGStudentORM.event_id == event.id)
@@ -674,12 +722,14 @@ def event_report_pdf(
         bottomMargin=24,
     )
     styles = getSampleStyleSheet()
-    elements = [
-        Paragraph("Laporan CKG", styles["Title"]),
-        Paragraph(f"{event.event_name} - Tahun Ajaran {event.academic_year}", styles["Heading2"]),
-        Paragraph(f"Periode: {event.start_date} s/d {event.end_date}", styles["Normal"]),
-        Spacer(1, 12),
-    ]
+    elements = []
+    append_pdf_letterhead(
+        elements,
+        doc,
+        "LAPORAN CKG",
+        f"{event.event_name} - Tahun Ajaran {event.academic_year} | Periode: {event.start_date} s/d {event.end_date}",
+        styles,
+    )
 
     summary_rows = [
         ["Total Terdaftar", str(dashboard_data.total_registered)],
@@ -772,6 +822,7 @@ def event_report_pdf(
     )
     elements.append(Paragraph("Daftar Siswa", styles["Heading3"]))
     elements.append(table)
+    append_pdf_signature(elements, doc, current_user, styles)
     doc.build(elements)
     buffer.seek(0)
 
@@ -843,7 +894,7 @@ def student_summary(
 def student_summary_pdf(
     student_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> StreamingResponse:
     student = db.get(CKGStudentORM, student_id)
     if student is None:
@@ -851,17 +902,18 @@ def student_summary_pdf(
     summary = build_summary(student)
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=24, bottomMargin=24)
     styles = getSampleStyleSheet()
-    elements = [
-        Paragraph("Ringkasan CKG Siswa", styles["Title"]),
-        Spacer(1, 12),
-        Paragraph(f"Nama: {summary.student.full_name}", styles["Normal"]),
-        Paragraph(f"NIS: {summary.student.nis}", styles["Normal"]),
-        Paragraph(f"Kelas: {summary.student.class_name or '-'} {summary.student.section or ''}", styles["Normal"]),
-        Paragraph(f"Status: {summary.student.status}", styles["Normal"]),
-        Spacer(1, 12),
-    ]
+    elements = []
+    append_pdf_letterhead(elements, doc, "RINGKASAN CKG SISWA", f"NIS: {summary.student.nis}", styles)
+    elements.extend(
+        [
+            Paragraph(f"Nama: {summary.student.full_name}", styles["Normal"]),
+            Paragraph(f"Kelas: {summary.student.class_name or '-'} {summary.student.section or ''}", styles["Normal"]),
+            Paragraph(f"Status: {summary.student.status}", styles["Normal"]),
+            Spacer(1, 12),
+        ]
+    )
 
     rows = [["Bagian", "Hasil"]]
     rows.append(["Antropometri", str(summary.anthropometry or "-")])
@@ -871,6 +923,7 @@ def student_summary_pdf(
     rows.append(["Screening Umum", str(summary.general_screening or "-")])
     rows.append(["Rujukan", str(summary.referrals or "-")])
     elements.append(Table(rows, colWidths=[120, 360]))
+    append_pdf_signature(elements, doc, current_user, styles)
     doc.build(elements)
     buffer.seek(0)
 

@@ -272,6 +272,14 @@
   <label>Kelas</label>
   <input id="patientClass">
 </div>
+<div class="form-group">
+  <label>Nama Wali Asuh</label>
+  <input id="patientParentName" placeholder="Nama wali asuh">
+</div>
+<div class="form-group">
+  <label>Nomor HP Wali Asuh</label>
+  <input id="patientParentPhone" placeholder="Contoh: 08xxxxxxxxxx">
+</div>
            <div class="form-group">
           <label>Jenis Kelamin</label>
 
@@ -1477,6 +1485,18 @@ const body = {
     .value
     .trim(),
 
+  parent_name:
+    document
+    .getElementById("patientParentName")
+    .value
+    .trim() || null,
+
+  parent_phone:
+    document
+    .getElementById("patientParentPhone")
+    .value
+    .trim() || null,
+
   gender:
     document
     .getElementById("patientGender")
@@ -1537,6 +1557,14 @@ document.getElementById(
 
 document.getElementById(
   "patientClass"
+).value = "";
+
+document.getElementById(
+  "patientParentName"
+).value = "";
+
+document.getElementById(
+  "patientParentPhone"
 ).value = "";
 
 document.getElementById(
@@ -1774,10 +1802,16 @@ ${data.follow_up}`;
 async function loadVisits() {
 
   try {
+    const monthFilter =
+      document.getElementById("visitMonthFilter");
+    const monthQuery =
+      monthFilter && monthFilter.value
+      ? `?month=${encodeURIComponent(monthFilter.value)}`
+      : "";
 
     const data =
       await api(
-        "/api/uks/visits",
+        `/api/uks/visits${monthQuery}`,
         "GET",
         null,
         true
@@ -1805,11 +1839,11 @@ tbody.innerHTML = `
     </div>
 
     <div class="empty-title">
-      Belum ada riwayat kunjungan
+      Belum ada riwayat kunjungan bulan ini
     </div>
 
     <div class="empty-desc">
-      Data pemeriksaan UKS akan muncul di sini
+      Ganti filter bulan untuk melihat periode sebelumnya
     </div>
 
   </div>
@@ -2510,6 +2544,16 @@ document
   });
 
 });
+
+const visitMonthFilter =
+  document.getElementById("visitMonthFilter");
+
+if (visitMonthFilter) {
+  visitMonthFilter.value =
+    new Date().toISOString().slice(0, 7);
+  visitMonthFilter.addEventListener("change", loadVisits);
+}
+
 function clearVisitForm(){
 
   document.getElementById(
@@ -2713,6 +2757,16 @@ async function editPatient(id){
     "patientClass"
   ).value =
     patient.class_name || "";
+
+  document.getElementById(
+    "patientParentName"
+  ).value =
+    patient.parent_name || "";
+
+  document.getElementById(
+    "patientParentPhone"
+  ).value =
+    patient.parent_phone || "";
 
   document.getElementById(
     "patientGender"

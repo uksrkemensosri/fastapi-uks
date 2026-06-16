@@ -259,6 +259,10 @@ class PatientORM(Base):
         String,
         nullable=True
     )
+    parent_name = Column(
+        String(200),
+        nullable=True
+    )
 
     birth_date: Mapped[str | None] = mapped_column(
         String(20),

@@ -169,6 +169,68 @@ def _find_inventory_by_name(db: Session, medicine_name: str) -> MedicineInventor
     )
 
 
+def _append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, subtitle: str | None, styles) -> None:
+    letterhead = letterhead_flowable(doc.width)
+    if letterhead:
+        elements.append(letterhead)
+        elements.append(Spacer(1, 8))
+    elements.append(Paragraph(title, styles["Title"]))
+    if subtitle:
+        elements.append(Paragraph(subtitle, styles["Normal"]))
+    elements.append(
+        Paragraph(
+            f"Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}",
+            styles["Normal"],
+        )
+    )
+    elements.append(Spacer(1, 12))
+
+
+def _append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS") -> None:
+    generated_at = datetime.now()
+    signer_name = current_user.full_name or "-"
+    signer_nip = getattr(current_user, "nip", None) or "-"
+    signer_title = getattr(current_user, "jabatan", None) or label
+    qr_payload = "\n".join(
+        [
+            f"Nama: {signer_name}",
+            f"NIP: {signer_nip}",
+            f"Jabatan: {signer_title}",
+            f"Tanggal cetak: {generated_at.strftime('%d/%m/%Y')}",
+        ]
+    )
+    signature_style = styles["Normal"]
+    signature_qr = qr_code_flowable(qr_payload, size=58)
+    signature_qr.hAlign = "RIGHT"
+    table = Table(
+        [
+            [
+                "",
+                [
+                    Paragraph(f"Bekasi, {generated_at.strftime('%d/%m/%Y')}", signature_style),
+                    Paragraph(signer_title, signature_style),
+                    signature_qr,
+                    Paragraph(signer_name, signature_style),
+                    Paragraph(f"NIP. {signer_nip}", signature_style),
+                ],
+            ]
+        ],
+        colWidths=[doc.width - 190, 190],
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    elements.append(Spacer(1, 18))
+    elements.append(table)
+
+
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(
     payload: UserCreate,
@@ -463,6 +525,8 @@ def create_patient(
         gender=payload.gender,
         class_name=payload.class_name,
         birth_date=payload.birth_date,
+        parent_name=payload.parent_name,
+        parent_phone=payload.parent_phone,
     )
     db.add(patient)
     write_audit_log(db, current_user, "create_patient", "patient", patient.id, f"Created patient {patient.name}")
@@ -474,6 +538,9 @@ def create_patient(
         age=patient.age,
         gender=patient.gender,
         class_name=patient.class_name,
+        birth_date=patient.birth_date,
+        parent_name=patient.parent_name,
+        parent_phone=patient.parent_phone,
     )
 
 
@@ -498,6 +565,8 @@ def get_patients(
             gender=p.gender,
             class_name=p.class_name,
             birth_date=p.birth_date,
+            parent_name=p.parent_name,
+            parent_phone=p.parent_phone,
         )
 
         for p in patients
@@ -523,7 +592,16 @@ def search_patients(
         .all()
     )
     return [
-        PatientSummary(id=p.id, name=p.name, age=p.age, gender=p.gender, class_name=p.class_name)
+        PatientSummary(
+            id=p.id,
+            name=p.name,
+            age=p.age,
+            gender=p.gender,
+            class_name=p.class_name,
+            birth_date=p.birth_date,
+            parent_name=p.parent_name,
+            parent_phone=p.parent_phone,
+        )
         for p in patients
     ]
 
@@ -543,6 +621,9 @@ def get_patient_detail(
         age=patient.age,
         gender=patient.gender,
         class_name=patient.class_name,
+        birth_date=patient.birth_date,
+        parent_name=patient.parent_name,
+        parent_phone=patient.parent_phone,
     )
 @router.put("/patients/{patient_id}")
 def update_patient(
@@ -574,6 +655,8 @@ def update_patient(
     patient.gender = payload.gender
     patient.class_name = payload.class_name
     patient.birth_date = payload.birth_date
+    patient.parent_name = payload.parent_name
+    patient.parent_phone = payload.parent_phone
 
     write_audit_log(db, current_user, "edit_patient", "patient", patient.id, f"Edited patient {patient.name}")
     db.commit()
@@ -1074,9 +1157,13 @@ def get_medicines_report_pdf(
     styles = getSampleStyleSheet()
 
     elements = []
-    elements.append(Paragraph("Laporan Stok Obat UKS", styles["Title"]))
-    elements.append(Paragraph(f"Total item: {len(medicines)}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
+    _append_pdf_letterhead(
+        elements,
+        doc,
+        "LAPORAN STOK OBAT UKS",
+        f"Total item: {len(medicines)}",
+        styles,
+    )
 
     data = [["No", "Nama Obat", "Stok", "Satuan", "Stok Minimum", "Status"]]
     for idx, med in enumerate(medicines, start=1):
@@ -1108,49 +1195,7 @@ def get_medicines_report_pdf(
         )
     )
     elements.append(table)
-    elements.append(Spacer(1, 24))
-
-    elements.append(
-        Paragraph(
-            datetime.now().strftime(
-                "Bekasi, %d %B %Y"
-            ),
-            styles["Normal"]
-        )
-    )
-
-    elements.append(
-        Paragraph(
-            "Petugas UKS",
-            styles["Normal"]
-        )
-    )
-
-    elements.append(Spacer(1, 12))
-
-    signature = signature_image_flowable(
-        current_user
-    )
-
-    if signature:
-        elements.append(signature)
-
-    elements.append(Spacer(1, 8))
-
-    elements.append(
-        Paragraph(
-            current_user.full_name,
-            styles["Normal"]
-        )
-    )
-
-    if getattr(current_user, "nip", None):
-        elements.append(
-            Paragraph(
-                f"NIP. {current_user.nip}",
-                styles["Normal"]
-            )
-        )
+    _append_pdf_signature(elements, doc, current_user, styles)
     doc.build(elements)
     buffer.seek(0)
 
@@ -1222,33 +1267,13 @@ def get_medicine_mutation_pdf(
     styles = getSampleStyleSheet()
 
     elements = []
-    letterhead = letterhead_flowable(doc.width)
-
-    if letterhead:
-        elements.append(letterhead)
-        elements.append(Spacer(1, 10))
-        elements.append(
-            Paragraph(
-                "LAPORAN MUTASI OBAT UKS",
-                styles["Title"]
-            )
-        )
-
-        elements.append(
-            Paragraph(
-                f"Periode: {month:02d}/{year}",
-                styles["Normal"]
-            )
-        )
-    elements.append(
-        Paragraph(
-            f"Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}",
-            styles["Normal"]
-        )
+    _append_pdf_letterhead(
+        elements,
+        doc,
+        "LAPORAN MUTASI OBAT UKS",
+        f"Periode: {month:02d}/{year}",
+        styles,
     )
-
-    elements.append(Spacer(1, 12))
-    elements.append(Spacer(1, 12))
 
     data = [
         [
@@ -1290,49 +1315,7 @@ def get_medicine_mutation_pdf(
     )
 
     elements.append(table)
-
-    elements.append(Spacer(1, 24))
-
-    elements.append(
-        Paragraph(
-            datetime.now().strftime(
-                "Bekasi, %d %B %Y"
-            ),
-            styles["Normal"]
-        )
-    )
-
-    elements.append(
-        Paragraph(
-            "Petugas UKS",
-            styles["Normal"]
-        )
-    )
-
-    elements.append(Spacer(1, 12))
-
-    signature = signature_image_flowable(
-        current_user
-    )
-    if signature:
-        elements.append(signature)
-
-    elements.append(Spacer(1, 8))
-
-    elements.append(
-        Paragraph(
-            current_user.full_name,
-            styles["Normal"]
-        )
-    )
-
-    if getattr(current_user, "nip", None):
-        elements.append(
-            Paragraph(
-                f"NIP. {current_user.nip}",
-                styles["Normal"]
-            )
-        )
+    _append_pdf_signature(elements, doc, current_user, styles)
 
     doc.build(elements)
 
@@ -1683,7 +1666,7 @@ def get_uks_visit_report_pdf(
     end_date: str | None = None,
     month: str | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles("admin", "perawat")),
 ) -> StreamingResponse:
     payload = _visit_report_payload(db, period, date, start_date, end_date, month)
     buffer = BytesIO()
@@ -1694,11 +1677,14 @@ def get_uks_visit_report_pdf(
     body.leading = 8.5
     title = styles["Title"]
     title.fontSize = 14
-    elements = [
-        Paragraph("LAPORAN KUNJUNGAN UKS", title),
-        Paragraph(escape(payload["label"]), body),
-        Spacer(1, 10),
-    ]
+    elements = []
+    _append_pdf_letterhead(
+        elements,
+        doc,
+        "LAPORAN KUNJUNGAN UKS",
+        escape(payload["label"]),
+        styles,
+    )
     headers = ["Tanggal", "Nama Siswa", "Kelas", "Keluhan", "Diagnosa", "Tindakan", "Petugas"]
     table_rows = [[Paragraph(escape(header), body) for header in headers]]
     for row in payload["rows"]:
@@ -1721,6 +1707,7 @@ def get_uks_visit_report_pdf(
         )
     )
     elements.append(table)
+    _append_pdf_signature(elements, doc, current_user, styles)
     doc.build(elements)
     buffer.seek(0)
     filename = f"laporan_kunjungan_uks_{period}.pdf"

@@ -142,6 +142,7 @@ async function loadHistory(){
       <div class="kv"><strong>Tanggal Lahir</strong><span>${data.biodata.tanggal_lahir || "-"}</span></div>
       <div class="kv"><strong>Kelas</strong><span>${data.biodata.kelas || "-"}</span></div>
       <div class="kv"><strong>Wali Asuh</strong><span>${data.biodata.wali_asuh || "-"}</span></div>
+      <div class="kv"><strong>No. HP Wali Asuh</strong><span>${data.biodata.nomor_hp_wali_asuh || "-"}</span></div>
       <div class="kv"><strong>Tanggal Terdaftar</strong><span>${data.biodata.tanggal_terdaftar || "-"}</span></div>
     `;
     uksRows.innerHTML = data.uks_visits.map(item => `

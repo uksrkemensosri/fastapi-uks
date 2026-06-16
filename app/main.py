@@ -99,6 +99,16 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN jabatan VARCHAR(100)"))
             if "signature_image" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN signature_image TEXT"))
+            patient_cols = {
+                row[1]
+                for row in conn.execute(
+                    text("PRAGMA table_info(patients)")
+                ).fetchall()
+            }
+            if "parent_name" not in patient_cols:
+                conn.execute(text("ALTER TABLE patients ADD COLUMN parent_name VARCHAR(200)"))
+            if "parent_phone" not in patient_cols:
+                conn.execute(text("ALTER TABLE patients ADD COLUMN parent_phone VARCHAR(30)"))
         return
 
     if engine.dialect.name.startswith("postgresql"):
@@ -118,6 +128,8 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS nip VARCHAR(50)"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS jabatan VARCHAR(100)"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_image TEXT"))
+            conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_name VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
 
 
 ensure_database_columns()
@@ -213,6 +225,10 @@ def ensure_sqlite_columns() -> None:
         patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
         if "class_name" not in patient_cols:
             conn.execute(text("ALTER TABLE patients ADD COLUMN class_name VARCHAR(50)"))
+        if "parent_name" not in patient_cols:
+            conn.execute(text("ALTER TABLE patients ADD COLUMN parent_name VARCHAR(200)"))
+        if "parent_phone" not in patient_cols:
+            conn.execute(text("ALTER TABLE patients ADD COLUMN parent_phone VARCHAR(30)"))
 
         visit_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(uks_visits)")).fetchall()}
         if "diagnosis" not in visit_cols:

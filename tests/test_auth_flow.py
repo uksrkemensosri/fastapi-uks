@@ -113,15 +113,31 @@ def test_create_and_search_patient(client: TestClient):
     create = client.post(
         "/api/patients",
         headers=headers,
-        json={"id": "SISWA-001", "name": "Budi Santoso", "age": 12, "gender": "L", "class_name": "7A"},
+        json={
+            "id": "SISWA-001",
+            "name": "Budi Santoso",
+            "age": 12,
+            "gender": "L",
+            "class_name": "7A",
+            "parent_name": "Ibu Wali",
+            "parent_phone": "081234567890",
+        },
     )
     assert create.status_code == 201
     assert create.json()["id"] == "SISWA-001"
     assert create.json()["class_name"] == "7A"
+    assert create.json()["parent_name"] == "Ibu Wali"
+    assert create.json()["parent_phone"] == "081234567890"
 
     detail = client.get("/api/patients/SISWA-001", headers=headers)
     assert detail.status_code == 200
     assert detail.json()["class_name"] == "7A"
+    assert detail.json()["parent_name"] == "Ibu Wali"
+
+    history = client.get("/api/students/SISWA-001/health-history", headers=headers)
+    assert history.status_code == 200
+    assert history.json()["biodata"]["wali_asuh"] == "Ibu Wali"
+    assert history.json()["biodata"]["nomor_hp_wali_asuh"] == "081234567890"
 
     logs = client.get("/api/audit-logs?search=SISWA-001", headers=headers)
     assert logs.status_code == 200
@@ -233,6 +249,16 @@ def test_medicine_inventory_and_stock_deduction(client: TestClient):
     med = next((m for m in medicines.json() if m["id"] == medicine_id), None)
     assert med is not None
     assert med["stock"] == 16
+
+    stock_pdf = client.get("/api/reports/medicines/pdf", headers=headers)
+    assert stock_pdf.status_code == 200
+    assert stock_pdf.headers["content-type"].startswith("application/pdf")
+    assert len(stock_pdf.content) > 1000
+
+    mutation_pdf = client.get("/api/reports/medicine-mutation/pdf?month=5&year=2026", headers=headers)
+    assert mutation_pdf.status_code == 200
+    assert mutation_pdf.headers["content-type"].startswith("application/pdf")
+    assert len(mutation_pdf.content) > 1000
 
 
 def test_user_crud_and_audit_log(client: TestClient):
@@ -375,6 +401,16 @@ def test_ckg_event_registration_queue_and_anthropometry(client: TestClient):
     assert summary.status_code == 200
     assert summary.json()["anthropometry"]["bmi"] == 17.78
 
+    summary_pdf = client.get(f"/api/ckg/students/{student_id}/summary/pdf", headers=admin_headers)
+    assert summary_pdf.status_code == 200
+    assert summary_pdf.headers["content-type"].startswith("application/pdf")
+    assert len(summary_pdf.content) > 1000
+
+    event_pdf = client.get("/api/ckg/report/pdf", headers=admin_headers)
+    assert event_pdf.status_code == 200
+    assert event_pdf.headers["content-type"].startswith("application/pdf")
+    assert len(event_pdf.content) > 1000
+
 
 def test_health_history_recommendation_pdf_and_signature(client: TestClient):
     headers = _auth_headers(client)
@@ -465,6 +501,10 @@ def test_reports_page_keeps_legacy_visit_and_medicine_reports(client: TestClient
 
 def test_visit_report_preview_pdf_and_excel(client: TestClient):
     headers = _auth_headers(client)
+
+    filtered = client.get("/api/uks/visits?month=2026-05", headers=headers)
+    assert filtered.status_code == 200
+    assert all(item["visit_date"].startswith("2026-05") for item in filtered.json())
 
     preview = client.get("/api/reports/uks/visits?period=monthly&month=2026-05", headers=headers)
     assert preview.status_code == 200

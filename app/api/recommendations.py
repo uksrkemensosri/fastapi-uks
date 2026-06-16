@@ -195,7 +195,8 @@ def student_health_history(
             "jenis_kelamin": patient.gender,
             "tanggal_lahir": patient.birth_date,
             "kelas": patient.class_name,
-            "wali_asuh": getattr(patient, "parent_phone", None),
+            "wali_asuh": getattr(patient, "parent_name", None),
+            "nomor_hp_wali_asuh": getattr(patient, "parent_phone", None),
             "tanggal_terdaftar": None,
         },
         uks_visits=[

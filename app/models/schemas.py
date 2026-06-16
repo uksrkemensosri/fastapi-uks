@@ -37,6 +37,8 @@ class PatientSummary(BaseModel):
     gender: str
     class_name: Optional[str] = None
     birth_date: Optional[str] = None
+    parent_name: Optional[str] = None
+    parent_phone: Optional[str] = None
 
 
 class PatientCreate(BaseModel):
@@ -46,6 +48,8 @@ class PatientCreate(BaseModel):
     gender: str = Field(min_length=1, max_length=30)
     class_name: Optional[str] = Field(default=None, max_length=50)
     birth_date: Optional[str] = None
+    parent_name: Optional[str] = Field(default=None, max_length=200)
+    parent_phone: Optional[str] = Field(default=None, max_length=30)
 
 class UKSVisitCreate(BaseModel):
 
