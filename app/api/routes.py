@@ -9,6 +9,11 @@ except ImportError:  # pragma: no cover
     OpenAI = None
 load_dotenv()
 from io import BytesIO
+from app.api.recommendations import (
+    letterhead_flowable,
+    signature_image_flowable,
+    qr_code_flowable,
+)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -38,6 +43,7 @@ from app.db.models import (
     UKSMedicationORM,
     UKSVisitORM,
     UserORM,
+    MedicineTransactionORM,
 )
 from app.models.schemas import (
     AICareSuggestionRequest,
@@ -375,7 +381,7 @@ Maksimal 2 kalimat tiap bagian.
             raise RuntimeError("OpenAI SDK not installed")
 
         response = client.chat.completions.create(
-            model="openai/gpt-oss-20b:free",
+            model="openai/gpt-oss-120b:free",
             messages=[
                 {
                     "role": "user",
@@ -385,14 +391,19 @@ Maksimal 2 kalimat tiap bagian.
             temperature=0.3,
             max_tokens=200,
         )
-
+        
         result = response.choices[0].message.content
+
+        if result is None:
+           result = "AI tidak mengembalikan respons."
 
         result = result.replace("**", "")
 
     except Exception as e:
-
-        result = str(e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI Service Error: {str(e)}"
+    )
 
     diagnosis = ""
     intervention = ""
@@ -822,13 +833,18 @@ def list_patient_uks_visits(
     ]
 
 
-@router.post("/uks/visits/{visit_id}/medications", response_model=UKSMedicationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/uks/visits/{visit_id}/medications",
+    response_model=UKSMedicationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def add_uks_medication(
     visit_id: int,
     payload: UKSMedicationCreate,
     db: Session = Depends(get_db),
     _: UserORM = Depends(require_roles("admin", "perawat")),
 ) -> UKSMedicationResponse:
+
     visit = db.get(UKSVisitORM, visit_id)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
@@ -836,6 +852,7 @@ def add_uks_medication(
     inventory = _find_inventory_by_name(db, payload.medicine_name)
     if inventory is None:
         raise HTTPException(status_code=404, detail="Medicine not found in inventory")
+
     if inventory.stock < payload.quantity:
         raise HTTPException(
             status_code=400,
@@ -849,9 +866,20 @@ def add_uks_medication(
         quantity=payload.quantity,
         notes=payload.notes,
     )
+
     inventory.stock -= payload.quantity
+
+    transaction = MedicineTransactionORM(
+        medicine_name=inventory.name,
+        transaction_type="OUT",
+        quantity=payload.quantity,
+        notes=f"Kunjungan UKS #{visit_id}",
+    )
+
     db.add(medication)
     db.add(inventory)
+    db.add(transaction)
+
     db.commit()
     db.refresh(medication)
     db.refresh(inventory)
@@ -865,8 +893,6 @@ def add_uks_medication(
         notes=medication.notes,
         remaining_stock=inventory.stock,
     )
-
-
 @router.get("/uks/visits/{visit_id}/medications", response_model=list[UKSMedicationResponse])
 def list_uks_medications(
     visit_id: int,
@@ -897,23 +923,37 @@ def list_uks_medications(
     ]
 
 
-@router.post("/medicines", response_model=MedicineInventoryResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/medicines",
+    response_model=MedicineInventoryResponse,
+    status_code=status.HTTP_201_CREATED
+)
 def create_medicine_inventory(
     payload: MedicineInventoryCreate,
     db: Session = Depends(get_db),
     _: UserORM = Depends(require_roles("admin", "perawat")),
 ) -> MedicineInventoryResponse:
+
     existing = _find_inventory_by_name(
         db,
         payload.name
     )
 
-    # kalau obat sudah ada → tambah stok
+    # tambah stok jika obat sudah ada
     if existing is not None:
 
         existing.stock += payload.stock
         existing.unit = payload.unit.strip()
         existing.minimum_stock = payload.minimum_stock
+
+        transaction = MedicineTransactionORM(
+            medicine_name=existing.name,
+            transaction_type="IN",
+            quantity=payload.stock,
+            notes="Penambahan stok"
+        )
+
+        db.add(transaction)
 
         db.commit()
         db.refresh(existing)
@@ -925,12 +965,11 @@ def create_medicine_inventory(
             stock=existing.stock,
             minimum_stock=existing.minimum_stock,
             is_low_stock=(
-                existing.stock
-                <= existing.minimum_stock
+                existing.stock <= existing.minimum_stock
             ),
         )
 
-    # kalau belum ada → buat baru
+    # buat obat baru
     med = MedicineInventoryORM(
         name=payload.name.strip(),
         unit=payload.unit.strip(),
@@ -939,6 +978,16 @@ def create_medicine_inventory(
     )
 
     db.add(med)
+
+    transaction = MedicineTransactionORM(
+        medicine_name=payload.name.strip(),
+        transaction_type="IN",
+        quantity=payload.stock,
+        notes="Stok awal"
+    )
+
+    db.add(transaction)
+
     db.commit()
     db.refresh(med)
 
@@ -949,8 +998,7 @@ def create_medicine_inventory(
         stock=med.stock,
         minimum_stock=med.minimum_stock,
         is_low_stock=(
-            med.stock
-            <= med.minimum_stock
+            med.stock <= med.minimum_stock
         ),
     )
 
@@ -1007,7 +1055,9 @@ def update_medicine_inventory(
 @router.get("/reports/medicines/pdf")
 def get_medicines_report_pdf(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(
+        require_roles("admin", "perawat")
+    ),
 ) -> StreamingResponse:
     medicines = db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
 
@@ -1022,6 +1072,7 @@ def get_medicines_report_pdf(
     )
 
     styles = getSampleStyleSheet()
+
     elements = []
     elements.append(Paragraph("Laporan Stok Obat UKS", styles["Title"]))
     elements.append(Paragraph(f"Total item: {len(medicines)}", styles["Normal"]))
@@ -1057,6 +1108,49 @@ def get_medicines_report_pdf(
         )
     )
     elements.append(table)
+    elements.append(Spacer(1, 24))
+
+    elements.append(
+        Paragraph(
+            datetime.now().strftime(
+                "Bekasi, %d %B %Y"
+            ),
+            styles["Normal"]
+        )
+    )
+
+    elements.append(
+        Paragraph(
+            "Petugas UKS",
+            styles["Normal"]
+        )
+    )
+
+    elements.append(Spacer(1, 12))
+
+    signature = signature_image_flowable(
+        current_user
+    )
+
+    if signature:
+        elements.append(signature)
+
+    elements.append(Spacer(1, 8))
+
+    elements.append(
+        Paragraph(
+            current_user.full_name,
+            styles["Normal"]
+        )
+    )
+
+    if getattr(current_user, "nip", None):
+        elements.append(
+            Paragraph(
+                f"NIP. {current_user.nip}",
+                styles["Normal"]
+            )
+        )
     doc.build(elements)
     buffer.seek(0)
 
@@ -1065,8 +1159,193 @@ def get_medicines_report_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="laporan_stok_obat_uks.pdf"'},
     )
+@router.get("/reports/medicine-mutation/pdf")
+def get_medicine_mutation_pdf(
+    month: int,
+    year: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(
+    require_roles("admin", "perawat")
+    ),
+) -> StreamingResponse:
 
 
+    start_dt = datetime(year, month, 1)
+
+    end_dt = (
+        datetime(year + 1, 1, 1)
+        if month == 12
+        else datetime(year, month + 1, 1)
+)
+
+    transactions = (
+        db.query(MedicineTransactionORM)
+        .filter(MedicineTransactionORM.transaction_date >= start_dt)
+        .filter(MedicineTransactionORM.transaction_date < end_dt)
+        .order_by(MedicineTransactionORM.transaction_date.asc())
+        .all()
+)
+
+    mutation_rows = []
+
+    for trx in transactions:
+
+        stock_item = (
+            db.query(MedicineInventoryORM)
+            .filter(
+                MedicineInventoryORM.name == trx.medicine_name
+            )
+            .first()
+        )
+
+        mutation_rows.append(
+            {
+                "date": trx.transaction_date.strftime("%d-%m-%Y"),
+                "medicine": trx.medicine_name,
+                "type": "Masuk" if trx.transaction_type == "IN" else "Keluar",
+                "qty": trx.quantity,
+                "stock": stock_item.stock if stock_item else 0,
+            }
+        )
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=24,
+        rightMargin=24,
+        topMargin=24,
+        bottomMargin=24,
+    )
+
+    styles = getSampleStyleSheet()
+
+    elements = []
+    letterhead = letterhead_flowable(doc.width)
+
+    if letterhead:
+        elements.append(letterhead)
+        elements.append(Spacer(1, 10))
+        elements.append(
+            Paragraph(
+                "LAPORAN MUTASI OBAT UKS",
+                styles["Title"]
+            )
+        )
+
+        elements.append(
+            Paragraph(
+                f"Periode: {month:02d}/{year}",
+                styles["Normal"]
+            )
+        )
+    elements.append(
+        Paragraph(
+            f"Tanggal Cetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}",
+            styles["Normal"]
+        )
+    )
+
+    elements.append(Spacer(1, 12))
+    elements.append(Spacer(1, 12))
+
+    data = [
+        [
+            "No",
+            "Tanggal",
+            "Nama Obat",
+            "Jenis",
+            "Jumlah",
+            "Stok Saat Ini",
+        ]
+    ]
+
+    for idx, row in enumerate(mutation_rows, start=1):
+        data.append(
+            [
+                str(idx),
+                row["date"],
+                row["medicine"],
+                row["type"],
+                str(row["qty"]),
+                str(row["stock"]),
+            ]
+        )
+
+    table = Table(
+        data,
+        repeatRows=1,
+        colWidths=[30, 70, 210, 70, 60, 80]
+    )
+
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("GRID", (0, 0), (-1, -1), 0.6, colors.black),
+            ]
+        )
+    )
+
+    elements.append(table)
+
+    elements.append(Spacer(1, 24))
+
+    elements.append(
+        Paragraph(
+            datetime.now().strftime(
+                "Bekasi, %d %B %Y"
+            ),
+            styles["Normal"]
+        )
+    )
+
+    elements.append(
+        Paragraph(
+            "Petugas UKS",
+            styles["Normal"]
+        )
+    )
+
+    elements.append(Spacer(1, 12))
+
+    signature = signature_image_flowable(
+        current_user
+    )
+    if signature:
+        elements.append(signature)
+
+    elements.append(Spacer(1, 8))
+
+    elements.append(
+        Paragraph(
+            current_user.full_name,
+            styles["Normal"]
+        )
+    )
+
+    if getattr(current_user, "nip", None):
+        elements.append(
+            Paragraph(
+                f"NIP. {current_user.nip}",
+                styles["Normal"]
+            )
+        )
+
+    doc.build(elements)
+
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition":
+            f'attachment; filename="laporan_mutasi_obat_{year}_{month:02d}.pdf"'
+        },
+    )
 @router.patch("/uks/visits/{visit_id}/referral", response_model=UKSVisitResponse)
 def update_uks_referral(
     visit_id: int,

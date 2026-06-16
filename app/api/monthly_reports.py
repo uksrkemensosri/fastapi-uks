@@ -21,6 +21,8 @@ from app.db.models import (
     UKSMedicationORM,
     UKSVisitORM,
     UserORM,
+    MedicineInventoryORM,
+    MedicineTransactionORM,
 )
 from app.api.recommendations import letterhead_flowable, qr_code_flowable, signature_image_flowable
 
@@ -328,9 +330,10 @@ def get_monthly_report_pdf(
     elements.append(signature_table)
 
     elements.append(PageBreak())
+    elements.append(Paragraph(f"Lampiran Laporan Bulanan UKS Periode {data['period']}",ParagraphStyle("LampiranSub",parent=body,alignment=TA_CENTER)))
+    elements.append(Spacer(1, 10))
     detail = data["top_student_detail"]
     elements.append(Paragraph("RIWAYAT SISWA PALING SERING BERKUNJUNG", title))
-    elements.append(Spacer(1, 5))
     if detail:
         elements.append(Paragraph(f"{detail['name']} | NIS {detail['nis']} | Kelas {detail['class_name']} | {detail['total']} kunjungan", body))
         elements.append(Spacer(1, 4))
@@ -364,3 +367,56 @@ def get_monthly_report_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename=\"laporan_bulanan_uks_{year}_{month:02d}.pdf\"'},
     )
+@router.get("/medicine-mutation")
+def medicine_mutation_report(
+    month: int = Query(..., ge=1, le=12),
+    year: int = Query(..., ge=2000, le=2100),
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    start_dt = datetime(year, month, 1)
+    end_dt = (
+        datetime(year + 1, 1, 1)
+        if month == 12
+        else datetime(year, month + 1, 1)
+    )
+
+    transactions = (
+        db.query(MedicineTransactionORM)
+        .filter(MedicineTransactionORM.transaction_date >= start_dt)
+        .filter(MedicineTransactionORM.transaction_date < end_dt)
+        .all()
+    )
+
+    result = {}
+
+    for trx in transactions:
+
+        if trx.medicine_name not in result:
+
+            stock_item = (
+                db.query(MedicineInventoryORM)
+                .filter(
+                    MedicineInventoryORM.name
+                    == trx.medicine_name
+                )
+                .first()
+            )
+
+            result[trx.medicine_name] = {
+                "medicine_name": trx.medicine_name,
+                "in_qty": 0,
+                "out_qty": 0,
+                "current_stock":
+                    stock_item.stock
+                    if stock_item
+                    else 0,
+            }
+
+        if trx.transaction_type == "IN":
+            result[trx.medicine_name]["in_qty"] += trx.quantity
+
+        elif trx.transaction_type == "OUT":
+            result[trx.medicine_name]["out_qty"] += trx.quantity
+
+    return list(result.values())

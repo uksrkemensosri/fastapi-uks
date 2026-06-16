@@ -384,3 +384,38 @@ class SchoolSettingORM(Base):
         String(500),
         nullable=True
     )
+class MedicineTransactionORM(Base):
+    __tablename__ = "medicine_transactions"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True
+    )
+
+    medicine_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True
+    )
+
+    transaction_type: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False
+    )  # IN / OUT
+
+    quantity: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False
+    )
+
+    transaction_date: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True
+    )

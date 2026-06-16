@@ -276,9 +276,30 @@
             <div class="medicine-tools">
               <button class="btn btn-secondary" id="btnReloadMedicines" type="button">Refresh</button>
               <button class="btn btn-secondary" id="btnMedicinePdf" type="button">Download PDF Stok</button>
+              <button class="btn btn-secondary" id="btnMedicineMutationPdf" type="button">PDF Mutasi</button>
             </div>
           </div>
           <div id="medicineList" class="medicine-list">Memuat stok obat...</div>
+          <div style="margin-top:24px;">
+  <h3>Mutasi Obat Bulan Ini</h3>
+
+  <table class="mini-table" style="width:100%;">
+    <thead>
+      <tr>
+        <th>Obat</th>
+        <th>Masuk</th>
+        <th>Keluar</th>
+        <th>Stok</th>
+      </tr>
+    </thead>
+
+    <tbody id="medicineMutationRows">
+      <tr>
+        <td colspan="4">Memuat...</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
         </section>
       </div>
     </section>
@@ -487,7 +508,43 @@ async function loadMedicines(){
     medicineList.textContent = "Gagal load stok obat";
   }
 }
+async function loadMedicineMutation(){
 
+  try{
+
+    const now = new Date();
+
+    const data = await api(
+      `/reports/medicine-mutation?month=${
+        now.getMonth() + 1
+      }&year=${
+        now.getFullYear()
+      }`
+    );
+
+    medicineMutationRows.innerHTML =
+      data.map(item => `
+        <tr>
+          <td>${escapeHtml(item.medicine_name)}</td>
+          <td>${item.in_qty}</td>
+          <td>${item.out_qty}</td>
+          <td>${item.current_stock}</td>
+        </tr>
+      `).join("");
+
+  }catch(err){
+
+    medicineMutationRows.innerHTML = `
+      <tr>
+        <td colspan="4">
+          Gagal memuat data
+        </td>
+      </tr>
+    `;
+
+  }
+
+}
 async function downloadMedicinePdf(){
   try{
     const res = await fetch("/api/reports/medicines/pdf", {
@@ -508,6 +565,56 @@ async function downloadMedicinePdf(){
     showStatus("medicineStatus", err.message, false);
   }
 }
+async function downloadMedicineMutationPdf(){
+  try{
+
+    const now = new Date();
+
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+
+    const res = await fetch(
+      `/api/reports/medicine-mutation/pdf?month=${month}&year=${year}`,
+      {
+        headers:{
+          Authorization:`Bearer ${token}`
+        }
+      }
+    );
+
+    if(!res.ok){
+      throw new Error("Gagal download PDF mutasi");
+    }
+
+    const blob = await res.blob();
+
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+
+    a.href = url;
+
+    a.download =
+      `laporan_mutasi_obat_${year}_${month}.pdf`;
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+    URL.revokeObjectURL(url);
+
+  }catch(err){
+
+    showStatus(
+      "medicineStatus",
+      err.message,
+      false
+    );
+
+  }
+}
 
 async function saveMedicine(){
   try{
@@ -524,6 +631,7 @@ async function saveMedicine(){
     medicineMinStock.value = "10";
     showStatus("medicineStatus", "Obat berhasil disimpan", true);
     loadMedicines();
+    loadMedicineMutation();
   }catch(err){
     showStatus("medicineStatus", err.message, false);
   }
@@ -535,12 +643,22 @@ visitPeriod.addEventListener("change", updateVisitFilters);
 btnVisitPreview.addEventListener("click", previewVisitReport);
 btnVisitPdf.addEventListener("click", () => downloadVisitReport("pdf"));
 btnVisitExcel.addEventListener("click", () => downloadVisitReport("excel"));
-btnReloadMedicines.addEventListener("click", loadMedicines);
+btnReloadMedicines.addEventListener(
+  "click",
+  () => {
+    loadMedicines();
+    loadMedicineMutation();
+  }
+);
 btnMedicinePdf.addEventListener("click", downloadMedicinePdf);
 btnCreateMedicine.addEventListener("click", saveMedicine);
-
+btnMedicineMutationPdf.addEventListener(
+  "click",
+  downloadMedicineMutationPdf
+);
 previewMonthlyReport();
 loadMedicines();
+loadMedicineMutation();
 updateVisitFilters();
 </script>
 <script src="/ui/assets/rbac.js?v=1" defer></script>

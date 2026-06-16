@@ -487,6 +487,24 @@ overflow:auto;
           <label>Jumlah Obat</label>
           <input id="visitMedicineQty" type="number" min="1" placeholder="Contoh: 4">
         </div>
+<div
+  id="medicineList"
+  style="
+    margin-top:16px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  "
+></div>
+
+<button
+  type="button"
+  class="btn btn-secondary"
+  id="btnAddMedicine"
+  style="margin-top:12px;"
+>
+  + Tambah Obat
+</button>
 <div class="visit-actions">
 
   <button
@@ -918,6 +936,7 @@ let editingVisitId = null;
 let medicinesData = [];
 let deleteVisitId = null;
 let patientsData = [];
+let visitMedicines = [];
 
 if (!token) {
   window.location.href = "/login";
@@ -1241,6 +1260,59 @@ async function loadMedicines() {
   }
 
 }
+function renderMedicineList(){
+
+  const container =
+    document.getElementById(
+      "medicineList"
+    );
+
+  container.innerHTML = "";
+
+  visitMedicines.forEach((med,index)=>{
+
+    const row =
+      document.createElement("div");
+
+    row.style.cssText = `
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      padding:12px;
+      border:1px solid #e2e8f0;
+      border-radius:12px;
+      background:#f8fafc;
+    `;
+
+    row.innerHTML = `
+      <div>
+        <b>${med.medicine_name}</b>
+        (${med.dosage})
+        - ${med.quantity}
+      </div>
+
+      <button
+        type="button"
+        class="action-btn delete-btn"
+        onclick="removeMedicine(${index})"
+      >
+        Hapus
+      </button>
+    `;
+
+    container.appendChild(row);
+
+  });
+
+}
+function removeMedicine(index){
+
+  visitMedicines.splice(index,1);
+
+  renderMedicineList();
+
+}
 
 /* INFO STOK */
 
@@ -1298,6 +1370,73 @@ document
         ? "error"
         : "ok"
       }`;
+
+});
+document
+.getElementById("btnAddMedicine")
+.addEventListener("click",()=>{
+
+  const medicineName =
+    document
+    .getElementById(
+      "visitMedicineName"
+    )
+    .value
+    .trim();
+
+  const dosage =
+    document
+    .getElementById(
+      "visitMedicineDosage"
+    )
+    .value
+    .trim();
+
+  const quantity =
+    Number(
+      document
+      .getElementById(
+        "visitMedicineQty"
+      )
+      .value
+    );
+
+  if(
+    !medicineName ||
+    !dosage ||
+    !quantity
+  ){
+    alert("Lengkapi data obat");
+    return;
+  }
+
+  visitMedicines.push({
+
+    medicine_name:
+      medicineName,
+
+    dosage,
+
+    quantity,
+
+    notes:
+      "Input dari UI"
+
+  });
+
+  renderMedicineList();
+
+  document.getElementById(
+    "visitMedicineName"
+  ).value = "";
+
+  document.getElementById(
+    "visitMedicineDosage"
+  ).value = "";
+
+  document.getElementById(
+    "visitMedicineQty"
+  ).value = "";
 
 });
 
@@ -1506,57 +1645,16 @@ document
 
     }
 
-    const medicineName =
-      document
-      .getElementById(
-        "visitMedicineName"
-      )
-      .value
-      .trim();
+    for(const med of visitMedicines){
 
-    const medicineDosage =
-      document
-      .getElementById(
-        "visitMedicineDosage"
-      )
-      .value
-      .trim();
+  await api(
+    `/api/uks/visits/${savedVisitId}/medications`,
+    "POST",
+    med,
+    true
+  );
 
-    const medicineQty =
-      document
-      .getElementById(
-        "visitMedicineQty"
-      )
-      .value;
-
-    if (
-      medicineName &&
-      medicineDosage &&
-      medicineQty
-    ) {
-
-      await api(
-        `/api/uks/visits/${savedVisitId}/medications`,
-        "POST",
-        {
-          medicine_name:
-            medicineName,
-
-          dosage:
-            medicineDosage,
-
-          quantity:
-            Number(medicineQty),
-
-          notes:
-            "Input dari UI"
-
-        },
-        true
-      );
-
-    }
-
+}
     btn.disabled = false;
 
     btn.innerHTML =
@@ -1574,8 +1672,12 @@ document.getElementById(
 
     loadVisits();
     loadMedicines();
+    visitMedicines = [];
+    renderMedicineList();
 
-  } catch (err) {
+  } 
+
+catch (err) {
 
     btn.disabled = false;
 
