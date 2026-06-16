@@ -1,0 +1,12 @@
+.git
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+.env
+logs
+backups
+test_emr_keperawatan.db

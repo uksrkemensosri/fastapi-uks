@@ -543,5 +543,7 @@ def recommendation_pdf(
     return StreamingResponse(
         buffer,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename=\"{item.letter_number.replace('/', '-')}.pdf\"'},
+        headers={
+    "Content-Disposition": f"attachment; filename=\"{item.letter_number.replace('/', '-')}.pdf\""
+},
     )
