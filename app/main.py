@@ -279,10 +279,10 @@ def login_page() -> FileResponse:
     return FileResponse(UI_LOGIN_PATH)
 @app.get("/students", response_class=FileResponse)
 def students_page(request: Request):
-    return protected_ui_page(request, UI_STUDENTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
+    return protected_ui_page(request, UI_STUDENTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
 @app.get("/student-detail", response_class=FileResponse)
 def student_detail_page(request: Request):
-    return protected_ui_page(request, UI_STUDENT_DETAIL_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
+    return protected_ui_page(request, UI_STUDENT_DETAIL_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
 @app.get("/reports", response_class=FileResponse)
 def reports_page(request: Request):
     return protected_ui_page(request, UI_REPORTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})

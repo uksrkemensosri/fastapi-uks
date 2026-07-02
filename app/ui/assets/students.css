@@ -885,6 +885,23 @@ z-index:2;
   }
 
 }
+
+body[data-role="wali_asuh"] #siswa > .form-grid,
+body[data-role="wali_asuh"] #btnCreatePatient,
+body[data-role="wali_asuh"] #fabVisit,
+body[data-role="wali_asuh"] #btnCreateVisit,
+body[data-role="wali_asuh"] #btnAddMedicine,
+body[data-role="wali_asuh"] #btnSuggestAI,
+body[data-role="wali_asuh"] .edit-btn,
+body[data-role="wali_asuh"] .delete-btn,
+body[data-role="wali_asuh"] .referral-btn,
+body[data-role="wali_asuh"] .rest-btn{
+  display:none !important;
+}
+
+body[data-role="wali_asuh"] #siswa > p{
+  margin-bottom:16px;
+}
     @media(max-width:900px){
 
       .sidebar{

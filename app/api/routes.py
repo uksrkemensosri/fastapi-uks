@@ -101,6 +101,7 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
+ROLE_WALI_ASUH = "wali_asuh"
 
 
 def build_local_care_suggestion(complaint: str, examination: str) -> str:
@@ -741,7 +742,7 @@ def create_patient(
 @router.get("/patients", response_model=list[PatientSummary])
 def get_patients(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ) -> list[PatientSummary]:
 
     patients = (
@@ -772,7 +773,7 @@ def get_patients(
 def search_patients(
     q: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ) -> list[PatientSummary]:
     keyword = q.strip()
     if not keyword:
@@ -804,7 +805,7 @@ def search_patients(
 def get_patient_detail(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ) -> PatientSummary:
     patient = db.get(PatientORM, patient_id)
     if patient is None:
@@ -963,7 +964,7 @@ def create_uks_visit(
 def get_patient_visits(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ):
 
     visits = (
@@ -979,7 +980,7 @@ def get_patient_visits(
 def get_all_uks_visits(
     month: str | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ):
     query = db.query(UKSVisitORM)
     if month:
@@ -1037,7 +1038,7 @@ def delete_uks_visit(
 def get_uks_visit_detail(
     visit_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ) -> UKSVisitResponse:
     visit = db.get(UKSVisitORM, visit_id)
     if visit is None:
@@ -1061,7 +1062,7 @@ def get_uks_visit_detail(
 def list_patient_uks_visits(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ) -> list[UKSVisitResponse]:
     patient = db.get(PatientORM, patient_id)
     if patient is None:
@@ -2167,7 +2168,7 @@ from datetime import date
 @router.get("/dashboard/stats")
 def dashboard_stats(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ):
 
     total_students = db.query(PatientORM).count()

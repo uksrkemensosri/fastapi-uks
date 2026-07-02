@@ -2,9 +2,10 @@
   const token = localStorage.getItem("access_token") || "";
 
   function hideAdminLinks(role) {
+    const waliAsuhLinks = new Set(["/students", "/settings"]);
     document.querySelectorAll(".menu-item").forEach((item) => {
       const href = item.getAttribute("href") || "";
-      if (role === "wali_asuh" && href !== "/settings") {
+      if (role === "wali_asuh" && !waliAsuhLinks.has(href)) {
         item.remove();
         return;
       }

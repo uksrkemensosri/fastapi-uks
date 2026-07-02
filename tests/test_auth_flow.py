@@ -131,7 +131,18 @@ def test_register_role_normalization_and_access(client: TestClient):
     )
     assert wali_login.json()["role"] == "wali_asuh"
     wali_headers = {"Authorization": f"Bearer {wali_login.json()['access_token']}"}
-    assert client.get("/api/patients", headers=wali_headers).status_code == 403
+    assert client.get("/api/patients", headers=wali_headers).status_code == 200
+    assert client.post(
+        "/api/patients",
+        headers=wali_headers,
+        json={
+            "id": "WALI-CREATE-DENIED",
+            "name": "Tidak Boleh Tambah",
+            "age": 12,
+            "gender": "L",
+            "class_name": "7A",
+        },
+    ).status_code == 403
     assert client.get("/settings").status_code == 200
 
     tim = client.post(

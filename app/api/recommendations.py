@@ -37,6 +37,7 @@ router = APIRouter(prefix="/api", tags=["Student Health Record"])
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
+ROLE_WALI_ASUH = "wali_asuh"
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "ui" / "assets"
 LOGO_PATH = ASSETS_DIR / "logo-sekolah-rakyat.png"
 LETTERHEAD_PATH = Path(__file__).resolve().parents[2] / "static" / "img" / "kop-surat-sekolah-rakyat.png"
@@ -148,7 +149,7 @@ def ckg_abnormal_findings(student: CKGStudentORM) -> list[dict]:
 def student_health_history(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
 ) -> HealthHistoryResponse:
     patient = get_patient_or_404(db, patient_id)
     visits = (
