@@ -79,6 +79,8 @@ class UKSVisitResponse(BaseModel):
     notes: Optional[str] = None
     referral_to: Optional[str] = None
     referral_status: Optional[str] = None
+    whatsapp_status: Optional[str] = None
+    whatsapp_message: Optional[str] = None
 
 
 class AICareSuggestionRequest(BaseModel):
@@ -92,6 +94,8 @@ class AICareSuggestionResponse(BaseModel):
     implementation: str
     follow_up: str
     confidence: float
+    source: Optional[str] = None
+    model: Optional[str] = None
 
 
 class UKSMedicationCreate(BaseModel):
@@ -122,6 +126,12 @@ class MedicineInventoryUpdate(BaseModel):
     unit: Optional[str] = Field(default=None, min_length=1, max_length=50)
     stock: Optional[int] = Field(default=None, ge=0, le=100000)
     minimum_stock: Optional[int] = Field(default=None, ge=0, le=100000)
+
+
+class MedicineStockAdjustment(BaseModel):
+    adjustment_type: str = Field(pattern="^(IN|OUT|SET)$")
+    quantity: int = Field(ge=0, le=100000)
+    notes: Optional[str] = Field(default=None, max_length=500)
 
 
 class MedicineInventoryResponse(BaseModel):

@@ -1,9 +1,12 @@
 import os
 import re
+import base64
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 
 # Pakai DB test terpisah agar tidak menyentuh database utama project.
 TEST_DB_PATH = Path("test_emr_keperawatan.db")
@@ -13,6 +16,7 @@ if TEST_DB_PATH.exists():
 os.environ["DATABASE_URL"] = "sqlite:///./test_emr_keperawatan.db"
 os.environ["SECRET_KEY"] = "test-secret-key-min-32-chars-123456"
 os.environ["ACCESS_TOKEN_EXPIRE_SECONDS"] = "1800"
+os.environ["FONNTE_TOKEN"] = ""
 
 from app.main import app  # noqa: E402
 from app.db.database import engine  # noqa: E402
@@ -165,6 +169,15 @@ def test_create_and_list_uks_visits(client: TestClient):
     )
     assert create.status_code == 201
     assert create.json()["diagnosis"] == "Nyeri akut"
+    assert create.json()["whatsapp_status"] == "skipped"
+
+    wa_logs = client.get("/api/whatsapp/logs?limit=5", headers=headers)
+    assert wa_logs.status_code == 200
+    assert any(item["visit_id"] == create.json()["id"] for item in wa_logs.json())
+
+    resend = client.post(f"/api/whatsapp/visits/{create.json()['id']}/resend", headers=headers)
+    assert resend.status_code == 200
+    assert resend.json()["whatsapp_status"] in {"sent", "failed", "skipped"}
 
 
 def test_excel_daily_report(client: TestClient):
@@ -250,6 +263,26 @@ def test_medicine_inventory_and_stock_deduction(client: TestClient):
     assert med is not None
     assert med["stock"] == 16
 
+    adjust_in = client.post(
+        f"/api/medicines/{medicine_id}/adjust",
+        headers=headers,
+        json={"adjustment_type": "IN", "quantity": 5, "notes": "Restok test"},
+    )
+    assert adjust_in.status_code == 200
+    assert adjust_in.json()["stock"] == 21
+
+    adjust_set = client.post(
+        f"/api/medicines/{medicine_id}/adjust",
+        headers=headers,
+        json={"adjustment_type": "SET", "quantity": 18, "notes": "Koreksi test"},
+    )
+    assert adjust_set.status_code == 200
+    assert adjust_set.json()["stock"] == 18
+
+    mutation_json = client.get("/api/reports/medicine-mutation?month=5&year=2026", headers=headers)
+    assert mutation_json.status_code == 200
+    assert any(item["medicine_name"] == "Paracetamol 500mg" for item in mutation_json.json())
+
     stock_pdf = client.get("/api/reports/medicines/pdf", headers=headers)
     assert stock_pdf.status_code == 200
     assert stock_pdf.headers["content-type"].startswith("application/pdf")
@@ -323,6 +356,11 @@ def test_cannot_disable_self_or_last_active_admin(client: TestClient):
 def test_ckg_event_registration_queue_and_anthropometry(client: TestClient):
     admin_headers = _auth_headers(client)
 
+    ckg_page = client.get("/ckg")
+    assert ckg_page.status_code == 200
+    assert "/api/patients/search?q=" in ckg_page.text
+    assert "studentSearchResults" in ckg_page.text
+
     event = client.post(
         "/api/ckg/events",
         headers=admin_headers,
@@ -368,11 +406,19 @@ def test_ckg_event_registration_queue_and_anthropometry(client: TestClient):
             "class_name": "7A",
             "section": "A",
             "parent_name": "Orang Tua",
+            "parent_phone": "081298765432",
         },
     )
     assert student.status_code == 201
     student_id = student.json()["id"]
     assert student.json()["status"] == "REGISTERED"
+    assert student.json()["parent_phone"] == "081298765432"
+
+    synced_patient = client.get("/api/patients/CKG-001", headers=admin_headers)
+    assert synced_patient.status_code == 200
+    assert synced_patient.json()["name"] == "Siswa CKG Satu"
+    assert synced_patient.json()["parent_name"] == "Orang Tua"
+    assert synced_patient.json()["parent_phone"] == "081298765432"
 
     perawat_headers = _login_headers(client, "ckg_antropometri", "rahasia123")
     queue = client.get("/api/ckg/stations/ANTROPOMETRI/queue", headers=perawat_headers)
@@ -410,6 +456,41 @@ def test_ckg_event_registration_queue_and_anthropometry(client: TestClient):
     assert event_pdf.status_code == 200
     assert event_pdf.headers["content-type"].startswith("application/pdf")
     assert len(event_pdf.content) > 1000
+
+    removable = client.post(
+        "/api/ckg/students",
+        headers=admin_headers,
+        json={
+            "nis": "CKG-DELETE-001",
+            "full_name": "Siswa Hapus CKG",
+            "gender": "Perempuan",
+            "birth_date": "2012-02-02",
+            "class_name": "7B",
+            "section": "B",
+            "parent_name": "Wali Siswa",
+            "parent_phone": "081211112222",
+        },
+    )
+    assert removable.status_code == 201
+    removable_id = removable.json()["id"]
+
+    deleted = client.delete(f"/api/ckg/students/{removable_id}", headers=admin_headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["patient_preserved"] is True
+
+    preserved_patient = client.get("/api/patients/CKG-DELETE-001", headers=admin_headers)
+    assert preserved_patient.status_code == 200
+
+    removed_from_event = client.get("/api/ckg/students?q=CKG-DELETE-001", headers=admin_headers)
+    assert removed_from_event.status_code == 200
+    assert removed_from_event.json() == []
+
+    deleted_patient = client.delete("/api/patients/CKG-DELETE-001", headers=admin_headers)
+    assert deleted_patient.status_code == 200
+    assert deleted_patient.json()["message"] == "Data siswa berhasil dihapus"
+
+    missing_patient = client.get("/api/patients/CKG-DELETE-001", headers=admin_headers)
+    assert missing_patient.status_code == 404
 
 
 def test_health_history_recommendation_pdf_and_signature(client: TestClient):
@@ -519,3 +600,77 @@ def test_visit_report_preview_pdf_and_excel(client: TestClient):
     excel = client.get("/api/reports/uks/visits/excel?period=daily&date=2026-05-17", headers=headers)
     assert excel.status_code == 200
     assert excel.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def test_admin_tools_dashboard_import_backup_and_exports(client: TestClient):
+    headers = _auth_headers(client)
+
+    advanced = client.get("/api/dashboard/advanced-stats", headers=headers)
+    assert advanced.status_code == 200
+    assert {"low_stock", "pending_controls", "whatsapp", "top_monthly_students"} <= set(advanced.json())
+
+    health = client.get("/api/system/health-check", headers=headers)
+    assert health.status_code == 200
+    assert health.json()["checks"]
+
+    backup = client.get("/api/admin/backup", headers=headers)
+    assert backup.status_code == 200
+    assert backup.headers["content-type"].startswith("application/json")
+    backup_payload = backup.json()
+    assert "patients" in backup_payload
+    assert "visits" in backup_payload
+
+    restore = client.post("/api/admin/restore", headers=headers, json=backup_payload)
+    assert restore.status_code == 200
+    assert restore.json()["restored"]["patients"] >= 1
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["NIS", "Nama Lengkap", "Jenis Kelamin", "Tanggal Lahir", "Kelas", "Nama Wali Asuh", "Nomor HP Wali Asuh"])
+    ws.append(["IMPORT-001", "Siswa Import Satu", "Perempuan", "2012-01-01", "7C", "Wali Import", "081200000001"])
+    stream = BytesIO()
+    wb.save(stream)
+    content = base64.b64encode(stream.getvalue()).decode()
+
+    preview = client.post(
+        "/api/patients/import-excel",
+        headers=headers,
+        json={"filename": "siswa.xlsx", "content_base64": content, "preview": True},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["total"] == 1
+
+    imported = client.post(
+        "/api/patients/import-excel",
+        headers=headers,
+        json={"filename": "siswa.xlsx", "content_base64": content, "preview": False},
+    )
+    assert imported.status_code == 200
+    assert imported.json()["created"] == 1
+
+    imported_patient = client.get("/api/patients/IMPORT-001", headers=headers)
+    assert imported_patient.status_code == 200
+    assert imported_patient.json()["parent_name"] == "Wali Import"
+
+    referral_pdf = client.get("/api/uks/visits/1/referral-letter", headers=headers)
+    assert referral_pdf.status_code == 200
+    assert referral_pdf.headers["content-type"].startswith("application/pdf")
+
+    rest_pdf = client.get("/api/uks/visits/1/rest-letter?reason=Istirahat&days=1", headers=headers)
+    assert rest_pdf.status_code == 200
+    assert rest_pdf.headers["content-type"].startswith("application/pdf")
+
+    rest_notify = client.post("/api/uks/visits/1/notify-rest-letter", headers=headers)
+    assert rest_notify.status_code == 200
+    assert rest_notify.json()["whatsapp_status"] == "skipped"
+
+    ckg_students = client.get("/api/ckg/students?q=CKG-001", headers=headers)
+    assert ckg_students.status_code == 200
+    ckg_id = ckg_students.json()[0]["id"]
+    ckg_notify = client.post(f"/api/ckg/students/{ckg_id}/notify-completed", headers=headers)
+    assert ckg_notify.status_code == 200
+    assert ckg_notify.json()["whatsapp_status"] == "skipped"
+
+    audit_export = client.get("/api/audit-logs/export/excel", headers=headers)
+    assert audit_export.status_code == 200
+    assert audit_export.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from html import escape
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -6,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -95,6 +96,45 @@ def append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, su
     elements.append(Spacer(1, 12))
 
 
+def pdf_cell(value: object, style: ParagraphStyle) -> Paragraph:
+    text = "-" if value is None or value == "" else str(value)
+    return Paragraph(escape(text).replace("\n", "<br/>"), style)
+
+
+def ckg_pdf_styles():
+    styles = getSampleStyleSheet()
+    styles["Title"].fontSize = 15
+    styles["Title"].leading = 18
+    styles["Heading3"].fontSize = 11
+    styles["Heading3"].leading = 14
+    styles["Normal"].fontSize = 8.5
+    styles["Normal"].leading = 11
+    small = ParagraphStyle(
+        "CKGSmall",
+        parent=styles["Normal"],
+        fontSize=7.2,
+        leading=9,
+        wordWrap="CJK",
+    )
+    tiny = ParagraphStyle(
+        "CKGTiny",
+        parent=styles["Normal"],
+        fontSize=6.3,
+        leading=7.8,
+        wordWrap="CJK",
+    )
+    section = ParagraphStyle(
+        "CKGSection",
+        parent=styles["Heading3"],
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#312e81"),
+        spaceBefore=8,
+        spaceAfter=5,
+    )
+    return styles, small, tiny, section
+
+
 def append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS") -> None:
     generated_at = datetime.now()
     signer_name = current_user.full_name or "-"
@@ -174,6 +214,7 @@ def student_response(student: CKGStudentORM) -> CKGStudentResponse:
         class_name=student.class_name,
         section=student.section,
         parent_name=student.parent_name,
+        parent_phone=student.parent_phone,
         status=student.status,
         queue_number=student.queue_number,
         needs_referral=student.needs_referral,
@@ -226,6 +267,8 @@ def sync_patient_from_ckg(db: Session, student: CKGStudentORM) -> None:
                 class_name=student.class_name,
                 birth_date=student.birth_date,
                 age=0,
+                parent_name=student.parent_name,
+                parent_phone=student.parent_phone,
             )
         )
     else:
@@ -233,6 +276,8 @@ def sync_patient_from_ckg(db: Session, student: CKGStudentORM) -> None:
         patient.gender = student.gender
         patient.class_name = student.class_name
         patient.birth_date = student.birth_date
+        patient.parent_name = student.parent_name
+        patient.parent_phone = student.parent_phone
         db.add(patient)
 
 
@@ -435,6 +480,36 @@ def list_students(
         query = query.filter((CKGStudentORM.full_name.ilike(like_expr)) | (CKGStudentORM.nis.ilike(like_expr)))
     students = query.order_by(CKGStudentORM.queue_number.asc(), CKGStudentORM.full_name.asc()).all()
     return [student_response(student) for student in students]
+
+
+@router.delete("/students/{student_id}")
+def delete_ckg_student(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+) -> dict:
+    student = db.get(CKGStudentORM, student_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="CKG student not found")
+
+    require_station_access(db, current_user, student.event_id, "REGISTRATION")
+    student_name = student.full_name
+    student_nis = student.nis
+    write_ckg_audit(
+        db,
+        current_user,
+        "delete_ckg_student",
+        "ckg_student",
+        student.id,
+        f"{student_name} ({student_nis})",
+    )
+    db.delete(student)
+    db.commit()
+    return {
+        "message": "Siswa dihapus dari event CKG",
+        "student_id": student_id,
+        "patient_preserved": True,
+    }
 
 
 @router.get("/stations/{station}/queue", response_model=list[CKGQueueItem])
@@ -721,7 +796,7 @@ def event_report_pdf(
         topMargin=24,
         bottomMargin=24,
     )
-    styles = getSampleStyleSheet()
+    styles, small_style, tiny_style, section_style = ckg_pdf_styles()
     elements = []
     append_pdf_letterhead(
         elements,
@@ -749,23 +824,8 @@ def event_report_pdf(
     elements.append(Spacer(1, 16))
 
     student_rows = [
-        [
-            "No",
-            "NIS",
-            "Nama",
-            "Kelas",
-            "BB",
-            "TB",
-            "BMI",
-            "TD",
-            "Nadi",
-            "RR",
-            "Suhu",
-            "Visus",
-            "Gigi",
-            "Screening",
-            "Rujukan",
-        ]
+        ["Daftar Siswa", "", "", "", "", ""],
+        ["No", "Identitas", "Antropometri", "TTV", "Mata & Gigi", "Screening & Rujukan"],
     ]
     for idx, student in enumerate(students, start=1):
         referral_text = "Tidak"
@@ -774,53 +834,77 @@ def event_report_pdf(
                 f"{ref.station}: {ref.reason} -> {ref.referral_destination}"
                 for ref in student.referrals
             )
+        anthropometry_text = "-"
+        if student.anthropometry:
+            anthropometry_text = (
+                f"BB: {student.anthropometry.weight} kg\n"
+                f"TB: {student.anthropometry.height} cm\n"
+                f"BMI: {student.anthropometry.bmi}"
+            )
+        ttv_text = "-"
+        if student.ttv:
+            ttv_text = (
+                f"TD: {student.ttv.blood_pressure}\n"
+                f"Nadi: {student.ttv.pulse} x/menit\n"
+                f"RR: {student.ttv.respiratory_rate} x/menit\n"
+                f"Suhu: {student.ttv.temperature} C"
+            )
+        eye_dental_text = []
+        if student.vision:
+            eye_dental_text.append(f"Visus: R {student.vision.right_eye} / L {student.vision.left_eye}")
+        if student.dental:
+            eye_dental_text.append(
+                f"Gigi: karies {student.dental.caries}; OH {student.dental.oral_hygiene}; {student.dental.notes or '-'}"
+            )
+        screening_text = []
+        if student.general_screening:
+            screening_text.append(f"Temuan: {student.general_screening.physical_findings or '-'}")
+            screening_text.append(f"Rekom: {student.general_screening.recommendation or '-'}")
+        screening_text.append(f"Rujukan: {referral_text}")
 
         student_rows.append(
             [
                 str(idx),
-                student.nis,
-                student.full_name,
-                f"{student.class_name or '-'} {student.section or ''}".strip(),
-                str(student.anthropometry.weight) if student.anthropometry else "-",
-                str(student.anthropometry.height) if student.anthropometry else "-",
-                str(student.anthropometry.bmi) if student.anthropometry else "-",
-                student.ttv.blood_pressure if student.ttv else "-",
-                str(student.ttv.pulse) if student.ttv else "-",
-                str(student.ttv.respiratory_rate) if student.ttv else "-",
-                str(student.ttv.temperature) if student.ttv else "-",
-                f"R {student.vision.right_eye} / L {student.vision.left_eye}" if student.vision else "-",
-                (
-                    f"Karies: {student.dental.caries}; OH: {student.dental.oral_hygiene}; "
-                    f"{student.dental.notes or ''}"
-                    if student.dental else "-"
+                pdf_cell(
+                    f"{student.full_name}\nNIS: {student.nis}\nKelas: {student.class_name or '-'} {student.section or ''}\nStatus: {student.status}",
+                    tiny_style,
                 ),
-                (
-                    f"Temuan: {student.general_screening.physical_findings or '-'}; "
-                    f"Rekom: {student.general_screening.recommendation or '-'}"
-                    if student.general_screening else "-"
-                ),
-                referral_text,
+                pdf_cell(anthropometry_text, tiny_style),
+                pdf_cell(ttv_text, tiny_style),
+                pdf_cell("\n".join(eye_dental_text) if eye_dental_text else "-", tiny_style),
+                pdf_cell("\n".join(screening_text), tiny_style),
             ]
         )
 
     table = Table(
         student_rows,
-        repeatRows=1,
-        colWidths=[20, 48, 82, 42, 26, 26, 28, 36, 28, 24, 28, 50, 72, 82, 74],
+        repeatRows=2,
+        colWidths=[24, 116, 76, 88, 150, 270],
     )
     table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8b5cf6")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("SPAN", (0, 0), (-1, 0)),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.white),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#312e81")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-BoldOblique"),
+                ("FONTSIZE", (0, 0), (-1, 0), 10),
+                ("BACKGROUND", (0, 1), (-1, 1), colors.HexColor("#8b5cf6")),
+                ("TEXTCOLOR", (0, 1), (-1, 1), colors.white),
+                ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold"),
                 ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
-                ("FONTSIZE", (0, 0), (-1, -1), 6),
+                ("LINEABOVE", (0, 0), (-1, 0), 0, colors.white),
+                ("LINEBELOW", (0, 0), (-1, 0), 0, colors.white),
+                ("FONTSIZE", (0, 1), (-1, 1), 7),
+                ("FONTSIZE", (0, 2), (0, -1), 6.5),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ]
         )
     )
-    elements.append(Paragraph("Daftar Siswa", styles["Heading3"]))
     elements.append(table)
     append_pdf_signature(elements, doc, current_user, styles)
     doc.build(elements)
@@ -903,26 +987,95 @@ def student_summary_pdf(
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=24, bottomMargin=24)
-    styles = getSampleStyleSheet()
+    styles, small_style, _, section_style = ckg_pdf_styles()
     elements = []
     append_pdf_letterhead(elements, doc, "RINGKASAN CKG SISWA", f"NIS: {summary.student.nis}", styles)
-    elements.extend(
-        [
-            Paragraph(f"Nama: {summary.student.full_name}", styles["Normal"]),
-            Paragraph(f"Kelas: {summary.student.class_name or '-'} {summary.student.section or ''}", styles["Normal"]),
-            Paragraph(f"Status: {summary.student.status}", styles["Normal"]),
-            Spacer(1, 12),
-        ]
-    )
 
-    rows = [["Bagian", "Hasil"]]
-    rows.append(["Antropometri", str(summary.anthropometry or "-")])
-    rows.append(["TTV", str(summary.ttv or "-")])
-    rows.append(["Visus", str(summary.vision or "-")])
-    rows.append(["Gigi", str(summary.dental or "-")])
-    rows.append(["Screening Umum", str(summary.general_screening or "-")])
-    rows.append(["Rujukan", str(summary.referrals or "-")])
-    elements.append(Table(rows, colWidths=[120, 360]))
+    def simple_table(rows: list[list[object]], widths: list[int] | None = None) -> Table:
+        table = Table(
+            [[pdf_cell(cell, small_style) for cell in row] for row in rows],
+            colWidths=widths or [150, doc.width - 150],
+            hAlign="LEFT",
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#cbd5e1")),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f5f3ff")),
+                    ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#312e81")),
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ]
+            )
+        )
+        return table
+
+    identity_rows = [
+        ["Nama", summary.student.full_name],
+        ["NIS", summary.student.nis],
+        ["Kelas", f"{summary.student.class_name or '-'} {summary.student.section or ''}".strip()],
+        ["Jenis Kelamin", summary.student.gender],
+        ["Tanggal Lahir", summary.student.birth_date or "-"],
+        ["Wali Asuh / Orang Tua", summary.student.parent_name or "-"],
+        ["No. HP Wali", summary.student.parent_phone or "-"],
+        ["Status CKG", summary.student.status],
+    ]
+    elements.append(Paragraph("Identitas Siswa", section_style))
+    elements.append(simple_table(identity_rows))
+    elements.append(Spacer(1, 8))
+
+    anthropometry_rows = [
+        ["Berat Badan", f"{summary.anthropometry['weight']} kg" if summary.anthropometry else "-"],
+        ["Tinggi Badan", f"{summary.anthropometry['height']} cm" if summary.anthropometry else "-"],
+        ["BMI", summary.anthropometry["bmi"] if summary.anthropometry else "-"],
+    ]
+    elements.append(Paragraph("Antropometri", section_style))
+    elements.append(simple_table(anthropometry_rows))
+
+    ttv_rows = [
+        ["Tekanan Darah", summary.ttv["blood_pressure"] if summary.ttv else "-"],
+        ["Nadi", f"{summary.ttv['pulse']} x/menit" if summary.ttv else "-"],
+        ["Respiratory Rate", f"{summary.ttv['respiratory_rate']} x/menit" if summary.ttv else "-"],
+        ["Suhu", f"{summary.ttv['temperature']} C" if summary.ttv else "-"],
+    ]
+    elements.append(Paragraph("Tanda-Tanda Vital", section_style))
+    elements.append(simple_table(ttv_rows))
+
+    vision_dental_rows = [
+        ["Visus Kanan", summary.vision["right_eye"] if summary.vision else "-"],
+        ["Visus Kiri", summary.vision["left_eye"] if summary.vision else "-"],
+        ["Karies", summary.dental["caries"] if summary.dental else "-"],
+        ["Oral Hygiene", summary.dental["oral_hygiene"] if summary.dental else "-"],
+        ["Catatan Gigi", summary.dental["notes"] if summary.dental and summary.dental.get("notes") else "-"],
+    ]
+    elements.append(Paragraph("Visus dan Gigi", section_style))
+    elements.append(simple_table(vision_dental_rows))
+
+    screening_rows = [
+        ["Temuan Fisik", summary.general_screening["physical_findings"] if summary.general_screening else "-"],
+        ["Catatan", summary.general_screening["notes"] if summary.general_screening and summary.general_screening.get("notes") else "-"],
+        ["Rekomendasi", summary.general_screening["recommendation"] if summary.general_screening else "-"],
+    ]
+    elements.append(Paragraph("Screening Umum", section_style))
+    elements.append(simple_table(screening_rows))
+
+    referral_rows = []
+    if summary.referrals:
+        for referral in summary.referrals:
+            referral_rows.append(
+                [
+                    referral["station"],
+                    f"Alasan: {referral['reason']}\nTujuan: {referral['referral_destination']}\nCatatan: {referral.get('notes') or '-'}",
+                ]
+            )
+    else:
+        referral_rows.append(["Status", "Tidak ada rujukan"])
+    elements.append(Paragraph("Rujukan", section_style))
+    elements.append(simple_table(referral_rows))
     append_pdf_signature(elements, doc, current_user, styles)
     doc.build(elements)
     buffer.seek(0)

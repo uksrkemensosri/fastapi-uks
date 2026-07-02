@@ -83,12 +83,7 @@ Base.metadata.create_all(bind=engine)
 def ensure_database_columns() -> None:
     if engine.dialect.name == "sqlite":
         with engine.begin() as conn:
-            user_cols = {
-                row[1]
-                for row in conn.execute(
-                    text("PRAGMA table_info(users)")
-                ).fetchall()
-            }
+            user_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
             if "created_at" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN created_at DATETIME"))
             if "updated_at" not in user_cols:
@@ -99,16 +94,32 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN jabatan VARCHAR(100)"))
             if "signature_image" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN signature_image TEXT"))
-            patient_cols = {
-                row[1]
-                for row in conn.execute(
-                    text("PRAGMA table_info(patients)")
-                ).fetchall()
-            }
+
+            patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
+            if "class_name" not in patient_cols:
+                conn.execute(text("ALTER TABLE patients ADD COLUMN class_name VARCHAR(50)"))
             if "parent_name" not in patient_cols:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN parent_name VARCHAR(200)"))
             if "parent_phone" not in patient_cols:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN parent_phone VARCHAR(30)"))
+
+            visit_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(uks_visits)")).fetchall()}
+            if "diagnosis" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN diagnosis VARCHAR(255)"))
+            if "referral_place" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN referral_place VARCHAR(255)"))
+            if "control_date" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN control_date DATE"))
+            if "referral_status" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN referral_status VARCHAR(50)"))
+            if "whatsapp_status" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN whatsapp_status VARCHAR(30)"))
+            if "whatsapp_message" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN whatsapp_message TEXT"))
+
+            ckg_student_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_students)")).fetchall()}
+            if "parent_phone" not in ckg_student_cols:
+                conn.execute(text("ALTER TABLE ckg_students ADD COLUMN parent_phone VARCHAR(30)"))
         return
 
     if engine.dialect.name.startswith("postgresql"):
@@ -128,53 +139,19 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS nip VARCHAR(50)"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS jabatan VARCHAR(100)"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_image TEXT"))
+            conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS class_name VARCHAR(50)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_name VARCHAR(200)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS diagnosis VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS referral_place VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS control_date DATE"))
+            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS referral_status VARCHAR(50)"))
+            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS whatsapp_status VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS whatsapp_message TEXT"))
+            conn.execute(text("ALTER TABLE ckg_students ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
 
 
 ensure_database_columns()
-def ensure_sqlite_columns() -> None:
-
-    if engine.dialect.name != "sqlite":
-        return
-
-    with engine.begin() as conn:
-
-        visit_cols = {
-            row[1]
-            for row in conn.execute(
-                text("PRAGMA table_info(uks_visits)")
-            ).fetchall()
-        }
-
-        if "diagnosis" not in visit_cols:
-            conn.execute(
-                text(
-                    "ALTER TABLE uks_visits ADD COLUMN diagnosis VARCHAR(255)"
-                )
-            )
-
-        if "referral_place" not in visit_cols:
-            conn.execute(
-                text(
-                    "ALTER TABLE uks_visits ADD COLUMN referral_place VARCHAR(255)"
-                )
-            )
-
-        if "control_date" not in visit_cols:
-            conn.execute(
-                text(
-                    "ALTER TABLE uks_visits ADD COLUMN control_date DATE"
-                )
-            )
-
-        if "referral_status" not in visit_cols:
-            conn.execute(
-                text(
-                    "ALTER TABLE uks_visits ADD COLUMN referral_status VARCHAR(50)"
-                )
-            )
-ensure_sqlite_columns()
 
 UI_INDEX_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
 UI_LOGIN_PATH = Path(__file__).resolve().parent / "ui" / "login.html"
@@ -217,35 +194,23 @@ def protected_ui_page(request: Request, path: Path, allowed_roles: set[str] | No
         db.close()
 
 
-def ensure_sqlite_columns() -> None:
-    if engine.dialect.name != "sqlite":
-        return
-
-    with engine.begin() as conn:
-        patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
-        if "class_name" not in patient_cols:
-            conn.execute(text("ALTER TABLE patients ADD COLUMN class_name VARCHAR(50)"))
-        if "parent_name" not in patient_cols:
-            conn.execute(text("ALTER TABLE patients ADD COLUMN parent_name VARCHAR(200)"))
-        if "parent_phone" not in patient_cols:
-            conn.execute(text("ALTER TABLE patients ADD COLUMN parent_phone VARCHAR(30)"))
-
-        visit_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(uks_visits)")).fetchall()}
-        if "diagnosis" not in visit_cols:
-            conn.execute(text("ALTER TABLE uks_visits ADD COLUMN diagnosis VARCHAR(255)"))
-
-
 def seed_admin_user() -> None:
+    if os.getenv("DISABLE_DEFAULT_ADMIN", "false").lower() == "true":
+        return
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+    admin_full_name = os.getenv("ADMIN_FULL_NAME", "Administrator")
+
     db: Session = SessionLocal()
     try:
-        admin = db.query(UserORM).filter(UserORM.username == "admin").first()
+        admin = db.query(UserORM).filter(UserORM.username == admin_username).first()
         if admin is None:
             db.add(
                 UserORM(
-                    username="admin",
-                    full_name="Administrator",
+                    username=admin_username,
+                    full_name=admin_full_name,
                     role="admin",
-                    password_hash=hash_password("admin123"),
+                    password_hash=hash_password(admin_password),
                     is_active=True,
                 )
             )
@@ -254,7 +219,6 @@ def seed_admin_user() -> None:
         db.close()
 
 
-ensure_sqlite_columns()
 def import_students_once() -> None:
     if pd is None:
         return

@@ -1187,6 +1187,29 @@ body.dark .activity-item{
 
     </div>
 
+    <div class="grid" style="margin-bottom:24px;">
+      <section class="card">
+        <h2>Stok Obat Hampir Habis</h2>
+        <div id="lowStockList" class="top-students-list">
+          <div class="empty-state">Memuat data...</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Rujukan Belum Kontrol</h2>
+        <div id="pendingControlList" class="top-students-list">
+          <div class="empty-state">Memuat data...</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Status WhatsApp Hari Ini</h2>
+        <div id="whatsappStatusList" class="top-students-list">
+          <div class="empty-state">Memuat data...</div>
+        </div>
+      </section>
+    </div>
+
     <!-- GRID -->
 
     <div class="grid">
@@ -1460,6 +1483,7 @@ body.dark .activity-item{
 
 </div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="/ui/assets/dialogs.js?v=1"></script>
 <script>
 
 let token = localStorage.getItem("access_token") || "";
@@ -1548,8 +1572,6 @@ async function loadVisits() {
       null,
       true
     );
-console.log(data);
-
     const tbody =
   document.getElementById("visitTableBody");
 
@@ -1704,6 +1726,7 @@ window.addEventListener("load", () => {
   loadPatients();
   loadTodayPanel();
   loadTopStudents();
+  loadAdvancedDashboard();
 
 });
 async function loadControlAlerts(){
@@ -2133,8 +2156,10 @@ async function loadDiagnosisChart(){
 
 async function deleteVisit(id) {
 
-  const confirmDelete = confirm(
-    "Hapus kunjungan ini?"
+  const confirmDelete = await appConfirm(
+    "Hapus Kunjungan?",
+    "Data kunjungan akan dihapus permanen.",
+    {confirmText:"Ya, Hapus"}
   );
 
   if (!confirmDelete) return;
@@ -2250,6 +2275,82 @@ async function loadDashboardStats() {
 
   }
 
+}
+
+async function loadAdvancedDashboard(){
+  try{
+    const data = await api("/api/dashboard/advanced-stats");
+
+    const lowStock = document.getElementById("lowStockList");
+    lowStock.innerHTML = data.low_stock.length
+      ? data.low_stock.map(item => `
+          <div class="top-student-item">
+            <div><strong>${item.name}</strong><div style="color:#64748b;">Minimum ${item.minimum_stock} ${item.unit}</div></div>
+            <div class="visit-badge">${item.stock} ${item.unit}</div>
+          </div>
+        `).join("")
+      : `<div class="empty-state">Tidak ada stok rendah</div>`;
+
+    const pending = document.getElementById("pendingControlList");
+    pending.innerHTML = data.pending_controls.length
+      ? data.pending_controls.map(item => `
+          <div class="top-student-item">
+            <div><strong>${item.patient_name}</strong><div style="color:#64748b;">${item.referral_place || "-"} · ${item.control_date || "-"}</div></div>
+            <div class="visit-badge">Kontrol</div>
+          </div>
+        `).join("")
+      : `<div class="empty-state">Tidak ada kontrol tertunda</div>`;
+
+    const wa = data.whatsapp || {};
+    document.getElementById("whatsappStatusList").innerHTML = `
+      <div class="top-student-item"><strong>Token Fonnte</strong><div class="visit-badge">${wa.configured ? "Aktif" : "Belum"}</div></div>
+      <div class="top-student-item"><strong>No. wali tersedia</strong><div class="visit-badge">${wa.visits_with_parent_phone || 0}</div></div>
+      <div class="top-student-item"><strong>No. wali kosong</strong><div class="visit-badge">${wa.visits_without_parent_phone || 0}</div></div>
+    `;
+    await loadWhatsappLogs();
+
+    const topMonthly = data.top_monthly_students || [];
+    if(topMonthly.length){
+      const container = document.getElementById("topStudentsList");
+      container.innerHTML = topMonthly.slice(0,5).map((item, index) => `
+        <div class="top-student-item">
+          <div><strong>${index + 1}. ${item.name}</strong><div style="color:#64748b;">${item.class_name || "-"}</div></div>
+          <div class="visit-badge">${item.total}x</div>
+        </div>
+      `).join("");
+    }
+  }catch(err){
+    console.error("Advanced dashboard error:", err);
+  }
+}
+
+async function loadWhatsappLogs(){
+  const container = document.getElementById("whatsappStatusList");
+  try{
+    const logs = await api("/api/whatsapp/logs?limit=5");
+    if(!logs.length){ return; }
+    container.innerHTML += logs.map(item => `
+      <div class="top-student-item">
+        <div>
+          <strong>${item.patient_name}</strong>
+          <div style="color:#64748b;">${item.status} - ${item.message}</div>
+        </div>
+        <button class="visit-badge" style="border:none;cursor:pointer;" onclick="resendVisitWhatsApp(${item.visit_id})">Kirim Ulang</button>
+      </div>
+    `).join("");
+  }catch(err){
+    console.error("WhatsApp logs error:", err);
+  }
+}
+
+async function resendVisitWhatsApp(visitId){
+  try{
+    const result = await api(`/api/whatsapp/visits/${visitId}/resend`, "POST");
+    await appAlert("WhatsApp", `Status: ${result.whatsapp_status}`, result.whatsapp_status === "sent" ? "success" : "warning");
+    await loadAdvancedDashboard();
+  }catch(err){
+    await appAlert("Gagal", err.message, "error");
+  }
 }
 
 // dipanggil saat window load agar semua fungsi lintas-script sudah tersedia
@@ -2903,8 +3004,6 @@ async function loadVisitChart(){
         null,
         true
       );
-
-    console.log("VISITS:", visits);
 
     const map = {};
 

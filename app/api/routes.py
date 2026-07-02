@@ -1,6 +1,10 @@
 from datetime import datetime, timedelta
 from html import escape
+import base64
+import json
 import os
+from pathlib import Path
+import shutil
 import requests
 from dotenv import load_dotenv
 try:
@@ -16,8 +20,8 @@ from app.api.recommendations import (
 )
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
+from fastapi.responses import FileResponse, StreamingResponse
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy.orm import Session
 from reportlab.lib import colors
@@ -37,9 +41,11 @@ from app.db.dependencies import get_db
 from app.db.models import (
     AssessmentORM,
     AuditLogORM,
+    CKGStudentORM,
     MedicineInventoryORM,
     PatientORM,
     RecommendationORM,
+    RecommendationLetterORM,
     UKSMedicationORM,
     UKSVisitORM,
     UserORM,
@@ -57,6 +63,7 @@ from app.models.schemas import (
     AuditLogListResponse,
     AuditLogResponse,
     MedicineInventoryResponse,
+    MedicineStockAdjustment,
     MedicineInventoryUpdate,
     NursingAssessment,
     Patient,
@@ -84,13 +91,88 @@ client = (
     OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=os.getenv("OPENROUTER_API_KEY"),
+        timeout=float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "8")),
+        max_retries=0,
     )
     if OpenAI is not None
     else None
 )
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
+
+
+def build_local_care_suggestion(complaint: str, examination: str) -> str:
+    text = f"{complaint or ''} {examination or ''}".lower()
+    findings: list[tuple[str, str, str, str]] = []
+
+    if any(word in text for word in ("gigi", "gusi", "karies", "sariawan", "mulut")):
+        findings.append(
+            (
+                "Nyeri akut terkait gangguan pada area gigi dan mulut.",
+                "Kaji lokasi dan skala nyeri, periksa pembengkakan/kemerahan, anjurkan kebersihan mulut, dan berikan analgesik sesuai protokol UKS.",
+                "Pantau respons nyeri 15-30 menit, catat obat yang diberikan, serta edukasi siswa untuk menghindari makanan terlalu keras/manis sementara.",
+                "Rujuk ke fasilitas kesehatan bila nyeri menetap, ada bengkak, demam, perdarahan, atau siswa sulit makan.",
+            )
+        )
+    if any(word in text for word in ("batuk", "sesak", "napas", "pilek", "flu", "tenggorokan")):
+        findings.append(
+            (
+                "Bersihan jalan napas tidak efektif terkait iritasi saluran napas.",
+                "Pantau frekuensi napas dan suhu, anjurkan minum air hangat, posisikan nyaman, dan ajarkan teknik batuk efektif.",
+                "Observasi bunyi napas, kemampuan mengeluarkan dahak, dan respons setelah istirahat; gunakan masker bila batuk aktif.",
+                "Hubungi wali asuh atau rujuk bila sesak, demam tinggi, napas cepat, atau keluhan tidak membaik.",
+            )
+        )
+    if any(word in text for word in ("pusing", "sakit kepala", "lemas", "mual", "nyeri ulu hati", "perut")):
+        findings.append(
+            (
+                "Gangguan kenyamanan akut terkait keluhan pusing, lemas, atau nyeri abdomen.",
+                "Istirahatkan siswa di ruang UKS, pantau tanda vital, kaji pola makan/minum terakhir, dan berikan cairan oral bila tidak mual berat.",
+                "Evaluasi skala keluhan setelah 15-30 menit, batasi aktivitas fisik, dan dokumentasikan faktor pemicu yang ditemukan.",
+                "Rujuk atau hubungi wali asuh bila keluhan memberat, muntah berulang, nyeri perut hebat, atau pusing disertai tanda bahaya.",
+            )
+        )
+    if any(word in text for word in ("luka", "jatuh", "memar", "terkilir", "benturan", "berdarah")):
+        findings.append(
+            (
+                "Risiko infeksi atau nyeri akut terkait cedera jaringan.",
+                "Bersihkan luka sesuai prosedur, tekan perdarahan ringan, kompres area memar, dan imobilisasi sementara bila dicurigai terkilir.",
+                "Catat lokasi luka, ukuran, nyeri, dan kemampuan gerak; pantau tanda infeksi atau pembengkakan bertambah.",
+                "Rujuk bila luka dalam, perdarahan sulit berhenti, deformitas, nyeri berat, atau keterbatasan gerak signifikan.",
+            )
+        )
+
+    if not findings:
+        findings.append(
+            (
+                "Gangguan kenyamanan akut terkait keluhan fisik siswa.",
+                "Observasi keadaan umum dan tanda vital, anjurkan istirahat, berikan cairan oral sesuai kondisi, dan lakukan edukasi singkat sesuai keluhan.",
+                "Pantau respons siswa 15-30 menit, dokumentasikan perubahan kondisi, serta pastikan siswa tidak kembali beraktivitas berat terlalu cepat.",
+                "Evaluasi ulang sesuai kondisi; hubungi wali asuh bila keluhan berulang, menetap, atau muncul tanda bahaya.",
+            )
+        )
+
+    diagnoses = " ".join(item[0] for item in findings[:2])
+    interventions = " ".join(item[1] for item in findings[:2])
+    notes = " ".join(f"Implementasi: {item[2]} Tindak lanjut: {item[3]}" for item in findings[:2])
+    return (
+        "Diagnosa Keperawatan:\n"
+        f"{diagnoses}\n\n"
+        "Tindakan Keperawatan:\n"
+        f"{interventions}\n\n"
+        "Catatan:\n"
+        f"{notes}"
+    )
+
+
+def get_openrouter_models() -> list[str]:
+    raw_models = os.getenv("OPENROUTER_MODELS") or OPENROUTER_MODEL
+    models = [model.strip() for model in raw_models.split(",") if model.strip()]
+    if OPENROUTER_MODEL and OPENROUTER_MODEL not in models:
+        models.insert(0, OPENROUTER_MODEL)
+    return models or ["openai/gpt-oss-120b:free"]
 
 
 def _user_response(user: UserORM) -> UserResponse:
@@ -229,6 +311,116 @@ def _append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: 
     )
     elements.append(Spacer(1, 18))
     elements.append(table)
+
+
+def normalize_whatsapp_number(phone: str | None) -> str | None:
+    if not phone:
+        return None
+    digits = "".join(ch for ch in phone if ch.isdigit())
+    if not digits:
+        return None
+    if digits.startswith("0"):
+        digits = "62" + digits[1:]
+    elif digits.startswith("8"):
+        digits = "62" + digits
+    if len(digits) < 10:
+        return None
+    return digits
+
+
+def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, str]:
+    token = os.getenv("FONNTE_TOKEN")
+    if not token:
+        return "skipped", "FONNTE_TOKEN belum diisi"
+
+    target = normalize_whatsapp_number(target_phone)
+    if not target:
+        return "skipped", "Nomor wali asuh belum valid"
+
+    try:
+        response = requests.post(
+            os.getenv("FONNTE_API_URL", "https://api.fonnte.com/send"),
+            headers={"Authorization": token},
+            data={"target": target, "message": message},
+            timeout=10,
+        )
+        if response.ok:
+            return "sent", response.text[:300]
+        return "failed", f"HTTP {response.status_code}: {response.text[:300]}"
+    except Exception as exc:
+        return "failed", str(exc)
+
+
+def build_uks_visit_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
+    parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
+    return f"""[UKS SRMA 13 Bekasi]
+
+Yth. {parent_name},
+
+Siswa atas nama {patient.name} tercatat melakukan kunjungan ke UKS.
+
+Tanggal:
+{visit.visit_date}
+
+Keluhan:
+{visit.complaint}
+
+Diagnosa:
+{visit.diagnosis or "-"}
+
+Tindakan:
+{visit.treatment}
+
+Pesan ini adalah notifikasi otomatis dari sistem UKS.
+
+Terima kasih.
+- UKS Sekolah Rakyat"""
+
+
+def build_referral_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
+    parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
+    return f"""[UKS SRMA 13 Bekasi]
+
+Yth. {parent_name},
+
+Siswa {patient.name} membutuhkan tindak lanjut/rujukan.
+
+Tanggal kunjungan: {visit.visit_date}
+Keluhan: {visit.complaint}
+Diagnosa: {visit.diagnosis or "-"}
+Tujuan rujukan: {visit.referral_to or visit.referral_place or "-"}
+
+Mohon dilakukan pemantauan dan tindak lanjut sesuai arahan petugas UKS."""
+
+
+def build_control_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
+    parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
+    return f"""[UKS SRMA 13 Bekasi]
+
+Yth. {parent_name},
+
+Pengingat jadwal kontrol siswa {patient.name}.
+
+Tanggal kontrol: {visit.control_date or "-"}
+Tempat kontrol: {visit.referral_place or visit.referral_to or "-"}
+Diagnosa: {visit.diagnosis or "-"}
+
+Mohon wali asuh/orang tua memastikan jadwal kontrol terlaksana."""
+
+
+def build_rest_letter_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
+    parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
+    return f"""[UKS SRMA 13 Bekasi]
+
+Yth. {parent_name},
+
+Surat izin istirahat UKS untuk siswa {patient.name} telah dibuat.
+
+Tanggal kunjungan: {visit.visit_date}
+Keluhan: {visit.complaint}
+Diagnosa: {visit.diagnosis or "-"}
+
+Silakan cek surat izin dari petugas UKS."""
 
 
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -412,60 +604,60 @@ def suggest_care_with_ai(
 ) -> AICareSuggestionResponse:
 
     prompt = f"""
-Anda adalah perawat UKS Indonesia.
+Anda adalah perawat UKS sekolah di Indonesia.
 
-Gunakan SDKI (Standar Diagnosis Keperawatan Indonesia).
+Buat saran klinis UKS yang praktis, spesifik, dan tidak monoton.
+Gunakan istilah diagnosis keperawatan/SDKI bila sesuai, bukan diagnosis medis dokter.
+Sesuaikan dengan keluhan dan hasil pemeriksaan, jangan mengulang template yang sama untuk semua kasus.
 
-WAJIB menggunakan diagnosa keperawatan,
-BUKAN diagnosa medis.
-Keluhan:
+Keluhan siswa:
 {payload.complaint}
 
-Pemeriksaan:
+Hasil pemeriksaan UKS:
 {payload.examination}
 
-Jawab SINGKAT dengan format:
+Jawab dengan format persis:
 
 Diagnosa Keperawatan:
-...
+1-2 diagnosis keperawatan yang paling relevan.
 
 Tindakan Keperawatan:
-...
+2-4 tindakan praktis yang bisa dilakukan petugas UKS.
 
 Catatan:
-...
+Implementasi singkat, hal yang perlu dipantau, dan kapan perlu hubungi wali/rujuk.
 
-Maksimal 2 kalimat tiap bagian.
+Tetap ringkas, aman, dan cocok untuk dokumentasi UKS.
 """
 
-    try:
-        if client is None:
-            raise RuntimeError("OpenAI SDK not installed")
+    result = ""
+    ai_source = "local_fallback"
+    model_used = None
+    if client is not None and os.getenv("OPENROUTER_API_KEY"):
+        for model_name in get_openrouter_models():
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        }
+                    ],
+                    temperature=0.55,
+                    max_tokens=320,
+                )
+                result = response.choices[0].message.content or ""
+                result = result.replace("**", "")
+                if result.strip():
+                    ai_source = "online"
+                    model_used = model_name
+                    break
+            except Exception:
+                continue
 
-        response = client.chat.completions.create(
-            model="openai/gpt-oss-120b:free",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.3,
-            max_tokens=200,
-        )
-        
-        result = response.choices[0].message.content
-
-        if result is None:
-           result = "AI tidak mengembalikan respons."
-
-        result = result.replace("**", "")
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI Service Error: {str(e)}"
-    )
+    if not result.strip():
+        result = build_local_care_suggestion(payload.complaint, payload.examination)
 
     diagnosis = ""
     intervention = ""
@@ -506,7 +698,9 @@ Maksimal 2 kalimat tiap bagian.
         intervention=intervention,
         implementation=implementation,
         follow_up="Evaluasi ulang sesuai kondisi pasien.",
-        confidence=0.95,
+        confidence=0.95 if ai_source == "online" else 0.75,
+        source=ai_source,
+        model=model_used,
     )
 @router.post("/patients", response_model=PatientSummary, status_code=status.HTTP_201_CREATED)
 def create_patient(
@@ -679,10 +873,31 @@ def delete_patient(
         raise HTTPException(status_code=404, detail="Patient not found")
 
     patient_name = patient.name
+    ckg_students = (
+        db.query(CKGStudentORM)
+        .filter(CKGStudentORM.nis == patient_id)
+        .all()
+    )
+    for ckg_student in ckg_students:
+        db.delete(ckg_student)
+
+    db.query(RecommendationLetterORM).filter(
+        RecommendationLetterORM.student_id == patient_id
+    ).delete(synchronize_session=False)
     db.delete(patient)
-    write_audit_log(db, current_user, "delete_patient", "patient", patient_id, f"Deleted patient {patient_name}")
+    write_audit_log(
+        db,
+        current_user,
+        "delete_patient",
+        "patient",
+        patient_id,
+        f"Deleted patient {patient_name}; CKG records={len(ckg_students)}",
+    )
     db.commit()
-    return {"message": "Patient deleted"}
+    return {
+        "message": "Data siswa berhasil dihapus",
+        "deleted_ckg_records": len(ckg_students),
+    }
 
 @router.post("/uks/visits", response_model=UKSVisitResponse, status_code=status.HTTP_201_CREATED)
 def create_uks_visit(
@@ -715,62 +930,19 @@ def create_uks_visit(
         visit.id,
         f"Created UKS visit for patient {visit.patient_id}",
     )
-    db.commit()
 
-    patient = db.get(
-        PatientORM,
-        payload.patient_id
-    )
-
+    whatsapp_status = "skipped"
+    whatsapp_message = "Nomor wali asuh belum diisi"
     if patient and patient.parent_phone:
-
-        phone = patient.parent_phone
-
-        if phone.startswith("08"):
-            phone = "62" + phone[1:]
-
-        message = f"""
-[UKS SRMA 13 Bekasi]
-
-Yth. Wali Asuh {patient.name},
-
-Siswa melakukan kunjungan ke UKS.
-
-Keluhan:
-{payload.complaint}
-
-Tindakan:
-{payload.treatment}
-
-Tanggal:
-{payload.visit_date}
-
-Pesan ini adalah pesan otomatis.
-Mohon bantuannya untuk meneruskan kepada wali asuh terkait.
-
-Terima kasih.
-- UKS Sekolah Rakyat
-"""
-
-        response = requests.post(
-
-            "https://api.fonnte.com/send",
-
-            headers={
-                "Authorization":
-                os.getenv("FONNTE_TOKEN")
-            },
-
-            data={
-                "target":
-                phone,
-                "message":
-                message
-            }
-
+        whatsapp_status, whatsapp_message = send_whatsapp_message(
+            patient.parent_phone,
+            build_uks_visit_whatsapp_message(patient, visit),
         )
-
-        print(response.text)
+    visit.whatsapp_status = whatsapp_status
+    visit.whatsapp_message = whatsapp_message
+    db.add(visit)
+    db.commit()
+    db.refresh(visit)
 
     return UKSVisitResponse(
         id=visit.id,
@@ -783,6 +955,8 @@ Terima kasih.
         notes=visit.notes,
         referral_to=visit.referral_to,
         referral_status=visit.referral_status,
+        whatsapp_status=whatsapp_status,
+        whatsapp_message=whatsapp_message,
     )
     
 @router.get("/patients/{patient_id}/visits")
@@ -1135,6 +1309,116 @@ def update_medicine_inventory(
     )
 
 
+@router.post("/medicines/{medicine_id}/adjust", response_model=MedicineInventoryResponse)
+def adjust_medicine_stock(
+    medicine_id: int,
+    payload: MedicineStockAdjustment,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles("admin", "perawat")),
+) -> MedicineInventoryResponse:
+    med = db.get(MedicineInventoryORM, medicine_id)
+    if med is None:
+        raise HTTPException(status_code=404, detail="Medicine not found")
+
+    before_stock = med.stock
+    transaction_type = payload.adjustment_type
+    transaction_quantity = payload.quantity
+
+    if payload.adjustment_type == "IN":
+        if payload.quantity < 1:
+            raise HTTPException(status_code=400, detail="Quantity must be greater than 0")
+        med.stock += payload.quantity
+    elif payload.adjustment_type == "OUT":
+        if payload.quantity < 1:
+            raise HTTPException(status_code=400, detail="Quantity must be greater than 0")
+        if med.stock < payload.quantity:
+            raise HTTPException(status_code=400, detail=f"Insufficient stock for {med.name}. Remaining: {med.stock}")
+        med.stock -= payload.quantity
+    else:
+        if payload.quantity == before_stock:
+            transaction_type = "IN"
+            transaction_quantity = 0
+        elif payload.quantity > before_stock:
+            transaction_type = "IN"
+            transaction_quantity = payload.quantity - before_stock
+        else:
+            transaction_type = "OUT"
+            transaction_quantity = before_stock - payload.quantity
+        med.stock = payload.quantity
+
+    transaction = MedicineTransactionORM(
+        medicine_name=med.name,
+        transaction_type=transaction_type,
+        quantity=transaction_quantity,
+        notes=payload.notes or f"Koreksi stok dari {before_stock} ke {med.stock}",
+    )
+    db.add(med)
+    db.add(transaction)
+    write_audit_log(
+        db,
+        current_user,
+        "adjust_medicine_stock",
+        "medicine",
+        med.id,
+        f"{med.name}: {before_stock} -> {med.stock}",
+    )
+    db.commit()
+    db.refresh(med)
+
+    return MedicineInventoryResponse(
+        id=med.id,
+        name=med.name,
+        unit=med.unit,
+        stock=med.stock,
+        minimum_stock=med.minimum_stock,
+        is_low_stock=med.stock <= med.minimum_stock,
+    )
+
+
+@router.get("/reports/medicine-mutation")
+def get_medicine_mutation_report(
+    month: int,
+    year: int,
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles("admin", "perawat")),
+) -> list[dict]:
+    if month < 1 or month > 12:
+        raise HTTPException(status_code=400, detail="Month must be 1-12")
+    start_dt = datetime(year, month, 1)
+    end_dt = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+
+    transactions = (
+        db.query(MedicineTransactionORM)
+        .filter(MedicineTransactionORM.transaction_date >= start_dt)
+        .filter(MedicineTransactionORM.transaction_date < end_dt)
+        .order_by(MedicineTransactionORM.medicine_name.asc())
+        .all()
+    )
+    summary: dict[str, dict] = {}
+    for trx in transactions:
+        item = summary.setdefault(
+            trx.medicine_name,
+            {"medicine_name": trx.medicine_name, "in_qty": 0, "out_qty": 0, "current_stock": 0},
+        )
+        if trx.transaction_type == "IN":
+            item["in_qty"] += trx.quantity
+        else:
+            item["out_qty"] += trx.quantity
+
+    stocks = {
+        med.name: med.stock
+        for med in db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
+    }
+    for name, stock in stocks.items():
+        item = summary.setdefault(
+            name,
+            {"medicine_name": name, "in_qty": 0, "out_qty": 0, "current_stock": stock},
+        )
+        item["current_stock"] = stock
+
+    return list(summary.values())
+
+
 @router.get("/reports/medicines/pdf")
 def get_medicines_report_pdf(
     db: Session = Depends(get_db),
@@ -1345,55 +1629,12 @@ def update_uks_referral(
     db.add(visit)
     db.commit()
     db.refresh(visit)
-    patient = db.get(
-        PatientORM,
-        payload.patient_id
-    )
+    patient = db.get(PatientORM, visit.patient_id)
 
     if patient and patient.parent_phone:
-
-        message = f"""
-[UKS SRMA 13 Bekasi]
-
-Yth. Wali Asuh {patient.name},
-
-Siswa melakukan kunjungan ke UKS.
-
-Keluhan:
-{payload.complaint}
-
-Tindakan:
-{payload.treatment}
-
-Tanggal:
-{payload.visit_date}
-
-Ini adalah pesan otomatis.
-
-Terima kasih.
-- UKS Sekolah Rakyat
-"""
-        phone = patient.parent_phone
-
-        if phone.startswith("08"):
-            phone = "62" + phone[1:]
-        requests.post(
-
-            "https://api.fonnte.com/send",
-
-            headers={
-                "Authorization":
-                os.getenv("FONNTE_TOKEN")
-            },
-
-            data={
-                "target":
-                phone,
-
-                "message":
-                message
-            }
-
+        send_whatsapp_message(
+            patient.parent_phone,
+            build_referral_whatsapp_message(patient, visit),
         )
 
     return UKSVisitResponse(
@@ -1911,6 +2152,10 @@ def update_uks_visit(
     write_audit_log(db, current_user, "edit_uks_visit", "uks_visit", visit.id, f"Edited UKS visit for patient {visit.patient_id}")
     db.commit()
     db.refresh(visit)
+    if payload.control_date is not None or payload.referral_place is not None:
+        patient = db.get(PatientORM, visit.patient_id)
+        if patient and patient.parent_phone:
+            send_whatsapp_message(patient.parent_phone, build_control_whatsapp_message(patient, visit))
 
     return {
         "message": "Visit updated"
@@ -2171,5 +2416,490 @@ def list_audit_logs(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/dashboard/advanced-stats")
+def dashboard_advanced_stats(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    today = date.today().isoformat()
+    month_prefix = today[:7]
+
+    visits = db.query(UKSVisitORM).all()
+    monthly_visits = [v for v in visits if str(v.visit_date).startswith(month_prefix)]
+    today_visits = [v for v in visits if str(v.visit_date) == today]
+    low_stock = (
+        db.query(MedicineInventoryORM)
+        .filter(MedicineInventoryORM.stock <= MedicineInventoryORM.minimum_stock)
+        .order_by(MedicineInventoryORM.name.asc())
+        .limit(10)
+        .all()
+    )
+    pending_controls = [
+        v for v in visits
+        if getattr(v, "control_date", None) and not getattr(v, "control_done", False)
+    ]
+    student_counter: dict[str, dict] = {}
+    for visit in monthly_visits:
+        patient = db.get(PatientORM, visit.patient_id)
+        key = visit.patient_id
+        if key not in student_counter:
+            student_counter[key] = {
+                "student_id": key,
+                "name": patient.name if patient else key,
+                "class_name": patient.class_name if patient else "-",
+                "total": 0,
+            }
+        student_counter[key]["total"] += 1
+
+    return {
+        "today_visits": len(today_visits),
+        "monthly_visits": len(monthly_visits),
+        "top_monthly_students": sorted(student_counter.values(), key=lambda x: x["total"], reverse=True)[:10],
+        "low_stock": [
+            {
+                "id": med.id,
+                "name": med.name,
+                "stock": med.stock,
+                "unit": med.unit,
+                "minimum_stock": med.minimum_stock,
+            }
+            for med in low_stock
+        ],
+        "pending_controls": [
+            {
+                "visit_id": visit.id,
+                "patient_id": visit.patient_id,
+                "patient_name": db.get(PatientORM, visit.patient_id).name if db.get(PatientORM, visit.patient_id) else visit.patient_id,
+                "control_date": visit.control_date,
+                "referral_place": visit.referral_place or visit.referral_to,
+            }
+            for visit in sorted(pending_controls, key=lambda v: str(v.control_date))[:10]
+        ],
+        "whatsapp": {
+            "configured": bool(os.getenv("FONNTE_TOKEN")),
+            "visits_with_parent_phone": sum(1 for v in today_visits if (db.get(PatientORM, v.patient_id) and db.get(PatientORM, v.patient_id).parent_phone)),
+            "visits_without_parent_phone": sum(1 for v in today_visits if not (db.get(PatientORM, v.patient_id) and db.get(PatientORM, v.patient_id).parent_phone)),
+        },
+    }
+
+
+@router.get("/whatsapp/logs")
+def list_whatsapp_logs(
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+) -> list[dict]:
+    query = db.query(UKSVisitORM).order_by(UKSVisitORM.id.desc())
+    if status_filter:
+        query = query.filter(UKSVisitORM.whatsapp_status == status_filter)
+    visits = query.limit(limit).all()
+    rows = []
+    for visit in visits:
+        patient = db.get(PatientORM, visit.patient_id)
+        rows.append(
+            {
+                "visit_id": visit.id,
+                "visit_date": visit.visit_date,
+                "patient_id": visit.patient_id,
+                "patient_name": patient.name if patient else visit.patient_id,
+                "parent_phone": patient.parent_phone if patient else None,
+                "status": visit.whatsapp_status or "skipped",
+                "message": visit.whatsapp_message or "-",
+            }
+        )
+    return rows
+
+
+@router.post("/whatsapp/visits/{visit_id}/resend")
+def resend_visit_whatsapp(
+    visit_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+) -> dict:
+    visit = db.get(UKSVisitORM, visit_id)
+    if visit is None:
+        raise HTTPException(status_code=404, detail="UKS visit not found")
+    patient = db.get(PatientORM, visit.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    status_text, detail = send_whatsapp_message(
+        patient.parent_phone,
+        build_uks_visit_whatsapp_message(patient, visit),
+    )
+    visit.whatsapp_status = status_text
+    visit.whatsapp_message = detail
+    db.add(visit)
+    write_audit_log(db, current_user, "resend_whatsapp_visit", "uks_visit", visit.id, f"{status_text}: {detail}")
+    db.commit()
+    return {"whatsapp_status": status_text, "whatsapp_message": detail}
+
+
+@router.get("/system/health-check")
+def system_health_check(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+):
+    checks = []
+    try:
+        db.query(UserORM).count()
+        checks.append({"name": "Database", "status": "ok", "detail": "Koneksi database aktif"})
+    except Exception as exc:
+        checks.append({"name": "Database", "status": "error", "detail": str(exc)})
+
+    checks.append({
+        "name": "WhatsApp",
+        "status": "ok" if os.getenv("FONNTE_TOKEN") else "warning",
+        "detail": "FONNTE_TOKEN terisi" if os.getenv("FONNTE_TOKEN") else "FONNTE_TOKEN belum diisi",
+    })
+    letterhead = Path("static/img/kop-surat-sekolah-rakyat.png")
+    checks.append({
+        "name": "Kop Surat PDF",
+        "status": "ok" if letterhead.exists() else "warning",
+        "detail": str(letterhead),
+    })
+    static_dir = Path("static")
+    checks.append({
+        "name": "Static Folder",
+        "status": "ok" if static_dir.exists() else "error",
+        "detail": str(static_dir.resolve()) if static_dir.exists() else "Folder static tidak ditemukan",
+    })
+    return {"status": "ok" if all(c["status"] != "error" for c in checks) else "error", "checks": checks}
+
+
+@router.get("/admin/backup")
+def download_backup(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+):
+    payload = {
+        "generated_at": datetime.utcnow().isoformat(),
+        "patients": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "age": p.age,
+                "gender": p.gender,
+                "class_name": p.class_name,
+                "birth_date": p.birth_date,
+                "parent_name": p.parent_name,
+                "parent_phone": p.parent_phone,
+            }
+            for p in db.query(PatientORM).all()
+        ],
+        "visits": [
+            {
+                "id": v.id,
+                "patient_id": v.patient_id,
+                "visit_date": v.visit_date,
+                "complaint": v.complaint,
+                "examination": v.examination,
+                "treatment": v.treatment,
+                "diagnosis": v.diagnosis,
+                "notes": v.notes,
+                "referral_to": v.referral_to,
+                "referral_status": v.referral_status,
+                "referral_place": v.referral_place,
+                "control_date": v.control_date,
+                "control_done": v.control_done,
+            }
+            for v in db.query(UKSVisitORM).all()
+        ],
+        "medicines": [
+            {"name": m.name, "unit": m.unit, "stock": m.stock, "minimum_stock": m.minimum_stock}
+            for m in db.query(MedicineInventoryORM).all()
+        ],
+    }
+    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    return StreamingResponse(
+        BytesIO(data),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="backup_emr_uks_{date.today().isoformat()}.json"'},
+    )
+
+
+@router.post("/admin/restore")
+def restore_backup(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+):
+    restored = {"patients": 0, "visits": 0, "medicines": 0}
+    for item in payload.get("patients", []):
+        patient = db.get(PatientORM, str(item.get("id")))
+        if patient is None:
+            patient = PatientORM(id=str(item.get("id")), name=item.get("name") or "-", age=int(item.get("age") or 0), gender=item.get("gender") or "-")
+            db.add(patient)
+        patient.name = item.get("name") or patient.name
+        patient.age = int(item.get("age") or patient.age or 0)
+        patient.gender = item.get("gender") or patient.gender
+        patient.class_name = item.get("class_name")
+        patient.birth_date = item.get("birth_date")
+        patient.parent_name = item.get("parent_name")
+        patient.parent_phone = item.get("parent_phone")
+        restored["patients"] += 1
+
+    for item in payload.get("medicines", []):
+        med = db.query(MedicineInventoryORM).filter(MedicineInventoryORM.name == item.get("name")).first()
+        if med is None:
+            med = MedicineInventoryORM(name=item.get("name") or "-", unit=item.get("unit") or "tablet", stock=0, minimum_stock=10)
+            db.add(med)
+        med.unit = item.get("unit") or med.unit
+        med.stock = int(item.get("stock") or 0)
+        med.minimum_stock = int(item.get("minimum_stock") or 0)
+        restored["medicines"] += 1
+
+    for item in payload.get("visits", []):
+        patient_id = str(item.get("patient_id") or "")
+        if not patient_id or db.get(PatientORM, patient_id) is None:
+            continue
+        visit = None
+        if item.get("id") is not None:
+            visit = db.get(UKSVisitORM, int(item.get("id")))
+        if visit is None:
+            visit = UKSVisitORM(
+                patient_id=patient_id,
+                visit_date=item.get("visit_date") or date.today().isoformat(),
+                complaint=item.get("complaint") or "-",
+                examination=item.get("examination") or "-",
+                treatment=item.get("treatment") or "-",
+            )
+            db.add(visit)
+        visit.patient_id = patient_id
+        visit.visit_date = item.get("visit_date") or visit.visit_date
+        visit.complaint = item.get("complaint") or visit.complaint
+        visit.examination = item.get("examination") or visit.examination
+        visit.treatment = item.get("treatment") or visit.treatment
+        visit.diagnosis = item.get("diagnosis")
+        visit.notes = item.get("notes")
+        visit.referral_to = item.get("referral_to")
+        visit.referral_status = item.get("referral_status")
+        visit.referral_place = item.get("referral_place")
+        visit.control_date = item.get("control_date")
+        visit.control_done = bool(item.get("control_done"))
+        restored["visits"] += 1
+    write_audit_log(db, current_user, "restore_backup", "system", None, json.dumps(restored))
+    db.commit()
+    return {"message": "Restore selesai", "restored": restored}
+
+
+@router.post("/patients/import-excel")
+def import_patients_excel(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+):
+    content = payload.get("content_base64")
+    if not content:
+        raise HTTPException(status_code=400, detail="content_base64 wajib diisi")
+    raw = base64.b64decode(content.split(",", 1)[-1])
+    workbook = load_workbook(BytesIO(raw), data_only=True)
+    sheet = workbook.active
+    headers = [str(cell.value or "").strip().lower() for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    aliases = {
+        "id": ["id", "nis", "id / nis"],
+        "name": ["nama", "nama lengkap", "name", "full name"],
+        "gender": ["gender", "jenis kelamin", "jk"],
+        "birth_date": ["tanggal lahir", "birth date", "birth_date"],
+        "class_name": ["kelas", "class", "class_name"],
+        "parent_name": ["wali asuh", "nama wali asuh", "orang tua", "parent name"],
+        "parent_phone": ["nomor hp wali asuh", "no hp", "hp wali", "parent phone"],
+    }
+
+    def idx(key: str) -> int | None:
+        for alias in aliases[key]:
+            if alias in headers:
+                return headers.index(alias)
+        return None
+
+    id_idx = idx("id")
+    name_idx = idx("name")
+    if id_idx is None or name_idx is None:
+        raise HTTPException(status_code=400, detail="Kolom NIS/ID dan Nama wajib ada")
+
+    rows = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if not row or not row[id_idx] or not row[name_idx]:
+            continue
+        item = {
+            "id": str(row[id_idx]).strip(),
+            "name": str(row[name_idx]).strip(),
+            "gender": str(row[idx("gender")] or "-").strip() if idx("gender") is not None else "-",
+            "birth_date": str(row[idx("birth_date")] or "").strip() if idx("birth_date") is not None else None,
+            "class_name": str(row[idx("class_name")] or "").strip() if idx("class_name") is not None else None,
+            "parent_name": str(row[idx("parent_name")] or "").strip() if idx("parent_name") is not None else None,
+            "parent_phone": str(row[idx("parent_phone")] or "").strip() if idx("parent_phone") is not None else None,
+        }
+        rows.append(item)
+
+    if payload.get("preview", False):
+        return {"preview": rows[:20], "total": len(rows)}
+
+    created = 0
+    updated = 0
+    for item in rows:
+        patient = db.get(PatientORM, item["id"])
+        if patient is None:
+            patient = PatientORM(id=item["id"], name=item["name"], age=0, gender=item["gender"])
+            db.add(patient)
+            created += 1
+        else:
+            updated += 1
+        patient.name = item["name"]
+        patient.gender = item["gender"]
+        patient.class_name = item["class_name"]
+        patient.birth_date = item["birth_date"]
+        patient.parent_name = item["parent_name"]
+        patient.parent_phone = item["parent_phone"]
+    write_audit_log(db, current_user, "import_patients_excel", "patient", None, f"created={created}; updated={updated}")
+    db.commit()
+    return {"message": "Import siswa selesai", "created": created, "updated": updated, "total": len(rows)}
+
+
+@router.post("/uks/visits/{visit_id}/notify-rest-letter")
+def notify_rest_letter(
+    visit_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    visit = db.get(UKSVisitORM, visit_id)
+    if visit is None:
+        raise HTTPException(status_code=404, detail="UKS visit not found")
+    patient = db.get(PatientORM, visit.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    status_text, message = send_whatsapp_message(patient.parent_phone, build_rest_letter_whatsapp_message(patient, visit))
+    write_audit_log(db, current_user, "notify_rest_letter", "uks_visit", visit.id, f"{status_text}: {message}")
+    db.commit()
+    return {"whatsapp_status": status_text, "whatsapp_message": message}
+
+
+def _visit_or_404(db: Session, visit_id: int) -> tuple[UKSVisitORM, PatientORM]:
+    visit = db.get(UKSVisitORM, visit_id)
+    if visit is None:
+        raise HTTPException(status_code=404, detail="UKS visit not found")
+    patient = db.get(PatientORM, visit.patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return visit, patient
+
+
+@router.get("/uks/visits/{visit_id}/referral-letter")
+def uks_referral_letter_pdf(
+    visit_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    visit, patient = _visit_or_404(db, visit_id)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=24, bottomMargin=28, leftMargin=42, rightMargin=42)
+    styles = getSampleStyleSheet()
+    elements = []
+    _append_pdf_letterhead(elements, doc, "SURAT RUJUKAN UKS", f"Tanggal: {visit.visit_date}", styles)
+    rows = [
+        ["Nama", patient.name],
+        ["NIS", patient.id],
+        ["Kelas", patient.class_name or "-"],
+        ["Keluhan", visit.complaint],
+        ["Diagnosa", visit.diagnosis or "-"],
+        ["Tindakan", visit.treatment],
+        ["Tujuan Rujukan", visit.referral_to or visit.referral_place or "Fasilitas kesehatan terdekat"],
+    ]
+    elements.append(Table(rows, colWidths=[130, doc.width - 130], style=TableStyle([
+        ("GRID", (0, 0), (-1, -1), .4, colors.lightgrey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 7),
+    ])))
+    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS")
+    doc.build(elements)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="surat_rujukan_{visit_id}.pdf"'})
+
+
+@router.get("/uks/visits/{visit_id}/rest-letter")
+def uks_rest_letter_pdf(
+    visit_id: int,
+    reason: str = Query(default="Istirahat"),
+    days: int = Query(default=1, ge=1, le=30),
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    visit, patient = _visit_or_404(db, visit_id)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=24, bottomMargin=28, leftMargin=42, rightMargin=42)
+    styles = getSampleStyleSheet()
+    elements = []
+    _append_pdf_letterhead(elements, doc, "SURAT IZIN ISTIRAHAT UKS", f"Tanggal: {visit.visit_date}", styles)
+    rows = [
+        ["Nama", patient.name],
+        ["NIS", patient.id],
+        ["Kelas", patient.class_name or "-"],
+        ["Alasan Izin", reason],
+        ["Lama Istirahat", f"{days} hari"],
+        ["Diagnosa", visit.diagnosis or "-"],
+        ["Catatan", "Disarankan istirahat dan pemantauan kondisi oleh wali asuh/orang tua."],
+    ]
+    elements.append(Table(rows, colWidths=[130, doc.width - 130], style=TableStyle([
+        ("GRID", (0, 0), (-1, -1), .4, colors.lightgrey),
+        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 7),
+    ])))
+    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS")
+    doc.build(elements)
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="surat_izin_{visit_id}.pdf"'})
+
+
+@router.post("/ckg/students/{student_id}/notify-completed")
+def notify_ckg_completed(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    student = db.get(CKGStudentORM, student_id)
+    if student is None:
+        raise HTTPException(status_code=404, detail="CKG student not found")
+    patient = db.get(PatientORM, student.nis)
+    phone = student.parent_phone or (patient.parent_phone if patient else None)
+    parent_name = student.parent_name or (patient.parent_name if patient else None) or "Wali Asuh / Orang Tua"
+    message = f"""[UKS SRMA 13 Bekasi]
+
+Yth. {parent_name},
+
+Hasil CKG siswa {student.full_name} telah selesai diproses.
+
+Status: {student.status}
+Silakan hubungi petugas UKS bila diperlukan tindak lanjut."""
+    status_text, detail = send_whatsapp_message(phone, message)
+    write_audit_log(db, current_user, "notify_ckg_completed", "ckg_student", student.id, f"{status_text}: {detail}")
+    db.commit()
+    return {"whatsapp_status": status_text, "whatsapp_message": detail}
+
+
+@router.get("/audit-logs/export/excel")
+def export_audit_logs_excel(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+):
+    logs = db.query(AuditLogORM).order_by(AuditLogORM.timestamp.desc()).limit(5000).all()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Audit Log"
+    ws.append(["Timestamp", "User", "Action", "Entity", "Entity ID", "Details"])
+    for log in logs:
+        ws.append([str(log.timestamp), log.username, log.action, log.entity_type, log.entity_id, log.details])
+    stream = BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="audit_log.xlsx"'},
     )
     PasswordResetRequest,

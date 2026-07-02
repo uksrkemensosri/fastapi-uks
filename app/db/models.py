@@ -104,6 +104,7 @@ class CKGStudentORM(Base):
     class_name: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     section: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     parent_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    parent_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="REGISTERED", index=True)
     queue_number: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     needs_referral: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
@@ -326,6 +327,8 @@ class UKSVisitORM(Base):
     referral_place: Mapped[str | None] = mapped_column(String(255), nullable=True)
     control_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     control_done: Mapped[bool] = mapped_column(Boolean, default=False)
+    whatsapp_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    whatsapp_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     patient: Mapped[PatientORM] = relationship(back_populates="uks_visits")
     medications: Mapped[list["UKSMedicationORM"]] = relationship(

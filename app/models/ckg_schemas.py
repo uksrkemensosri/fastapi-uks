@@ -53,6 +53,7 @@ class CKGStudentCreate(BaseModel):
     class_name: Optional[str] = Field(default=None, max_length=50)
     section: Optional[str] = Field(default=None, max_length=50)
     parent_name: Optional[str] = Field(default=None, max_length=200)
+    parent_phone: Optional[str] = Field(default=None, max_length=30)
 
 
 class CKGStudentResponse(BaseModel):
@@ -65,6 +66,7 @@ class CKGStudentResponse(BaseModel):
     class_name: Optional[str] = None
     section: Optional[str] = None
     parent_name: Optional[str] = None
+    parent_phone: Optional[str] = None
     status: str
     queue_number: Optional[int] = None
     needs_referral: bool

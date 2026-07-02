@@ -140,6 +140,33 @@
 
 <section class="card">
 
+  <h2>Tools Admin</h2>
+  <p style="color:#64748b;margin-top:-10px;margin-bottom:18px;">
+    Backup, restore, import siswa, dan cek kesehatan sistem.
+  </p>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+    <button class="btn btn-primary" id="btnHealthCheck" type="button">Health Check Sistem</button>
+    <button class="btn btn-secondary" id="btnBackup" type="button">Backup Data</button>
+    <button class="btn btn-secondary" id="btnRestore" type="button">Restore Data</button>
+  </div>
+
+  <div class="form-group">
+    <label>Import Siswa dari Excel</label>
+    <input id="studentExcelFile" type="file" accept=".xlsx,.xls">
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    <button class="btn btn-secondary" id="btnPreviewImport" type="button">Preview Import</button>
+    <button class="btn btn-primary" id="btnImportStudents" type="button">Import Siswa</button>
+  </div>
+  <div id="adminToolResult" class="status"></div>
+
+</section>
+
+<br>
+
+<section class="card">
+
   <h2>Ubah Password</h2>
 
   <div class="form-group">
@@ -164,6 +191,7 @@
   </main>
 </div>
 
+<script src="/ui/assets/dialogs.js?v=1"></script>
 <script>
 const token = localStorage.getItem('access_token') || '';
 if(!token){ window.location.href = '/login'; }
@@ -248,11 +276,108 @@ async function loadProfile(){
 
 loadProfile();
 
+function readFileAsDataUrl(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+btnHealthCheck.addEventListener('click', async () => {
+  const res = await fetch('/api/system/health-check', {
+    headers:{Authorization:`Bearer ${token}`}
+  });
+  const data = await res.json();
+  const text = data.checks.map(item => `${item.status.toUpperCase()} - ${item.name}: ${item.detail}`).join('\n');
+  adminToolResult.textContent = text;
+  appAlert('Health Check Sistem', text || 'Tidak ada hasil.', data.status === 'ok' ? 'success' : 'error');
+});
+
+btnBackup.addEventListener('click', async () => {
+  const res = await fetch('/api/admin/backup', {
+    headers:{Authorization:`Bearer ${token}`}
+  });
+  if(!res.ok){
+    appAlert('Gagal', 'Backup gagal dibuat.', 'error');
+    return;
+  }
+  downloadBlob(await res.blob(), `backup_emr_uks_${new Date().toISOString().slice(0,10)}.json`);
+  appAlert('Berhasil', 'Backup data berhasil diunduh.', 'success');
+});
+
+btnRestore.addEventListener('click', async () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if(!file){ return; }
+    const text = await file.text();
+    const payload = JSON.parse(text);
+    const ok = await appConfirm('Restore Data?', 'Data dari file backup akan ditambahkan atau memperbarui data yang sudah ada.', {confirmText:'Ya, Restore', type:'warning'});
+    if(!ok){ return; }
+    const res = await fetch('/api/admin/restore', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+      body:JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok){
+      appAlert('Gagal', data.detail || 'Restore gagal.', 'error');
+      return;
+    }
+    appAlert('Berhasil', data.message || 'Restore selesai.', 'success');
+  };
+  input.click();
+});
+
+async function importStudents(preview){
+  const file = studentExcelFile.files[0];
+  if(!file){
+    appAlert('File Belum Dipilih', 'Pilih file Excel siswa terlebih dahulu.', 'error');
+    return;
+  }
+  const content = await readFileAsDataUrl(file);
+  const res = await fetch('/api/patients/import-excel', {
+    method:'POST',
+    headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`},
+    body:JSON.stringify({filename:file.name, content_base64:content, preview})
+  });
+  const data = await res.json();
+  if(!res.ok){
+    appAlert('Gagal', data.detail || 'Import gagal.', 'error');
+    return;
+  }
+  if(preview){
+    const text = `Total terbaca: ${data.total}\n\n` + data.preview.map(row => `${row.id} - ${row.name} - ${row.class_name || '-'}`).join('\n');
+    adminToolResult.textContent = text;
+    appAlert('Preview Import', text || 'Tidak ada data.', 'info');
+  }else{
+    appAlert('Berhasil', `Import selesai. Baru: ${data.created}, update: ${data.updated}.`, 'success');
+  }
+}
+
+btnPreviewImport.addEventListener('click', () => importStudents(true));
+btnImportStudents.addEventListener('click', () => importStudents(false));
+
 signatureFile.addEventListener('change', () => {
   const file = signatureFile.files[0];
   if(!file){ return; }
   if(!['image/png','image/jpeg'].includes(file.type)){
-    alert('Tanda tangan harus PNG atau JPG.');
+    appAlert('Format Tidak Sesuai', 'Tanda tangan harus PNG atau JPG.', 'error');
     signatureFile.value = '';
     return;
   }
@@ -281,10 +406,10 @@ btnSaveProfile.addEventListener('click', async () => {
   });
   const data = await res.json().catch(() => ({}));
   if(!res.ok){
-    alert(data.detail || 'Gagal menyimpan profil');
+    appAlert('Gagal', data.detail || 'Gagal menyimpan profil', 'error');
     return;
   }
-  alert('Profil tersimpan');
+  appAlert('Berhasil', 'Profil tersimpan.', 'success');
 });
 
 document
@@ -334,8 +459,10 @@ document
 
   if(res.ok){
 
-    alert(
-      'Password berhasil diubah'
+    appAlert(
+      'Berhasil',
+      'Password berhasil diubah.',
+      'success'
     );
 
     document.getElementById(
@@ -348,9 +475,11 @@ document
 
   }else{
 
-    alert(
+    appAlert(
+      'Gagal',
       data.detail ||
-      'Gagal mengubah password'
+      'Gagal mengubah password',
+      'error'
     );
 
   }

@@ -762,13 +762,17 @@ overflow:auto;
       0 20px 40px rgba(15,23,42,.15);
   ">
 
-    <h2 style="
+    <h2
+      id="dialogTitle"
+      style="
       margin-bottom:10px;
     ">
       Hapus Data?
     </h2>
 
-    <p style="
+    <p
+      id="dialogMessage"
+      style="
       color:var(--muted);
       line-height:1.7;
       margin-bottom:24px;
@@ -945,6 +949,8 @@ let medicinesData = [];
 let deleteVisitId = null;
 let patientsData = [];
 let visitMedicines = [];
+let appDialogResolver = null;
+let appDialogPayloadReader = null;
 
 if (!token) {
   window.location.href = "/login";
@@ -970,6 +976,100 @@ function closeControlModal(){
     .getElementById("controlModal")
     .style.display = "none";
 
+}
+
+function showAppDialog({
+  title = "Informasi",
+  message = "",
+  confirmText = "Oke",
+  cancelText = "Batal",
+  type = "info",
+  hideCancel = false
+} = {}){
+  const modal = document.getElementById("confirmModal");
+  const titleEl = document.getElementById("dialogTitle");
+  const messageEl = document.getElementById("dialogMessage");
+  const cancelBtn = document.getElementById("cancelDelete");
+  const confirmBtn = document.getElementById("confirmDelete");
+
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  cancelBtn.textContent = cancelText;
+  confirmBtn.textContent = confirmText;
+  cancelBtn.style.display = hideCancel ? "none" : "inline-flex";
+  confirmBtn.style.background =
+    type === "danger" || type === "error"
+    ? "#dc2626"
+    : "linear-gradient(135deg,#ec6cc4,#8b5cf6,#60a5fa)";
+  confirmBtn.style.color = "white";
+  modal.style.display = "flex";
+
+  return new Promise(resolve => {
+    appDialogResolver = resolve;
+  });
+}
+
+function closeAppDialog(result){
+  document.getElementById("confirmModal").style.display = "none";
+  if(appDialogResolver){
+    const payload =
+      result && appDialogPayloadReader
+      ? appDialogPayloadReader()
+      : result;
+    appDialogResolver(payload);
+    appDialogResolver = null;
+  }
+  appDialogPayloadReader = null;
+}
+
+function showAppConfirm(title, message, confirmText = "Ya, Hapus"){
+  return showAppDialog({
+    title,
+    message,
+    confirmText,
+    cancelText:"Batal",
+    type:"danger"
+  });
+}
+
+function showAppAlert(title, message, type = "info"){
+  return showAppDialog({
+    title,
+    message,
+    confirmText:"Oke",
+    type,
+    hideCancel:true
+  });
+}
+
+function showRestLetterDialog(){
+  const modal = document.getElementById("confirmModal");
+  const titleEl = document.getElementById("dialogTitle");
+  const messageEl = document.getElementById("dialogMessage");
+  const cancelBtn = document.getElementById("cancelDelete");
+  const confirmBtn = document.getElementById("confirmDelete");
+
+  titleEl.textContent = "Cetak Surat Izin";
+  messageEl.innerHTML = `
+    <span style="display:block;margin-bottom:12px;">Lengkapi alasan dan jumlah hari izin.</span>
+    <input id="restReasonInput" style="width:100%;padding:14px 16px;border:1px solid #dbe3ef;border-radius:16px;margin-bottom:12px;" placeholder="Alasan izin">
+    <input id="restDaysInput" type="number" min="1" style="width:100%;padding:14px 16px;border:1px solid #dbe3ef;border-radius:16px;" placeholder="Jumlah hari izin">
+  `;
+  cancelBtn.textContent = "Batal";
+  cancelBtn.style.display = "inline-flex";
+  confirmBtn.textContent = "Cetak";
+  confirmBtn.style.background = "linear-gradient(135deg,#ec6cc4,#8b5cf6,#60a5fa)";
+  confirmBtn.style.color = "white";
+  modal.style.display = "flex";
+  setTimeout(() => document.getElementById("restReasonInput")?.focus(), 0);
+
+  return new Promise(resolve => {
+    appDialogResolver = resolve;
+    appDialogPayloadReader = () => ({
+      reason: document.getElementById("restReasonInput").value.trim(),
+      days: document.getElementById("restDaysInput").value.trim()
+    });
+  });
 }
 async function saveControlSchedule(){
 
@@ -1036,46 +1136,11 @@ function showToast(
   message,
   type = "success"
 ){
-
-  const container =
-    document.getElementById(
-      "toastContainer"
-    );
-
-  const toast =
-    document.createElement("div");
-
-  toast.className =
-    `toast ${type}`;
-
-  toast.innerHTML = `
-
-    <div class="toast-title">
-      ${title}
-    </div>
-
-    <div class="toast-message">
-      ${message}
-    </div>
-
-  `;
-
-  container.appendChild(toast);
-
-  setTimeout(() => {
-
-    toast.style.opacity = "0";
-
-    toast.style.transform =
-      "translateY(-10px)";
-
-    setTimeout(() => {
-
-      toast.remove();
-
-    }, 300);
-
-  }, 3200);
+  showAppAlert(
+    title,
+    message,
+    type === "error" ? "error" : "success"
+  );
 
 }
 
@@ -1414,7 +1479,7 @@ document
     !dosage ||
     !quantity
   ){
-    alert("Lengkapi data obat");
+    showAppAlert("Data Belum Lengkap", "Lengkapi data obat terlebih dahulu.", "error");
     return;
   }
 
@@ -1643,10 +1708,11 @@ document
     };
 
     let savedVisitId;
+    let savedVisit;
 
     if (editingVisitId) {
 
-      await api(
+      savedVisit = await api(
         `/api/uks/visits/${editingVisitId}`,
         "PUT",
         body,
@@ -1660,7 +1726,7 @@ document
 
     } else {
 
-      const data =
+      savedVisit =
         await api(
           "/api/uks/visits",
           "POST",
@@ -1669,7 +1735,7 @@ document
         );
 
       savedVisitId =
-        data.id;
+        savedVisit.id;
 
     }
 
@@ -1688,10 +1754,26 @@ document
     btn.innerHTML =
       "Simpan Kunjungan";
 
+    let whatsappText = "";
+    if(savedVisit && savedVisit.whatsapp_status){
+      if(savedVisit.whatsapp_status === "sent"){
+        whatsappText = "Notifikasi WhatsApp terkirim ke wali asuh.";
+      }else if(savedVisit.whatsapp_status === "skipped"){
+        whatsappText = `Notifikasi WhatsApp belum dikirim: ${savedVisit.whatsapp_message || "konfigurasi belum lengkap"}.`;
+      }else{
+        whatsappText = `Notifikasi WhatsApp gagal: ${savedVisit.whatsapp_message || "provider tidak merespons"}.`;
+      }
+    }
+
     showToast(
   "Berhasil",
-  "Kunjungan berhasil disimpan"
+  whatsappText || "Kunjungan berhasil disimpan"
 );
+    showStatus(
+      "visitStatus",
+      whatsappText || "Kunjungan berhasil disimpan",
+      !savedVisit || savedVisit.whatsapp_status !== "failed"
+    );
     clearVisitForm();
 document.getElementById(
   "btnCreateVisit"
@@ -1723,29 +1805,63 @@ catch (err) {
 });
 /* AI */
 
+function localCareSuggestion(complaint, examination){
+  const text = `${complaint || ""} ${examination || ""}`.toLowerCase();
+  if(text.includes("gigi")){
+    return {
+      diagnosis: "Nyeri akut terkait gangguan pada area gigi dan mulut.",
+      intervention: "Kaji skala nyeri, anjurkan menjaga kebersihan mulut, dan berikan analgesik sesuai protokol UKS.",
+      implementation: "Pantau respons nyeri setiap 15-30 menit dan dokumentasikan perubahan kondisi.",
+      follow_up: "Sarankan pemeriksaan lanjutan bila nyeri menetap, bengkak, atau mengganggu makan."
+    };
+  }
+  if(text.includes("batuk") || text.includes("sesak") || text.includes("napas")){
+    return {
+      diagnosis: "Bersihan jalan napas tidak efektif terkait iritasi saluran napas.",
+      intervention: "Pantau pola napas, anjurkan minum air hangat, dan ajarkan teknik batuk efektif.",
+      implementation: "Observasi frekuensi napas, kenyamanan, dan respons setelah istirahat.",
+      follow_up: "Rujuk bila sesak, demam tinggi, atau keluhan tidak membaik."
+    };
+  }
+  if(text.includes("pusing") || text.includes("lemas") || text.includes("sakit kepala")){
+    return {
+      diagnosis: "Gangguan kenyamanan akut terkait keluhan pusing atau lemas.",
+      intervention: "Anjurkan istirahat di ruang UKS, pantau tanda vital, dan berikan cairan oral bila memungkinkan.",
+      implementation: "Evaluasi kondisi siswa setelah 15-30 menit dan batasi aktivitas sementara.",
+      follow_up: "Hubungi wali asuh atau rujuk bila keluhan memberat atau berulang."
+    };
+  }
+  return {
+    diagnosis: "Gangguan kenyamanan akut terkait keluhan fisik siswa.",
+    intervention: "Observasi tanda vital, anjurkan istirahat, dan berikan cairan oral sesuai kondisi.",
+    implementation: "Pantau respons siswa 15-30 menit dan dokumentasikan perubahan kondisi.",
+    follow_up: "Evaluasi ulang sesuai kondisi pasien."
+  };
+}
+
 document
 .getElementById("btnSuggestAI")
 .addEventListener("click", async () => {
 
+  const payload = {
+
+    complaint:
+      document
+      .getElementById(
+        "visitComplaint"
+      )
+      .value,
+
+    examination:
+      document
+      .getElementById(
+        "visitExam"
+      )
+      .value
+
+  };
+
   try {
-
-    const payload = {
-
-      complaint:
-        document
-        .getElementById(
-          "visitComplaint"
-        )
-        .value,
-
-      examination:
-        document
-        .getElementById(
-          "visitExam"
-        )
-        .value
-
-    };
 
     const data =
       await api(
@@ -1782,16 +1898,45 @@ ${data.follow_up}`;
 
     showStatus(
       "visitStatus",
-      "Saran AI berhasil dimuat",
+      data.source === "online"
+        ? `Saran AI online berhasil dimuat${data.model ? ` (${data.model})` : ""}`
+        : "AI online sedang dibatasi, saran lokal otomatis dipakai.",
       true
     );
 
   } catch (err) {
 
+    const data = localCareSuggestion(payload.complaint, payload.examination);
+
+    document
+      .getElementById(
+        "visitDiagnosis"
+      )
+      .value =
+        data.diagnosis;
+
+    document
+      .getElementById(
+        "visitTreatment"
+      )
+      .value =
+        data.intervention;
+
+    document
+      .getElementById(
+        "visitNotes"
+      )
+      .value =
+        `Implementasi:
+${data.implementation}
+
+Tindak lanjut:
+${data.follow_up}`;
+
     showStatus(
       "visitStatus",
-      err.message,
-      false
+      "AI sedang dibatasi, saran lokal otomatis dipakai.",
+      true
     );
 
   }
@@ -1862,6 +2007,16 @@ tbody.innerHTML = `
 
       const row =
         document.createElement("tr");
+      const whatsappLabel =
+        item.whatsapp_status === "sent"
+        ? "WA Terkirim"
+        : item.whatsapp_status === "failed"
+        ? "WA Gagal"
+        : "";
+      const whatsappClass =
+        item.whatsapp_status === "sent"
+        ? "rest-btn"
+        : "delete-btn";
 
       row.innerHTML = `
         <td>${item.visit_date || "-"}</td>
@@ -1926,6 +2081,12 @@ tbody.innerHTML = `
       Surat Izin
     </button>
 
+    ${whatsappLabel ? `
+      <span class="action-btn ${whatsappClass}" style="cursor:default;">
+        ${whatsappLabel}
+      </span>
+    ` : ""}
+
   </div>
 
 </td>
@@ -1945,13 +2106,39 @@ tbody.innerHTML = `
 
 /* DELETE */
 
-function deleteVisit(id){
+async function deleteVisit(id){
 
-  deleteVisitId = id;
+  const confirmed = await showAppConfirm(
+    "Hapus Data?",
+    "Data kunjungan akan dihapus permanen.",
+    "Ya, Hapus"
+  );
 
-  document.getElementById(
-    "confirmModal"
-  ).style.display = "flex";
+  if(!confirmed){ return; }
+
+  try{
+
+    await api(
+      `/api/uks/visits/${id}`,
+      "DELETE",
+      null,
+      true
+    );
+
+    await showAppAlert(
+      "Berhasil",
+      "Data kunjungan berhasil dihapus.",
+      "success"
+    );
+
+    loadVisits();
+    loadStats();
+
+  }catch(err){
+
+    showAppAlert("Gagal", err.message, "error");
+
+  }
 
 }
 /* EDIT */
@@ -2015,7 +2202,7 @@ document.getElementById(
 
   } catch (err) {
 
-    alert(err.message);
+    showAppAlert("Gagal", err.message, "error");
 
   }
 
@@ -2037,7 +2224,7 @@ async function showHistory(patientId){
 
     if(!visits.length){
 
-      alert("Belum ada riwayat");
+      showAppAlert("Belum Ada Riwayat", "Siswa ini belum memiliki riwayat kunjungan UKS.", "info");
 
       return;
 
@@ -2203,7 +2390,7 @@ Export PDF
 
     console.error(err);
 
-    alert("Gagal load riwayat");
+    showAppAlert("Gagal", "Gagal memuat riwayat.", "error");
 
   }
 
@@ -2285,7 +2472,7 @@ async function downloadReferral(id){
 
   }catch(err){
 
-    alert(err.message);
+    showAppAlert("Gagal", err.message, "error");
 
   }
 
@@ -2297,15 +2484,16 @@ async function downloadRestLetter(id){
 
   try{
 
-    const reason =
-      prompt("Alasan izin:");
+    const restLetterData = await showRestLetterDialog();
 
-    if(!reason) return;
+    if(!restLetterData) return;
 
-    const days =
-      prompt("Jumlah hari izin:");
+    const {reason, days} = restLetterData;
 
-    if(!days) return;
+    if(!reason || !days){
+      showAppAlert("Data Belum Lengkap", "Alasan dan jumlah hari izin wajib diisi.", "error");
+      return;
+    }
 
     const res = await fetch(
 
@@ -2344,9 +2532,16 @@ async function downloadRestLetter(id){
 
     a.click();
 
+    await api(
+      `/api/uks/visits/${id}/notify-rest-letter`,
+      "POST",
+      null,
+      true
+    ).catch(() => null);
+
   }catch(err){
 
-    alert(err.message);
+    showAppAlert("Gagal", err.message, "error");
 
   }
 
@@ -2710,6 +2905,12 @@ if(keyword.length < 2){
               >
                 Detail
               </button>
+              <button
+                class="action-btn delete-btn"
+                onclick="deletePatient('${patient.id}')"
+              >
+                Hapus
+              </button>
 
             </td>
 
@@ -2726,15 +2927,44 @@ if(keyword.length < 2){
   `;
 
 }
+async function deletePatient(id){
+  const patient = patientsData.find(
+    item => String(item.id) === String(id)
+  );
+  if(!patient){ return; }
+
+  const confirmed = await showAppConfirm(
+    "Hapus Data Siswa?",
+    `Hapus data siswa ${patient.name} (${patient.id})? Riwayat UKS, obat, rekomendasi, dan data CKG terkait siswa ini akan ikut dihapus permanen.`,
+    "Ya, Hapus"
+  );
+  if(!confirmed){ return; }
+
+  try{
+    const result = await api(
+      `/api/patients/${encodeURIComponent(id)}`,
+      "DELETE",
+      null,
+      true
+    );
+    showToast("Berhasil", result.message || "Data siswa berhasil dihapus");
+    await loadPatients();
+    renderPatientTable(
+      document.getElementById("searchPatientTable").value
+    );
+    loadVisits();
+    loadStats();
+  }catch(err){
+    showAppAlert("Gagal", err.message, "error");
+  }
+}
+
 async function editPatient(id){
 
   const patient =
   patientsData.find(
     p => String(p.id) === String(id)
   );
-  console.log(id);
-  console.log(patientsData);
-  console.log(patient);
   if(!patient) return;
   editingPatientId = id;
 
@@ -2802,9 +3032,7 @@ document
 .getElementById("cancelDelete")
 .addEventListener("click", () => {
 
-  document.getElementById(
-    "confirmModal"
-  ).style.display = "none";
+  closeAppDialog(false);
 
 });
 
@@ -2812,26 +3040,7 @@ document
 .getElementById("confirmDelete")
 .addEventListener("click", async () => {
 
-  try{
-
-    await api(
-      `/api/uks/visits/${deleteVisitId}`,
-      "DELETE",
-      null,
-      true
-    );
-
-    loadVisits();
-
-    document.getElementById(
-      "confirmModal"
-    ).style.display = "none";
-
-  }catch(err){
-
-    alert(err.message);
-
-  }
+  closeAppDialog(true);
 
 });
 
@@ -2923,7 +3132,7 @@ async function createReferral(id){
     const visit = visits.find(v => v.id === id);
 
     if(!visit){
-      alert("Data tidak ditemukan");
+      showAppAlert("Data Tidak Ditemukan", "Data kunjungan tidak ditemukan.", "error");
       return;
     }
 
@@ -3026,8 +3235,10 @@ async function createReferral(id){
 
   }catch(err){
 
-  alert(
-    "Gagal membuat surat rujukan"
+  showAppAlert(
+    "Gagal",
+    "Gagal membuat surat rujukan.",
+    "error"
   );
 
 }
@@ -3048,7 +3259,7 @@ async function createRestLetter(id){
     const visit = visits.find(v => v.id === id);
 
     if(!visit){
-      alert("Data tidak ditemukan");
+      showAppAlert("Data Tidak Ditemukan", "Data kunjungan tidak ditemukan.", "error");
       return;
     }
 
@@ -3265,8 +3476,10 @@ window.print();
 
   }catch(err){
 
-    alert(
-      "Gagal membuat surat izin"
+    showAppAlert(
+      "Gagal",
+      "Gagal membuat surat izin.",
+      "error"
     );
 
   }

@@ -85,6 +85,9 @@
     .medicine-name{font-weight:900;color:#334155;line-height:1.25;overflow-wrap:anywhere}
     .medicine-min{color:#64748b;font-size:.86rem;margin-top:4px}
     .medicine-stock{font-weight:900;color:#312e81;white-space:nowrap;background:#eef2ff;border:1px solid rgba(99,102,241,.12);border-radius:999px;padding:9px 12px;min-width:92px;text-align:center}
+    .medicine-actions{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid rgba(15,23,42,.06);padding-top:10px}
+    .mini-btn{border:none;border-radius:999px;background:#f8fafc;color:#6d28d9;font-weight:900;padding:8px 12px;cursor:pointer}
+    .mini-btn.danger{background:#fee2e2;color:#b91c1c}
     .medicine-tools{display:flex;gap:10px;flex-wrap:wrap}
     .medicine-tools .btn{min-height:44px;padding:0 18px}
     @media(max-width:1200px){.visit-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -275,6 +278,7 @@
             <h2 style="margin:0;">Stok Obat UKS</h2>
             <div class="medicine-tools">
               <button class="btn btn-secondary" id="btnReloadMedicines" type="button">Refresh</button>
+              <button class="btn btn-secondary" id="btnLowStockOnly" type="button">Stok Rendah</button>
               <button class="btn btn-secondary" id="btnMedicinePdf" type="button">Download PDF Stok</button>
               <button class="btn btn-secondary" id="btnMedicineMutationPdf" type="button">PDF Mutasi</button>
             </div>
@@ -306,6 +310,7 @@
   </main>
 </div>
 
+<script src="/ui/assets/dialogs.js?v=1"></script>
 <script>
 const token = localStorage.getItem("access_token") || "";
 if(!token){ window.location.href = "/login"; }
@@ -491,21 +496,53 @@ async function downloadVisitReport(format){
   }
 }
 
+let lowStockOnly = false;
 async function loadMedicines(){
   medicineList.textContent = "Memuat stok obat...";
   try{
     const data = await api("/api/medicines");
-    medicineList.innerHTML = data.map(item => `
-      <div class="medicine-item">
+    const rows = lowStockOnly ? data.filter(item => item.is_low_stock) : data;
+    medicineList.innerHTML = rows.map(item => `
+      <div class="medicine-item" style="${item.is_low_stock ? "border-color:#fecaca;background:#fff7f7;" : ""}">
         <div>
           <div class="medicine-name">${escapeHtml(item.name)}</div>
           <div class="medicine-min">Minimum: ${escapeHtml(item.minimum_stock ?? "-")} ${escapeHtml(item.unit || "")}</div>
         </div>
-        <div class="medicine-stock">${escapeHtml(item.stock)} ${escapeHtml(item.unit || "")}</div>
+        <div class="medicine-stock" style="${item.is_low_stock ? "background:#fee2e2;color:#991b1b;" : ""}">${escapeHtml(item.stock)} ${escapeHtml(item.unit || "")}</div>
+        <div class="medicine-actions">
+          <button class="mini-btn" type="button" onclick="adjustMedicine(${item.id}, 'IN', '${escapeHtml(item.name)}')">+ Stok Masuk</button>
+          <button class="mini-btn danger" type="button" onclick="adjustMedicine(${item.id}, 'OUT', '${escapeHtml(item.name)}')">- Stok Keluar</button>
+          <button class="mini-btn" type="button" onclick="adjustMedicine(${item.id}, 'SET', '${escapeHtml(item.name)}', ${item.stock})">Koreksi</button>
+        </div>
       </div>
     `).join("") || "Belum ada stok obat";
   }catch(err){
     medicineList.textContent = "Gagal load stok obat";
+  }
+}
+
+async function adjustMedicine(id, type, name, currentStock = 0){
+  const label = type === "IN" ? "jumlah stok masuk" : type === "OUT" ? "jumlah stok keluar" : "stok akhir yang benar";
+  const rawQty = await appPrompt("Mutasi Obat", `Masukkan ${label} untuk ${name}.`, type === "SET" ? String(currentStock) : "", {confirmText:"Lanjut"});
+  if(rawQty === null){ return; }
+  const quantity = parseInt(rawQty, 10);
+  if(Number.isNaN(quantity) || quantity < 0){
+    await appAlert("Input Tidak Valid", "Jumlah stok harus berupa angka 0 atau lebih.", "error");
+    return;
+  }
+  const notes = await appPrompt("Catatan Mutasi", "Catatan singkat perubahan stok.", type === "IN" ? "Stok masuk" : type === "OUT" ? "Stok keluar" : "Koreksi stok", {confirmText:"Simpan"});
+  if(notes === null){ return; }
+  try{
+    await api(`/api/medicines/${id}/adjust`, "POST", {
+      adjustment_type: type,
+      quantity,
+      notes
+    });
+    await appAlert("Berhasil", "Mutasi stok obat sudah disimpan.", "success");
+    loadMedicines();
+    loadMedicineMutation();
+  }catch(err){
+    await appAlert("Gagal", err.message, "error");
   }
 }
 async function loadMedicineMutation(){
@@ -515,7 +552,7 @@ async function loadMedicineMutation(){
     const now = new Date();
 
     const data = await api(
-      `/reports/medicine-mutation?month=${
+      `/api/reports/medicine-mutation?month=${
         now.getMonth() + 1
       }&year=${
         now.getFullYear()
@@ -650,6 +687,11 @@ btnReloadMedicines.addEventListener(
     loadMedicineMutation();
   }
 );
+btnLowStockOnly.addEventListener("click", () => {
+  lowStockOnly = !lowStockOnly;
+  btnLowStockOnly.textContent = lowStockOnly ? "Semua Stok" : "Stok Rendah";
+  loadMedicines();
+});
 btnMedicinePdf.addEventListener("click", downloadMedicinePdf);
 btnCreateMedicine.addEventListener("click", saveMedicine);
 btnMedicineMutationPdf.addEventListener(

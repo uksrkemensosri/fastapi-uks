@@ -86,6 +86,7 @@
   </main>
 </div>
 
+<script src="/ui/assets/dialogs.js?v=1"></script>
 <script>
 const token = localStorage.getItem("access_token") || "";
 if(!token){ window.location.href = "/login"; }
@@ -154,7 +155,7 @@ async function loadHistory(){
         <td>${item.petugas || "-"}</td>
         <td>${item.status || "-"}</td>
         <td><div class="actions">
-          <button class="btn btn-secondary" type="button" onclick="alert('Keluhan: ${item.keluhan || "-"}\\nTindakan: ${item.tindakan || "-"}\\nObat: ${item.obat || "-"}')">Lihat Detail</button>
+          <button class="btn btn-secondary" type="button" onclick="showUksDetail('${encodeURIComponent(item.keluhan || "-")}', '${encodeURIComponent(item.tindakan || "-")}', '${encodeURIComponent(item.obat || "-")}')">Lihat Detail</button>
           <button class="btn btn-primary" type="button" onclick="generateUksRecommendation(${item.id})">Cetak Rekomendasi</button>
         </div></td>
       </tr>
@@ -189,12 +190,12 @@ async function loadHistory(){
       </tr>
     `).join("") || `<tr><td colspan="4">Belum ada surat rekomendasi</td></tr>`;
   }catch(err){
-    alert(err.message);
+    appAlert("Gagal", err.message, "error");
   }
 }
 
 async function generateUksRecommendation(visitId){
-  const recommendation_text = prompt("Isi rekomendasi", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.");
+  const recommendation_text = await appPrompt("Isi Rekomendasi", "Masukkan isi rekomendasi pemeriksaan lanjutan.", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.", {multiline:true, confirmText:"Cetak"});
   if(!recommendation_text){ return; }
   const item = await api(`/api/recommendations/from-uks/${visitId}`, {
     method:"POST",
@@ -205,7 +206,7 @@ async function generateUksRecommendation(visitId){
 }
 
 async function generateCkgRecommendation(ckgStudentId){
-  const recommendation_text = prompt("Isi rekomendasi", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.");
+  const recommendation_text = await appPrompt("Isi Rekomendasi", "Masukkan isi rekomendasi pemeriksaan lanjutan.", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.", {multiline:true, confirmText:"Cetak"});
   if(!recommendation_text){ return; }
   const item = await api(`/api/recommendations/from-ckg/${ckgStudentId}`, {
     method:"POST",
@@ -213,6 +214,14 @@ async function generateCkgRecommendation(ckgStudentId){
   });
   await downloadPdf(`/api/recommendations/${item.id}/pdf`, `${item.letter_number.replaceAll("/","-")}.pdf`);
   loadHistory();
+}
+
+function showUksDetail(keluhan, tindakan, obat){
+  appAlert(
+    "Detail Kunjungan",
+    `Keluhan: ${decodeURIComponent(keluhan)}\nTindakan: ${decodeURIComponent(tindakan)}\nObat: ${decodeURIComponent(obat)}`,
+    "info"
+  );
 }
 
 loadHistory();

@@ -20,10 +20,91 @@
     .mini-value{font-size:2rem;font-weight:900;color:#4c1d95}
     .station-actions{display:flex;gap:8px;flex-wrap:wrap}
     .table td{vertical-align:top}
+    .student-search{position:relative;min-width:0}
+    .student-search-results{
+      position:absolute;
+      z-index:30;
+      top:calc(100% + 8px);
+      left:0;
+      right:0;
+      display:none;
+      max-height:260px;
+      overflow:auto;
+      padding:8px;
+      border:1px solid rgba(124,58,237,.14);
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 18px 38px rgba(76,29,149,.16);
+    }
+    .student-search-results.open{display:block}
+    .student-search-item{
+      width:100%;
+      border:0;
+      border-radius:12px;
+      background:transparent;
+      padding:11px 12px;
+      text-align:left;
+      cursor:pointer;
+      color:#334155;
+    }
+    .student-search-item:hover,.student-search-item:focus{background:#f3e8ff;outline:none}
+    .student-search-name{font-weight:900;color:#312e81;overflow-wrap:anywhere}
+    .student-search-meta{margin-top:3px;color:#64748b;font-size:.82rem}
+    .student-search-empty{padding:12px;color:#64748b}
+    .ckg-modal-backdrop{
+      position:fixed;
+      inset:0;
+      z-index:80;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:22px;
+      background:rgba(15,23,42,.34);
+      backdrop-filter:blur(7px);
+    }
+    .ckg-modal-backdrop.open{display:flex}
+    .ckg-modal{
+      width:min(720px,100%);
+      max-height:calc(100vh - 44px);
+      overflow:auto;
+      border:1px solid rgba(255,255,255,.64);
+      border-radius:28px;
+      background:rgba(255,255,255,.96);
+      box-shadow:0 28px 70px rgba(76,29,149,.26);
+      padding:26px;
+    }
+    .ckg-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+    .ckg-modal-title{margin:0;color:#312e81;font-size:1.35rem}
+    .ckg-modal-subtitle{margin:5px 0 0;color:#64748b}
+    .ckg-modal-close{
+      width:38px;
+      height:38px;
+      border:0;
+      border-radius:14px;
+      background:#f8fafc;
+      color:#6d28d9;
+      cursor:pointer;
+      font-size:1.4rem;
+      line-height:1;
+    }
+    .ckg-modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .ckg-field{display:flex;flex-direction:column;gap:7px}
+    .ckg-field.full{grid-column:1 / -1}
+    .ckg-field label{font-weight:800;color:#334155}
+    .ckg-field input,.ckg-field textarea{
+      width:100%;
+      border:1px solid #dbe3ef;
+      border-radius:16px;
+      background:#fff;
+      padding:13px 15px;
+      color:#334155;
+    }
+    .ckg-field textarea{min-height:94px;resize:vertical}
+    .ckg-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;flex-wrap:wrap}
     .admin-only{display:none}
     body[data-role="admin"] .admin-only{display:block}
     body[data-role="admin"] tr.admin-only{display:table-row}
-    @media(max-width:900px){.form-grid{grid-template-columns:1fr}.form-grid textarea{grid-column:span 1}.topbar{flex-direction:column;align-items:flex-start}}
+    @media(max-width:900px){.form-grid,.ckg-modal-grid{grid-template-columns:1fr}.form-grid textarea{grid-column:span 1}.topbar{flex-direction:column;align-items:flex-start}}
   </style>
 </head>
 <body>
@@ -85,21 +166,29 @@
     <section class="ckg-panel" id="panel-registration">
       <section class="card">
         <h2>Registrasi Siswa CKG</h2>
+        <p style="color:var(--muted);margin-top:-10px;margin-bottom:18px;">
+          Masukkan NIS siswa lama untuk mengisi biodata otomatis, atau isi seluruh form untuk membuat siswa baru.
+        </p>
         <div class="form-grid">
           <input id="nis" placeholder="NIS">
-          <input id="fullName" placeholder="Nama lengkap">
+          <div class="student-search">
+            <input id="fullName" placeholder="Cari nama siswa lama atau input nama baru" autocomplete="off">
+            <div id="studentSearchResults" class="student-search-results"></div>
+          </div>
           <select id="gender"><option value="Laki-Laki">Laki-Laki</option><option value="Perempuan">Perempuan</option></select>
           <input id="birthDate" type="date">
           <input id="className" placeholder="Kelas">
           <input id="section" placeholder="Section">
-          <input id="parentName" placeholder="Nama orang tua">
+          <input id="parentName" placeholder="Nama wali asuh / orang tua">
+          <input id="parentPhone" placeholder="Nomor HP wali asuh">
         </div>
         <button class="btn btn-primary" id="btnRegisterStudent" type="button">Daftarkan</button>
+        <div id="registrationStatus" class="status"></div>
       </section>
       <section class="card" style="margin-top:24px;">
         <h2>Siswa CKG</h2>
         <table class="table">
-          <thead><tr><th>No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th></tr></thead>
+          <thead><tr><th>No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th><th>Aksi</th></tr></thead>
           <tbody id="studentRows"></tbody>
         </table>
       </section>
@@ -116,7 +205,9 @@
             <option value="SCREENING_UMUM">Screening Umum</option>
           </select>
           <button class="btn btn-primary" id="btnLoadQueue" type="button">Muat Queue</button>
+          <button class="btn btn-secondary" id="btnCallNextQueue" type="button">Panggil Berikutnya</button>
         </div>
+        <div id="nextQueueCallout" class="mini-card" style="display:none;margin-bottom:16px;"></div>
         <table class="table">
           <thead><tr><th>No</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th><th>Aksi</th></tr></thead>
           <tbody id="queueRows"></tbody>
@@ -162,6 +253,26 @@
   </main>
 </div>
 
+<div class="ckg-modal-backdrop" id="ckgModalBackdrop">
+  <div class="ckg-modal" role="dialog" aria-modal="true" aria-labelledby="ckgModalTitle">
+    <div class="ckg-modal-head">
+      <div>
+        <h2 class="ckg-modal-title" id="ckgModalTitle">Pemeriksaan CKG</h2>
+        <p class="ckg-modal-subtitle" id="ckgModalSubtitle">Isi hasil pemeriksaan siswa.</p>
+      </div>
+      <button class="ckg-modal-close" id="ckgModalClose" type="button" aria-label="Tutup">&times;</button>
+    </div>
+    <form id="ckgModalForm">
+      <div class="ckg-modal-grid" id="ckgModalFields"></div>
+      <div class="ckg-modal-actions">
+        <button class="btn btn-secondary" id="ckgModalCancel" type="button">Batal</button>
+        <button class="btn btn-primary" id="ckgModalSubmit" type="submit">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/ui/assets/dialogs.js?v=1"></script>
 <script>
 const token = localStorage.getItem("access_token") || "";
 if(!token){ window.location.href = "/login"; }
@@ -173,6 +284,129 @@ async function api(path, options = {}){
   const res = await fetch(path, {...options, headers});
   const data = await res.json().catch(() => ({}));
   if(!res.ok){ throw new Error(data.detail || data.message || `HTTP ${res.status}`); }
+  return data;
+}
+
+function escapeHtml(value){
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+const stationFormConfigs = {
+  ANTROPOMETRI: {
+    title: "Pemeriksaan Antropometri",
+    subtitle: "Input berat dan tinggi badan. BMI dihitung otomatis oleh sistem.",
+    submitText: "Simpan Antropometri",
+    fields: [
+      {name:"weight", label:"Berat Badan (kg)", type:"number", step:"0.1", required:true, placeholder:"Contoh: 45.5"},
+      {name:"height", label:"Tinggi Badan (cm)", type:"number", step:"0.1", required:true, placeholder:"Contoh: 155"}
+    ]
+  },
+  TTV: {
+    title: "Pemeriksaan TTV",
+    subtitle: "Input tanda-tanda vital siswa.",
+    submitText: "Simpan TTV",
+    fields: [
+      {name:"blood_pressure", label:"Tekanan Darah", type:"text", required:true, placeholder:"Contoh: 120/80"},
+      {name:"pulse", label:"Nadi", type:"number", required:true, placeholder:"Contoh: 88"},
+      {name:"respiratory_rate", label:"Respiratory Rate", type:"number", required:true, placeholder:"Contoh: 20"},
+      {name:"temperature", label:"Suhu", type:"number", step:"0.1", required:true, placeholder:"Contoh: 36.7"}
+    ]
+  },
+  VISUS: {
+    title: "Pemeriksaan Visus",
+    subtitle: "Input hasil pemeriksaan mata kanan dan kiri.",
+    submitText: "Simpan Visus",
+    fields: [
+      {name:"right_eye", label:"Mata Kanan", type:"text", required:true, placeholder:"Contoh: 6/6"},
+      {name:"left_eye", label:"Mata Kiri", type:"text", required:true, placeholder:"Contoh: 6/6"}
+    ]
+  },
+  GIGI: {
+    title: "Pemeriksaan Gigi",
+    subtitle: "Catat kondisi gigi dan kebersihan mulut.",
+    submitText: "Simpan Pemeriksaan Gigi",
+    fields: [
+      {name:"caries", label:"Caries", type:"text", required:true, placeholder:"Contoh: Tidak ada"},
+      {name:"oral_hygiene", label:"Oral Hygiene", type:"text", required:true, placeholder:"Contoh: Baik"},
+      {name:"notes", label:"Catatan", type:"textarea", full:true, placeholder:"Catatan tambahan"}
+    ]
+  },
+  SCREENING_UMUM: {
+    title: "Screening Umum",
+    subtitle: "Input temuan fisik, catatan, dan rekomendasi.",
+    submitText: "Simpan Screening",
+    fields: [
+      {name:"physical_findings", label:"Temuan Fisik", type:"textarea", full:true, required:true, placeholder:"Contoh: Tidak ada kelainan bermakna"},
+      {name:"notes", label:"Catatan", type:"textarea", full:true, placeholder:"Catatan tambahan"},
+      {name:"recommendation", label:"Rekomendasi", type:"textarea", full:true, required:true, placeholder:"Contoh: Sehat / edukasi kesehatan"}
+    ]
+  },
+  REFERRAL: {
+    title: "Rujukan CKG",
+    subtitle: "Isi alasan dan tujuan rujukan siswa.",
+    submitText: "Simpan Rujukan",
+    fields: [
+      {name:"reason", label:"Alasan Rujukan", type:"textarea", full:true, required:true, placeholder:"Alasan rujukan"},
+      {name:"referral_destination", label:"Tujuan Rujukan", type:"text", required:true, placeholder:"Contoh: Puskesmas / RS"},
+      {name:"notes", label:"Catatan", type:"textarea", full:true, placeholder:"Catatan tambahan"}
+    ]
+  }
+};
+
+let ckgModalResolver = null;
+
+function fieldMarkup(field){
+  const common = `
+    id="ckgField_${field.name}"
+    name="${field.name}"
+    ${field.required ? "required" : ""}
+    placeholder="${escapeHtml(field.placeholder || "")}"
+  `;
+  const input = field.type === "textarea"
+    ? `<textarea ${common}></textarea>`
+    : `<input ${common} type="${field.type || "text"}" ${field.step ? `step="${field.step}"` : ""}>`;
+
+  return `
+    <div class="ckg-field ${field.full ? "full" : ""}">
+      <label for="ckgField_${field.name}">${escapeHtml(field.label)}</label>
+      ${input}
+    </div>
+  `;
+}
+
+function openCkgModal(config){
+  ckgModalTitle.textContent = config.title;
+  ckgModalSubtitle.textContent = config.subtitle || "";
+  ckgModalSubmit.textContent = config.submitText || "Simpan";
+  ckgModalFields.innerHTML = config.fields.map(fieldMarkup).join("");
+  ckgModalBackdrop.classList.add("open");
+  const firstField = ckgModalFields.querySelector("input, textarea");
+  if(firstField){ firstField.focus(); }
+
+  return new Promise(resolve => {
+    ckgModalResolver = resolve;
+  });
+}
+
+function closeCkgModal(value = null){
+  ckgModalBackdrop.classList.remove("open");
+  ckgModalForm.reset();
+  if(ckgModalResolver){
+    ckgModalResolver(value);
+    ckgModalResolver = null;
+  }
+}
+
+function modalFormData(){
+  const data = {};
+  new FormData(ckgModalForm).forEach((value, key) => {
+    data[key] = String(value).trim();
+  });
   return data;
 }
 
@@ -209,14 +443,40 @@ async function loadStudents(){
         <td>${s.class_name || "-"} ${s.section || ""}</td>
         <td>${s.status}</td>
         <td>${s.next_station || "-"}</td>
+        <td>
+          <button class="btn btn-secondary" type="button" onclick="deleteCkgStudent(${s.id})">
+            Hapus
+          </button>
+        </td>
       </tr>
-    `).join("") || `<tr><td colspan="6">Belum ada siswa CKG</td></tr>`;
+    `).join("") || `<tr><td colspan="7">Belum ada siswa CKG</td></tr>`;
   }catch(err){ console.warn(err.message); }
+}
+
+async function deleteCkgStudent(studentId){
+  const confirmed = await appConfirm(
+    "Hapus Siswa CKG?",
+    "Hasil pemeriksaan CKG pada event ini ikut terhapus. Data Siswa utama tetap disimpan.",
+    {confirmText:"Ya, Hapus"}
+  );
+  if(!confirmed){ return; }
+
+  try{
+    const result = await api(`/api/ckg/students/${studentId}`, {method:"DELETE"});
+    registrationStatus.textContent = result.message;
+    loadStudents();
+    loadDashboard();
+    loadQueue();
+  }catch(err){
+    registrationStatus.textContent = err.message;
+    appAlert("Gagal", err.message, "error");
+  }
 }
 
 async function registerStudent(){
   try{
-    await api("/api/ckg/students", {
+    registrationStatus.textContent = "Mendaftarkan siswa...";
+    const student = await api("/api/ckg/students", {
       method:"POST",
       body:JSON.stringify({
         nis:nis.value.trim(),
@@ -225,13 +485,90 @@ async function registerStudent(){
         birth_date:birthDate.value || null,
         class_name:className.value.trim() || null,
         section:section.value.trim() || null,
-        parent_name:parentName.value.trim() || null
+        parent_name:parentName.value.trim() || null,
+        parent_phone:parentPhone.value.trim() || null
       })
     });
-    alert("Siswa terdaftar");
+    registrationStatus.textContent = `Siswa ${student.full_name} berhasil terdaftar dan tersinkron ke Data Siswa.`;
+    nis.value = "";
+    fullName.value = "";
+    birthDate.value = "";
+    className.value = "";
+    section.value = "";
+    parentName.value = "";
+    parentPhone.value = "";
     loadStudents();
     loadDashboard();
-  }catch(err){ alert(err.message); }
+  }catch(err){ registrationStatus.textContent = err.message; }
+}
+
+async function lookupExistingStudent(){
+  const studentNis = nis.value.trim();
+  if(!studentNis){ return; }
+  registrationStatus.textContent = "Mengecek Data Siswa...";
+  try{
+    const student = await api(`/api/patients/${encodeURIComponent(studentNis)}`);
+    fullName.value = student.name || "";
+    gender.value =
+      student.gender === "P" || student.gender === "Perempuan"
+      ? "Perempuan"
+      : "Laki-Laki";
+    birthDate.value = student.birth_date || "";
+    className.value = student.class_name || "";
+    parentName.value = student.parent_name || "";
+    parentPhone.value = student.parent_phone || "";
+    registrationStatus.textContent = "Data siswa ditemukan. Biodata sudah diisi otomatis.";
+  }catch(err){
+    if(String(err.message).toLowerCase().includes("not found")){
+      registrationStatus.textContent = "NIS belum ada di Data Siswa. Isi form untuk membuat siswa baru.";
+      return;
+    }
+    registrationStatus.textContent = err.message;
+  }
+}
+
+function fillStudentForm(student){
+  nis.value = student.id || "";
+  fullName.value = student.name || "";
+  gender.value =
+    student.gender === "P" || student.gender === "Perempuan"
+    ? "Perempuan"
+    : "Laki-Laki";
+  birthDate.value = student.birth_date || "";
+  className.value = student.class_name || "";
+  parentName.value = student.parent_name || "";
+  parentPhone.value = student.parent_phone || "";
+  studentSearchResults.classList.remove("open");
+  studentSearchResults.innerHTML = "";
+  registrationStatus.textContent = "Siswa lama dipilih. Biodata sudah diisi otomatis.";
+}
+
+async function searchExistingStudents(keyword){
+  const query = keyword.trim();
+  if(query.length < 2){
+    studentSearchResults.classList.remove("open");
+    studentSearchResults.innerHTML = "";
+    return;
+  }
+
+  try{
+    const students = await api(`/api/patients/search?q=${encodeURIComponent(query)}`);
+    studentSearchResults.innerHTML = students.map((student, index) => `
+      <button class="student-search-item" type="button" data-student-index="${index}">
+        <div class="student-search-name">${escapeHtml(student.name)}</div>
+        <div class="student-search-meta">
+          NIS ${escapeHtml(student.id)} · Kelas ${escapeHtml(student.class_name || "-")}
+        </div>
+      </button>
+    `).join("") || `<div class="student-search-empty">Siswa lama tidak ditemukan. Nama ini bisa didaftarkan sebagai siswa baru.</div>`;
+    studentSearchResults.classList.add("open");
+    studentSearchResults.querySelectorAll("[data-student-index]").forEach(button => {
+      button.addEventListener("click", () => fillStudentForm(students[Number(button.dataset.studentIndex)]));
+    });
+  }catch(err){
+    studentSearchResults.innerHTML = `<div class="student-search-empty">${escapeHtml(err.message)}</div>`;
+    studentSearchResults.classList.add("open");
+  }
 }
 
 async function loadQueue(){
@@ -248,66 +585,87 @@ async function loadQueue(){
         <td><div class="station-actions">${actionButtons(station, item.id)}</div></td>
       </tr>
     `).join("") || `<tr><td colspan="6">Queue kosong</td></tr>`;
-  }catch(err){ alert(err.message); }
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
 }
 
 function actionButtons(station, id){
   return `
-    <button class="btn btn-secondary" type="button" onclick="submitStation('${station}', ${id})">Complete Station</button>
+    <button class="btn btn-primary" type="button" onclick="startStationExam('${station}', ${id})">Mulai Periksa</button>
     <button class="btn btn-secondary" type="button" onclick="createReferral(${id}, '${station}')">Rujukan</button>
     <button class="btn btn-secondary" type="button" onclick="openSummary(${id})">Summary</button>
   `;
 }
 
+async function startStationExam(station, id){
+  nextQueueCallout.style.display = "block";
+  nextQueueCallout.innerHTML = `
+    <div class="mini-label">Sedang diperiksa</div>
+    <div class="mini-value" style="font-size:1.3rem;">Station ${escapeHtml(station)}</div>
+    <div style="color:#64748b;font-weight:800;">Isi form pemeriksaan lalu simpan untuk mengirim siswa ke queue berikutnya.</div>
+  `;
+  await submitStation(station, id);
+}
+
 async function submitStation(station, id){
   try{
     let path = "";
-    let body = {};
+    let body = await openCkgModal(stationFormConfigs[station]);
+    if(!body){ return; }
     if(station === "ANTROPOMETRI"){
       path = `/api/ckg/students/${id}/anthropometry`;
-      body = {weight:Number(prompt("Berat badan (kg)")), height:Number(prompt("Tinggi badan (cm)"))};
+      body = {weight:Number(body.weight), height:Number(body.height)};
     }else if(station === "TTV"){
       path = `/api/ckg/students/${id}/ttv`;
       body = {
-        blood_pressure:prompt("Tekanan darah", "120/80"),
-        pulse:Number(prompt("Nadi")),
-        respiratory_rate:Number(prompt("Respiratory rate")),
-        temperature:Number(prompt("Suhu"))
+        blood_pressure:body.blood_pressure,
+        pulse:Number(body.pulse),
+        respiratory_rate:Number(body.respiratory_rate),
+        temperature:Number(body.temperature)
       };
     }else if(station === "VISUS"){
       path = `/api/ckg/students/${id}/vision`;
-      body = {right_eye:prompt("Mata kanan", "6/6"), left_eye:prompt("Mata kiri", "6/6")};
+      body = {right_eye:body.right_eye, left_eye:body.left_eye};
     }else if(station === "GIGI"){
       path = `/api/ckg/students/${id}/dental`;
-      body = {caries:prompt("Caries", "Tidak ada"), oral_hygiene:prompt("Oral hygiene", "Baik"), notes:prompt("Catatan", "")};
+      body = {caries:body.caries, oral_hygiene:body.oral_hygiene, notes:body.notes || null};
     }else{
       path = `/api/ckg/students/${id}/general-screening`;
-      body = {physical_findings:prompt("Temuan fisik", "-"), notes:prompt("Catatan", ""), recommendation:prompt("Rekomendasi", "Sehat")};
+      body = {
+        physical_findings:body.physical_findings,
+        notes:body.notes || null,
+        recommendation:body.recommendation
+      };
     }
     await api(path, {method:"POST", body:JSON.stringify(body)});
-    if(station === "SCREENING_UMUM" && confirm("Tandai siswa COMPLETED?")){
+    if(
+      station === "SCREENING_UMUM" &&
+      await appConfirm("Selesaikan CKG?", "Tandai siswa sebagai COMPLETED?", {confirmText:"Ya, Selesai", type:"info"})
+    ){
       await api(`/api/ckg/students/${id}/complete`, {method:"POST"});
+      await api(`/api/ckg/students/${id}/notify-completed`, {method:"POST"}).catch(() => null);
     }
     loadQueue();
     loadDashboard();
     loadStudents();
-  }catch(err){ alert(err.message); }
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
 }
 
 async function createReferral(id, station){
   try{
+    const referral = await openCkgModal(stationFormConfigs.REFERRAL);
+    if(!referral){ return; }
     await api(`/api/ckg/students/${id}/referrals`, {
       method:"POST",
       body:JSON.stringify({
         station,
-        reason:prompt("Alasan rujukan"),
-        referral_destination:prompt("Tujuan rujukan"),
-        notes:prompt("Catatan", "")
+        reason:referral.reason,
+        referral_destination:referral.referral_destination,
+        notes:referral.notes || null
       })
     });
-    alert("Rujukan tersimpan");
+    appAlert("Berhasil", "Rujukan tersimpan.", "success");
     loadDashboard();
-  }catch(err){ alert(err.message); }
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
 }
 
 function openSummary(id){
@@ -333,7 +691,7 @@ async function downloadPdf(path, filename){
     a.remove();
     window.URL.revokeObjectURL(url);
   }catch(err){
-    alert(err.message);
+    appAlert("Gagal", err.message, "error");
   }
 }
 
@@ -349,8 +707,8 @@ async function createEvent(){
         is_active:eventActive.value === "true"
       })
     });
-    alert("Event CKG dibuat");
-  }catch(err){ alert(err.message); }
+    appAlert("Berhasil", "Event CKG dibuat.", "success");
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
 }
 
 async function loadUsersAndAssignments(){
@@ -368,13 +726,61 @@ async function assignStation(){
       method:"POST",
       body:JSON.stringify({user_id:Number(assignmentUser.value), station:assignmentStation.value})
     });
-    alert("Station assigned");
+    appAlert("Berhasil", "Station assigned.", "success");
     loadUsersAndAssignments();
-  }catch(err){ alert(err.message); }
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
 }
 
 btnRegisterStudent.addEventListener("click", registerStudent);
+nis.addEventListener("change", lookupExistingStudent);
+let studentSearchTimer;
+fullName.addEventListener("input", () => {
+  clearTimeout(studentSearchTimer);
+  studentSearchTimer = setTimeout(() => searchExistingStudents(fullName.value), 250);
+});
+fullName.addEventListener("focus", () => {
+  if(fullName.value.trim().length >= 2){
+    searchExistingStudents(fullName.value);
+  }
+});
+document.addEventListener("click", event => {
+  if(!event.target.closest(".student-search")){
+    studentSearchResults.classList.remove("open");
+  }
+});
+ckgModalCancel.addEventListener("click", () => closeCkgModal(null));
+ckgModalClose.addEventListener("click", () => closeCkgModal(null));
+ckgModalBackdrop.addEventListener("click", event => {
+  if(event.target === ckgModalBackdrop){
+    closeCkgModal(null);
+  }
+});
+ckgModalForm.addEventListener("submit", event => {
+  event.preventDefault();
+  closeCkgModal(modalFormData());
+});
 btnLoadQueue.addEventListener("click", loadQueue);
+btnCallNextQueue.addEventListener("click", async () => {
+  try{
+    const station = stationSelect.value;
+    const queue = await api(`/api/ckg/stations/${station}/queue`);
+    const next = queue[0];
+    if(!next){
+      nextQueueCallout.style.display = "block";
+      nextQueueCallout.innerHTML = `<strong>Queue kosong</strong><div class="mini-label">Tidak ada siswa menunggu di station ini.</div>`;
+      return;
+    }
+    nextQueueCallout.style.display = "block";
+    nextQueueCallout.innerHTML = `
+      <div class="mini-label">Panggilan ${station}</div>
+      <div class="mini-value" style="font-size:1.4rem;">No. ${next.queue_number || "-"} · ${escapeHtml(next.student_name)}</div>
+      <div style="color:#64748b;font-weight:800;">Kelas ${escapeHtml(next.class_name || "-")} ${escapeHtml(next.section || "")}</div>
+      <button class="btn btn-primary" type="button" style="margin-top:12px;" onclick="startStationExam('${station}', ${next.id})">Mulai Periksa</button>
+    `;
+  }catch(err){
+    appAlert("Gagal", err.message, "error");
+  }
+});
 btnCreateEvent.addEventListener("click", createEvent);
 btnAssignStation.addEventListener("click", assignStation);
 btnPrintCkgReport.addEventListener("click", () => {

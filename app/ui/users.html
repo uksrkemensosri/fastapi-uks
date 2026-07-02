@@ -251,6 +251,7 @@ body.dark .table tbody tr:hover{
   </main>
 
 </div>
+<script src="/ui/assets/dialogs.js?v=1"></script>
 <script>
 
 const token =
@@ -327,14 +328,13 @@ async function loadUsers(){
 
   if(!res.ok){
 
-    alert("Gagal memuat data pengguna");
+    appAlert("Gagal", "Gagal memuat data pengguna.", "error");
 
     return;
   }
 
   const users =
     await res.json();
-console.log("USERS =", users);
   const tbody =
     document.getElementById(
       "userTable"
@@ -371,11 +371,11 @@ async function editUser(id){
   const user = users.find(item => item.id === id);
   if(!user){ return; }
 
-  const full_name = prompt("Nama lengkap", user.full_name);
+  const full_name = await appPrompt("Edit Pengguna", "Nama lengkap", user.full_name, {confirmText:"Lanjut"});
   if(full_name === null){ return; }
-  const username = prompt("Username", user.username);
+  const username = await appPrompt("Edit Pengguna", "Username", user.username, {confirmText:"Lanjut"});
   if(username === null){ return; }
-  const role = prompt("Role (admin/perawat)", user.role);
+  const role = await appPrompt("Edit Pengguna", "Role pengguna: admin atau perawat", user.role, {confirmText:"Simpan"});
   if(role === null){ return; }
 
   const res = await fetch(`/api/users/${id}`, {
@@ -392,14 +392,15 @@ async function editUser(id){
   });
 
   if(!res.ok){
-    alert(getErrorMessage(await res.json()));
+    appAlert("Gagal", getErrorMessage(await res.json()), "error");
     return;
   }
+  appAlert("Berhasil", "Data pengguna berhasil diperbarui.", "success");
   loadUsers();
 }
 
 async function resetPassword(id){
-  const new_password = prompt("Password baru minimal 6 karakter");
+  const new_password = await appPrompt("Reset Password", "Masukkan password baru minimal 6 karakter.", "", {confirmText:"Reset", placeholder:"Password baru"});
   if(!new_password){ return; }
 
   const res = await fetch(`/api/users/${id}/reset-password`, {
@@ -412,10 +413,10 @@ async function resetPassword(id){
   });
 
   if(!res.ok){
-    alert(getErrorMessage(await res.json()));
+    appAlert("Gagal", getErrorMessage(await res.json()), "error");
     return;
   }
-  alert("Password berhasil direset");
+  appAlert("Berhasil", "Password berhasil direset.", "success");
 }
 
 async function toggleUser(id, isActive){
@@ -426,9 +427,10 @@ async function toggleUser(id, isActive){
   });
 
   if(!res.ok){
-    alert(getErrorMessage(await res.json()));
+    appAlert("Gagal", getErrorMessage(await res.json()), "error");
     return;
   }
+  appAlert("Berhasil", isActive ? "Pengguna dinonaktifkan." : "Pengguna diaktifkan.", "success");
   loadUsers();
 }
 
@@ -494,7 +496,7 @@ async function saveUser(){
     ).value;
 
   if(!full_name || !username || !password){
-    alert("Nama lengkap, username, dan password wajib diisi.");
+    appAlert("Data Belum Lengkap", "Nama lengkap, username, dan password wajib diisi.", "error");
     return;
   }
 
@@ -527,15 +529,19 @@ async function saveUser(){
     const err =
       await res.json();
 
-    alert(
-      getErrorMessage(err)
+    appAlert(
+      "Gagal",
+      getErrorMessage(err),
+      "error"
     );
 
     return;
   }
 
-  alert(
-    "Pengguna berhasil dibuat"
+  appAlert(
+    "Berhasil",
+    "Pengguna berhasil dibuat.",
+    "success"
   );
 
   closeUserForm();
