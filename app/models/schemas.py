@@ -181,17 +181,22 @@ class PatientAssessmentsResponse(BaseModel):
     assessments: List[AssessmentSummary]
 
 
+USER_ROLE_PATTERN = "^(admin|perawat|kepala_sekolah|wali_asuh|tim_uksr)$"
+
+
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     full_name: str = Field(min_length=2, max_length=100)
-    role: str = Field(pattern="^(admin|perawat)$")
+    role: str = Field(pattern=USER_ROLE_PATTERN)
     password: str = Field(min_length=6)
+    nip: Optional[str] = Field(default=None, max_length=50)
+    jabatan: Optional[str] = Field(default=None, max_length=100)
 
     @field_validator("role", mode="before")
     @classmethod
     def normalize_role(cls, value: str) -> str:
         if isinstance(value, str):
-            return value.strip().lower()
+            return value.strip().lower().replace(" ", "_").replace("-", "_")
         return value
 
 
@@ -208,14 +213,16 @@ class ChangePasswordRequest(BaseModel):
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(default=None, min_length=3, max_length=50)
     full_name: Optional[str] = Field(default=None, min_length=2, max_length=100)
-    role: Optional[str] = Field(default=None, pattern="^(admin|perawat)$")
+    role: Optional[str] = Field(default=None, pattern=USER_ROLE_PATTERN)
+    nip: Optional[str] = Field(default=None, max_length=50)
+    jabatan: Optional[str] = Field(default=None, max_length=100)
     is_active: Optional[bool] = None
 
     @field_validator("role", mode="before")
     @classmethod
     def normalize_role(cls, value: str | None) -> str | None:
         if isinstance(value, str):
-            return value.strip().lower()
+            return value.strip().lower().replace(" ", "_").replace("-", "_")
         return value
 
 
@@ -227,6 +234,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    role: Optional[str] = None
 
 
 class UserResponse(BaseModel):

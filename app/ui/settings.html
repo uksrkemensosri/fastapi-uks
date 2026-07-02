@@ -39,6 +39,14 @@
 
 }
 
+.admin-only{
+  display:none;
+}
+
+body[data-role="admin"] .admin-only{
+  display:block;
+}
+
 @media(max-width:900px){
 
   .sidebar{
@@ -138,7 +146,7 @@
 
 <br>
 
-<section class="card">
+<section class="card admin-only">
 
   <h2>Tools Admin</h2>
   <p style="color:#64748b;margin-top:-10px;margin-bottom:18px;">

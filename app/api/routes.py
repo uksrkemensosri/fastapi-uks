@@ -475,7 +475,7 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     )
     write_audit_log(db, user, "login", "session", user.id, "User logged in")
     db.commit()
-    return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds())
+    return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds(), role=user.role)
 
 
 @router.post("/auth/logout")
@@ -495,7 +495,7 @@ def logout(
 @router.post("/auth/refresh", response_model=TokenResponse)
 def refresh_token(current_user: UserORM = Depends(get_current_user)) -> TokenResponse:
     token = create_access_token(subject=str(current_user.id), role=current_user.role)
-    return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds())
+    return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds(), role=current_user.role)
 
 
 @router.get("/auth/me", response_model=UserResponse)
@@ -2211,6 +2211,8 @@ def list_users(
             "full_name": user.full_name,
             "role": user.role,
             "is_active": user.is_active,
+            "nip": getattr(user, "nip", None),
+            "jabatan": getattr(user, "jabatan", None),
             "created_at": user.created_at,
             "updated_at": user.updated_at,
         }
@@ -2232,6 +2234,8 @@ def create_user_from_admin(
         username=payload.username,
         full_name=payload.full_name,
         role=payload.role,
+        nip=payload.nip,
+        jabatan=payload.jabatan,
         password_hash=hash_password(payload.password),
         is_active=True,
     )
@@ -2263,6 +2267,12 @@ def update_user_from_admin(
 
     if payload.full_name is not None:
         user.full_name = payload.full_name
+
+    if payload.nip is not None:
+        user.nip = payload.nip.strip() or None
+
+    if payload.jabatan is not None:
+        user.jabatan = payload.jabatan.strip() or None
 
     if payload.role is not None:
         if user.role == ROLE_ADMIN and payload.role != ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:

@@ -4,7 +4,11 @@
   function hideAdminLinks(role) {
     document.querySelectorAll(".menu-item").forEach((item) => {
       const href = item.getAttribute("href") || "";
-      if (role !== "admin" && ["/users", "/settings", "/audit-logs"].includes(href)) {
+      if (role === "wali_asuh" && href !== "/settings") {
+        item.remove();
+        return;
+      }
+      if (role !== "admin" && ["/users", "/audit-logs"].includes(href)) {
         item.remove();
       }
     });

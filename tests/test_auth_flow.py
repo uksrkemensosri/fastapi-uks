@@ -97,6 +97,7 @@ def test_register_role_normalization_and_access(client: TestClient):
         "/api/auth/login",
         json={"username": "PerawatRoleTest", "password": "rahasia123"},
     )
+    assert login.json()["role"] == "perawat"
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -107,8 +108,44 @@ def test_register_role_normalization_and_access(client: TestClient):
     assert users.status_code == 403
 
     settings_page = client.get("/settings")
-    assert settings_page.status_code == 403
-    assert "Akses Ditolak" in settings_page.text
+    assert settings_page.status_code == 200
+
+    admin_headers = _auth_headers(client)
+
+    wali = client.post(
+        "/api/users",
+        headers=admin_headers,
+        json={
+            "username": "wali_role_test",
+            "full_name": "Wali Role Test",
+            "role": "Wali Asuh",
+            "password": "rahasia123",
+        },
+    )
+    assert wali.status_code == 201
+    assert wali.json()["role"] == "wali_asuh"
+
+    wali_login = client.post(
+        "/api/auth/login",
+        json={"username": "wali_role_test", "password": "rahasia123"},
+    )
+    assert wali_login.json()["role"] == "wali_asuh"
+    wali_headers = {"Authorization": f"Bearer {wali_login.json()['access_token']}"}
+    assert client.get("/api/patients", headers=wali_headers).status_code == 403
+    assert client.get("/settings").status_code == 200
+
+    tim = client.post(
+        "/api/users",
+        headers=admin_headers,
+        json={
+            "username": "tim_uksr_role_test",
+            "full_name": "Tim UKSR Role Test",
+            "role": "Tim UKSR",
+            "password": "rahasia123",
+        },
+    )
+    assert tim.status_code == 201
+    assert tim.json()["role"] == "tim_uksr"
 
 
 def test_create_and_search_patient(client: TestClient):
@@ -304,10 +341,13 @@ def test_user_crud_and_audit_log(client: TestClient):
             "username": "crud_user",
             "full_name": "CRUD User",
             "role": "perawat",
+            "nip": "1987654321",
+            "jabatan": "Petugas UKS",
             "password": "rahasia123",
         },
     )
     assert create.status_code == 201
+    assert create.json()["nip"] == "1987654321"
     user_id = create.json()["id"]
 
     update = client.patch(
@@ -317,10 +357,13 @@ def test_user_crud_and_audit_log(client: TestClient):
             "username": "crud_user_edit",
             "full_name": "CRUD User Edit",
             "role": "admin",
+            "nip": "1234567890",
+            "jabatan": "Kepala UKS",
         },
     )
     assert update.status_code == 200
     assert update.json()["role"] == "admin"
+    assert update.json()["nip"] == "1234567890"
 
     reset = client.post(
         f"/api/users/{user_id}/reset-password",

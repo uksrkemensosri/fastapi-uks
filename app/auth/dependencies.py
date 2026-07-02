@@ -39,7 +39,10 @@ def get_current_user(
 
 def require_roles(*allowed_roles: str):
     def _dependency(current_user: UserORM = Depends(get_current_user)) -> UserORM:
-        if current_user.role not in allowed_roles:
+        expanded_roles = set(allowed_roles)
+        if "perawat" in expanded_roles:
+            expanded_roles.update({"kepala_sekolah", "tim_uksr"})
+        if current_user.role not in expanded_roles:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         return current_user
 

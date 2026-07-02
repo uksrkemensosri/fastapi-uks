@@ -271,7 +271,7 @@ def health() -> dict:
 
 @app.get("/dashboard", response_class=FileResponse)
 def dashboard(request: Request):
-    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
 
 
 @app.get("/login", response_class=FileResponse)
@@ -279,16 +279,16 @@ def login_page() -> FileResponse:
     return FileResponse(UI_LOGIN_PATH)
 @app.get("/students", response_class=FileResponse)
 def students_page(request: Request):
-    return protected_ui_page(request, UI_STUDENTS_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_STUDENTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
 @app.get("/student-detail", response_class=FileResponse)
 def student_detail_page(request: Request):
-    return protected_ui_page(request, UI_STUDENT_DETAIL_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_STUDENT_DETAIL_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
 @app.get("/reports", response_class=FileResponse)
 def reports_page(request: Request):
-    return protected_ui_page(request, UI_REPORTS_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_REPORTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
 @app.get("/settings", response_class=FileResponse)
 def settings_page(request: Request):
-    return protected_ui_page(request, UI_SETTINGS_PATH, {"admin"})
+    return protected_ui_page(request, UI_SETTINGS_PATH)
 @app.get("/users", response_class=FileResponse)
 def users_page(request: Request):
     return protected_ui_page(request, UI_USERS_PATH, {"admin"})
@@ -301,9 +301,9 @@ def audit_logs_page(request: Request):
 
 @app.get("/ckg", response_class=FileResponse)
 def ckg_page(request: Request):
-    return protected_ui_page(request, UI_CKG_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_CKG_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
 
 
 @app.get("/ui", response_class=FileResponse)
 def ui_page(request: Request):
-    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})

@@ -687,7 +687,9 @@ user-select:none;
         headers: { Authorization: `Bearer ${existingToken}` },
       }).then((res) => {
         if (res.ok) {
-          window.location.href = '/dashboard';
+          res.json().then((user) => {
+            window.location.href = user.role === 'wali_asuh' ? '/settings' : '/dashboard';
+          });
         } else {
           localStorage.removeItem('access_token');
         }
@@ -715,7 +717,7 @@ user-select:none;
         if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
 
         localStorage.setItem('access_token', data.access_token);
-        window.location.href = '/dashboard';
+        window.location.href = data.role === 'wali_asuh' ? '/settings' : '/dashboard';
       } catch (err) {
         statusEl.textContent = `Login gagal: ${err.message}`;
         btnLogin.disabled = false;

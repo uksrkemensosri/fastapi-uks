@@ -214,10 +214,14 @@ body.dark .table tbody tr:hover{
       <div class="user-form-grid">
         <input id="fullName" placeholder="Nama Lengkap">
         <input id="username" placeholder="Username">
+        <input id="nip" placeholder="NIP (opsional)">
         <input id="password" type="password" placeholder="Password">
         <select id="role">
           <option value="perawat">Perawat</option>
           <option value="admin">Admin</option>
+          <option value="kepala_sekolah">Kepala Sekolah</option>
+          <option value="wali_asuh">Wali Asuh</option>
+          <option value="tim_uksr">Tim UKSR</option>
         </select>
       </div>
 
@@ -235,6 +239,7 @@ body.dark .table tbody tr:hover{
           <tr>
             <th>Username</th>
             <th>Nama Lengkap</th>
+            <th>NIP</th>
             <th>Role</th>
             <th>Status</th>
             <th>Aksi</th>
@@ -348,6 +353,7 @@ async function loadUsers(){
       <tr>
         <td>${user.username}</td>
         <td>${user.full_name}</td>
+        <td>${user.nip || "-"}</td>
         <td>${user.role}</td>
         <td>${user.is_active ? "Aktif" : "Nonaktif"}</td>
         <td>
@@ -375,7 +381,14 @@ async function editUser(id){
   if(full_name === null){ return; }
   const username = await appPrompt("Edit Pengguna", "Username", user.username, {confirmText:"Lanjut"});
   if(username === null){ return; }
-  const role = await appPrompt("Edit Pengguna", "Role pengguna: admin atau perawat", user.role, {confirmText:"Simpan"});
+  const nip = await appPrompt("Edit Pengguna", "NIP pengguna (boleh kosong)", user.nip || "", {confirmText:"Lanjut"});
+  if(nip === null){ return; }
+  const role = await appPrompt(
+    "Edit Pengguna",
+    "Role: admin, perawat, kepala_sekolah, wali_asuh, atau tim_uksr",
+    user.role,
+    {confirmText:"Simpan"}
+  );
   if(role === null){ return; }
 
   const res = await fetch(`/api/users/${id}`, {
@@ -387,6 +400,7 @@ async function editUser(id){
     body:JSON.stringify({
       full_name:full_name.trim(),
       username:username.trim(),
+      nip:nip.trim(),
       role:role.trim().toLowerCase()
     })
   });
@@ -490,6 +504,11 @@ async function saveUser(){
       "password"
     ).value;
 
+  const nip =
+    document.getElementById(
+      "nip"
+    ).value.trim();
+
   const role =
     document.getElementById(
       "role"
@@ -518,6 +537,7 @@ async function saveUser(){
         full_name,
         username,
         password,
+        nip,
         role
       })
     }
@@ -548,6 +568,7 @@ async function saveUser(){
 
   document.getElementById("fullName").value = "";
   document.getElementById("username").value = "";
+  document.getElementById("nip").value = "";
   document.getElementById("password").value = "";
   document.getElementById("role").value = "perawat";
 
