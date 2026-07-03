@@ -291,7 +291,7 @@ def settings_page(request: Request):
     return protected_ui_page(request, UI_SETTINGS_PATH)
 @app.get("/users", response_class=FileResponse)
 def users_page(request: Request):
-    return protected_ui_page(request, UI_USERS_PATH, {"admin"})
+    return protected_ui_page(request, UI_USERS_PATH, {"admin", "perawat"})
 
 
 @app.get("/audit-logs", response_class=FileResponse)

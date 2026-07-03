@@ -331,65 +331,106 @@ def normalize_whatsapp_number(phone: str | None) -> str | None:
 
 def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, str]:
     token = os.getenv("FONNTE_TOKEN")
+
     if not token:
+        print("❌ FONNTE_TOKEN belum diatur")
         return "skipped", "FONNTE_TOKEN belum diisi"
 
     target = normalize_whatsapp_number(target_phone)
     if not target:
+        print("⚠️ Nomor WhatsApp wali asuh tidak valid")
         return "skipped", "Nomor wali asuh belum valid"
 
     try:
+        print(f"📲 Mengirim WhatsApp ke {target}")
+
         response = requests.post(
             os.getenv("FONNTE_API_URL", "https://api.fonnte.com/send"),
             headers={"Authorization": token},
-            data={"target": target, "message": message},
+            data={
+                "target": target,
+                "message": message
+            },
             timeout=10,
         )
+
+        print(f"Status : {response.status_code}")
+        print(f"Response : {response.text}")
+
         if response.ok:
+            print("✅ WhatsApp berhasil dikirim")
             return "sent", response.text[:300]
+
+        print("❌ WhatsApp gagal dikirim")
         return "failed", f"HTTP {response.status_code}: {response.text[:300]}"
+
     except Exception as exc:
+        print(f"🔥 Error WhatsApp: {exc}")
         return "failed", str(exc)
 
 
 def build_uks_visit_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
-    parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
-    return f"""[UKS SRMA 13 Bekasi]
+    parent_name = patient.parent_name or "Wali Asuh"
+
+    tanggal = visit.visit_date.strftime("%d %B %Y")
+
+    waktu = (
+        visit.created_at.strftime("%H.%M WIB")
+        if getattr(visit, "created_at", None)
+        else "-"
+    )
+
+    return f"""🏥 *EMR UKS - Sekolah Rakyat*
 
 Yth. {parent_name},
 
-Siswa atas nama {patient.name} tercatat melakukan kunjungan ke UKS.
+Mohon izin menginformasikan bahwa siswa berikut telah mendapatkan pelayanan di Unit Kesehatan Sekolah (UKS).
 
-Tanggal:
-{visit.visit_date}
+━━━━━━━━━━━━━━━━━━
 
-Keluhan:
-{visit.complaint}
+👤 *Nama Siswa*
+{patient.name}
 
-Diagnosa:
+🏫 *Kelas*
+{patient.class_name}
+
+📅 *Tanggal Pemeriksaan*
+{tanggal}
+
+🤒 *Keluhan*
+{visit.complaint or "-"}
+
+🩺 *Diagnosis*
 {visit.diagnosis or "-"}
 
-Tindakan:
-{visit.treatment}
+💊 *Tindakan*
+{visit.treatment or "-"}
 
-Pesan ini adalah notifikasi otomatis dari sistem UKS.
+━━━━━━━━━━━━━━━━━━
 
-Terima kasih.
-- UKS Sekolah Rakyat"""
+Mohon memantau kondisi siswa di asrama. Apabila terdapat keluhan lanjutan atau kondisi memburuk, silakan berkoordinasi dengan petugas UKS.
+
+Terima kasih atas perhatian dan kerja samanya.
+
+━━━━━━━━━━━━━━━━━━
+*EMR UKS*
+Sekolah Rakyat
+Kementerian Sosial RI
+"""
 
 
 def build_referral_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
     parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
-    return f"""[UKS SRMA 13 Bekasi]
+    return f"""🏥 *EMR UKS - Sekolah Rakyat*
 
 Yth. {parent_name},
 
 Siswa {patient.name} membutuhkan tindak lanjut/rujukan.
 
-Tanggal kunjungan: {visit.visit_date}
-Keluhan: {visit.complaint}
-Diagnosa: {visit.diagnosis or "-"}
-Tujuan rujukan: {visit.referral_to or visit.referral_place or "-"}
+📅 Tanggal kunjungan: {visit.visit_date}
+🤒 Keluhan: {visit.complaint}
+🩺 Diagnosa: {visit.diagnosis or "-"}
+📄 Tujuan rujukan: {visit.referral_to or visit.referral_place or "-"}
 
 Mohon dilakukan pemantauan dan tindak lanjut sesuai arahan petugas UKS."""
 
