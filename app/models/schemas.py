@@ -189,6 +189,7 @@ class SchoolCreate(BaseModel):
     school_name: str = Field(min_length=2, max_length=255)
     province: Optional[str] = Field(default=None, max_length=100)
     city: Optional[str] = Field(default=None, max_length=100)
+    postal_code: Optional[str] = Field(default=None, max_length=20)
     address: Optional[str] = Field(default=None, max_length=500)
     phone: Optional[str] = Field(default=None, max_length=50)
     email: Optional[str] = Field(default=None, max_length=255)
@@ -202,6 +203,7 @@ class SchoolUpdate(BaseModel):
     school_name: Optional[str] = Field(default=None, min_length=2, max_length=255)
     province: Optional[str] = Field(default=None, max_length=100)
     city: Optional[str] = Field(default=None, max_length=100)
+    postal_code: Optional[str] = Field(default=None, max_length=20)
     address: Optional[str] = Field(default=None, max_length=500)
     phone: Optional[str] = Field(default=None, max_length=50)
     email: Optional[str] = Field(default=None, max_length=255)
@@ -216,6 +218,7 @@ class SchoolResponse(BaseModel):
     school_name: str
     province: Optional[str] = None
     city: Optional[str] = None
+    postal_code: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None

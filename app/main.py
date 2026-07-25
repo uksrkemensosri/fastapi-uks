@@ -120,6 +120,9 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN signature_image TEXT"))
             if "school_id" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN school_id INTEGER"))
+            school_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(schools)")).fetchall()} if "schools" in {row[0] for row in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()} else set()
+            if school_cols and "postal_code" not in school_cols:
+                conn.execute(text("ALTER TABLE schools ADD COLUMN postal_code VARCHAR(20)"))
 
             patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
             if "class_name" not in patient_cols:
@@ -173,6 +176,7 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS nip VARCHAR(50)"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS jabatan VARCHAR(100)"))
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_image TEXT"))
+            conn.execute(text("ALTER TABLE schools ADD COLUMN IF NOT EXISTS postal_code VARCHAR(20)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS class_name VARCHAR(50)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_name VARCHAR(200)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))

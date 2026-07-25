@@ -10,7 +10,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.utils import ImageReader
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -44,7 +43,7 @@ ROLE_KEPALA_UKSR = "kepala_sekolah"
 ROLE_TIM_UKSR = "tim_uksr"
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "ui" / "assets"
 LOGO_PATH = ASSETS_DIR / "logo-sekolah-rakyat.png"
-LETTERHEAD_PATH = Path(__file__).resolve().parents[2] / "static" / "img" / "kop-surat-sekolah-rakyat.png"
+KEMENSOS_LOGO_PATH = ASSETS_DIR / "logo-kemensoss.png"
 
 
 def write_audit(
@@ -341,67 +340,71 @@ def pdf_school_for_user(db: Session, user: UserORM | None, school_id: int | None
 
 
 def letterhead_flowable(max_width: float, school: SchoolORM | None = None):
-    if school is not None:
-        styles = getSampleStyleSheet()
-        title = ParagraphStyle(
-            "TenantLetterheadTitle",
-            parent=styles["Normal"],
-            fontName="Helvetica-Bold",
-            fontSize=13,
-            leading=15,
-            alignment=TA_CENTER,
-            textColor=colors.black,
+    styles = getSampleStyleSheet()
+    ministry = ParagraphStyle(
+        "DynamicLetterheadMinistry",
+        parent=styles["Normal"],
+        fontName="Times-Bold",
+        fontSize=16,
+        leading=18,
+        spaceAfter=0,
+        alignment=TA_CENTER,
+        textColor=colors.black,
+    )
+    school_style = ParagraphStyle(
+        "DynamicLetterheadSchool",
+        parent=styles["Normal"],
+        fontName="Times-Bold",
+        fontSize=12,
+        leading=15,
+        spaceBefore=1,
+        spaceAfter=1,
+        alignment=TA_CENTER,
+        textColor=colors.black,
+    )
+    detail = ParagraphStyle(
+        "DynamicLetterheadDetail",
+        parent=styles["Normal"],
+        fontName="Times-Bold",
+        fontSize=10,
+        leading=11,
+        spaceBefore=2,
+        alignment=TA_CENTER,
+        textColor=colors.black,
+    )
+    left_logo = Image(str(KEMENSOS_LOGO_PATH), width=72, height=72) if KEMENSOS_LOGO_PATH.exists() else ""
+    school_logo_path = _local_image_path(getattr(school, "logo_url", None)) or LOGO_PATH
+    right_logo = Image(str(school_logo_path), width=72, height=72) if school_logo_path.exists() else ""
+    school_name = getattr(school, "school_name", None) or "Sekolah Rakyat"
+    address = getattr(school, "address", None)
+    city = getattr(school, "city", None)
+    province = getattr(school, "province", None)
+    postal_code = getattr(school, "postal_code", None)
+    location = ", ".join(part for part in [city, province, postal_code] if part)
+    address_line = ", ".join(part for part in [address, location] if part)
+    info_lines = [
+        Paragraph("KEMENTERIAN SOSIAL REPUBLIK INDONESIA", ministry),
+        Paragraph("UNIT KESEHATAN SEKOLAH RAKYAT", ministry),
+        Paragraph(school_name, school_style),
+    ]
+    if address_line:
+        info_lines.append(Paragraph(address_line, detail))
+    table = Table([[left_logo, info_lines, right_logo]], colWidths=[80, max_width - 160, 80])
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                ("ALIGN", (2, 0), (2, 0), "CENTER"),
+                ("LINEBELOW", (0, 0), (-1, 0), 1.2, colors.black),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]
         )
-        subtitle = ParagraphStyle(
-            "TenantLetterheadSubtitle",
-            parent=styles["Normal"],
-            fontName="Helvetica",
-            fontSize=7.4,
-            leading=9,
-            alignment=TA_CENTER,
-            textColor=colors.black,
-        )
-        logo_path = _local_image_path(school.logo_url) or LOGO_PATH
-        logo = Image(str(logo_path), width=52, height=52) if logo_path.exists() else ""
-        location = " ".join(part for part in [school.city, school.province] if part) or "Sekolah Rakyat"
-        contact = " | ".join(part for part in [school.phone, school.email] if part)
-        info_lines = [
-            Paragraph("KEMENTERIAN SOSIAL REPUBLIK INDONESIA", subtitle),
-            Paragraph((school.school_name or "SEKOLAH RAKYAT").upper(), title),
-            Paragraph(location, subtitle),
-        ]
-        if school.address:
-            info_lines.append(Paragraph(school.address, subtitle))
-        if contact:
-            info_lines.append(Paragraph(contact, subtitle))
-        table = Table([[logo, info_lines]], colWidths=[62, max_width - 62])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
-                    ("LINEBELOW", (0, 0), (-1, 0), 1.2, colors.black),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 0),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ]
-            )
-        )
-        return table
-
-    if not LETTERHEAD_PATH.exists():
-        return None
-    try:
-        reader = ImageReader(str(LETTERHEAD_PATH))
-        image_width, image_height = reader.getSize()
-        draw_width = max_width
-        draw_height = draw_width * image_height / image_width
-        image = Image(str(LETTERHEAD_PATH), width=draw_width, height=draw_height)
-        image.hAlign = "CENTER"
-        return image
-    except Exception:
-        return None
+    )
+    return table
 
 
 def qr_code_flowable(text: str, size: int = 58):
@@ -429,6 +432,7 @@ def recommendation_pdf(
     if item is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
     signer = tenant_get(db, UserORM, item.created_by, current_user) if item.created_by else None
+    school = pdf_school_for_user(db, current_user, item.school_id)
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=42, rightMargin=42, topMargin=20, bottomMargin=28)
@@ -483,18 +487,11 @@ def recommendation_pdf(
     )
     elements = []
 
-    letterhead = letterhead_flowable(doc.width)
+    letterhead = letterhead_flowable(doc.width, school)
     if letterhead:
         elements.append(Spacer(1, 2))
         elements.append(letterhead)
         elements.append(Spacer(1, 6))
-    else:
-        if LOGO_PATH.exists():
-            fallback_logo = Image(str(LOGO_PATH), width=52, height=52)
-            fallback_logo.hAlign = "CENTER"
-            elements.append(fallback_logo)
-        elements.append(Paragraph("UKS Sekolah Rakyat", title_style))
-        elements.append(Spacer(1, 5))
 
     elements.extend(
         [
@@ -578,8 +575,11 @@ def recommendation_pdf(
     signer_name = signer.full_name if signer else "-"
     signer_nip = signer.nip if signer and signer.nip else "-"
     signer_title = signer.jabatan if signer and signer.jabatan else "Perawat Pemeriksa"
+    signature_city = school.city if school and school.city else "-"
+    school_name = school.school_name if school and school.school_name else "Sekolah Rakyat"
     qr_payload = (
-        f"SURAT REKOMENDASI UKS SRMA 13 BEKASI\n"
+        f"SURAT REKOMENDASI UKS\n"
+        f"Sekolah: {school_name}\n"
         f"Nomor: {item.letter_number}\n"
         f"Petugas: {signer_name}\n"
         f"Jabatan: {signer_title}\n"
@@ -590,7 +590,7 @@ def recommendation_pdf(
             [
                 "",
                 [
-                    Paragraph(f"Bekasi, {datetime.now().strftime('%d/%m/%Y')}", right_style),
+                    Paragraph(f"{signature_city}, {datetime.now().strftime('%d/%m/%Y')}", right_style),
                     Paragraph(signer_title, right_style),
                     qr_code_flowable(qr_payload),
                     Paragraph(signer_name, right_style),

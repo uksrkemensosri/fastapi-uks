@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.recommendations import letterhead_flowable, qr_code_flowable
+from app.api.recommendations import letterhead_flowable, pdf_school_for_user, qr_code_flowable
 from app.auth.dependencies import get_current_user, require_roles
 from app.auth.tenant import tenant_get, tenant_query
 from app.db.dependencies import get_db
@@ -90,8 +90,8 @@ NEXT_STATION_BY_STATUS = {
 }
 
 
-def append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, subtitle: str | None, styles) -> None:
-    letterhead = letterhead_flowable(doc.width)
+def append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, subtitle: str | None, styles, school=None) -> None:
+    letterhead = letterhead_flowable(doc.width, school)
     if letterhead:
         elements.append(letterhead)
         elements.append(Spacer(1, 8))
@@ -141,16 +141,18 @@ def ckg_pdf_styles():
     return styles, small, tiny, section
 
 
-def append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS") -> None:
+def append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS", school=None) -> None:
     generated_at = datetime.now()
     signer_name = current_user.full_name or "-"
     signer_nip = current_user.nip or "-"
     signer_title = current_user.jabatan or label
+    signature_city = school.city if school and school.city else "-"
     qr_payload = "\n".join(
         [
             f"Nama: {signer_name}",
             f"NIP: {signer_nip}",
             f"Jabatan: {signer_title}",
+            f"Sekolah: {school.school_name if school else 'Sekolah Rakyat'}",
             f"Tanggal cetak: {generated_at.strftime('%d/%m/%Y')}",
         ]
     )
@@ -161,7 +163,7 @@ def append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: U
             [
                 "",
                 [
-                    Paragraph(f"Bekasi, {generated_at.strftime('%d/%m/%Y')}", styles["Normal"]),
+                    Paragraph(f"{signature_city}, {generated_at.strftime('%d/%m/%Y')}", styles["Normal"]),
                     Paragraph(signer_title, styles["Normal"]),
                     signature_qr,
                     Paragraph(signer_name, styles["Normal"]),
@@ -818,12 +820,14 @@ def event_report_pdf(
     )
     styles, small_style, tiny_style, section_style = ckg_pdf_styles()
     elements = []
+    school = pdf_school_for_user(db, current_user, event.school_id)
     append_pdf_letterhead(
         elements,
         doc,
         "LAPORAN CKG",
         f"{event.event_name} - Tahun Ajaran {event.academic_year} | Periode: {event.start_date} s/d {event.end_date}",
         styles,
+        school,
     )
 
     summary_rows = [
@@ -926,7 +930,7 @@ def event_report_pdf(
         )
     )
     elements.append(table)
-    append_pdf_signature(elements, doc, current_user, styles)
+    append_pdf_signature(elements, doc, current_user, styles, school=school)
     doc.build(elements)
     buffer.seek(0)
 
@@ -1009,7 +1013,8 @@ def student_summary_pdf(
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=24, bottomMargin=24)
     styles, small_style, _, section_style = ckg_pdf_styles()
     elements = []
-    append_pdf_letterhead(elements, doc, "RINGKASAN CKG SISWA", f"NIS: {summary.student.nis}", styles)
+    school = pdf_school_for_user(db, current_user, student.school_id)
+    append_pdf_letterhead(elements, doc, "RINGKASAN CKG SISWA", f"NIS: {summary.student.nis}", styles, school)
 
     def simple_table(rows: list[list[object]], widths: list[int] | None = None) -> Table:
         table = Table(
@@ -1096,7 +1101,7 @@ def student_summary_pdf(
         referral_rows.append(["Status", "Tidak ada rujukan"])
     elements.append(Paragraph("Rujukan", section_style))
     elements.append(simple_table(referral_rows))
-    append_pdf_signature(elements, doc, current_user, styles)
+    append_pdf_signature(elements, doc, current_user, styles, school=school)
     doc.build(elements)
     buffer.seek(0)
 

@@ -49,6 +49,7 @@
           <input id="schoolName" placeholder="Nama sekolah" required>
           <input id="province" placeholder="Provinsi">
           <input id="city" placeholder="Kota/Kabupaten">
+          <input id="postalCode" placeholder="Kode pos">
           <input id="address" placeholder="Alamat">
           <input id="phone" placeholder="Telepon">
           <input id="email" placeholder="Email">
@@ -103,6 +104,7 @@ function formPayload(){
     school_name: schoolName.value.trim(),
     province: province.value.trim() || null,
     city: city.value.trim() || null,
+    postal_code: postalCode.value.trim() || null,
     address: address.value.trim() || null,
     phone: phone.value.trim() || null,
     email: email.value.trim() || null,
@@ -126,6 +128,7 @@ function editSchool(id){
   schoolName.value = item.school_name || "";
   province.value = item.province || "";
   city.value = item.city || "";
+  postalCode.value = item.postal_code || "";
   address.value = item.address || "";
   phone.value = item.phone || "";
   email.value = item.email || "";

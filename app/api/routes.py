@@ -236,6 +236,7 @@ def _school_response(school: SchoolORM) -> SchoolResponse:
         school_name=school.school_name,
         province=school.province,
         city=school.city,
+        postal_code=school.postal_code,
         address=school.address,
         phone=school.phone,
         email=school.email,
@@ -304,16 +305,18 @@ def _append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, s
     elements.append(Spacer(1, 12))
 
 
-def _append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS") -> None:
+def _append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: UserORM, styles, label: str = "Petugas UKS", school: SchoolORM | None = None) -> None:
     generated_at = datetime.now()
     signer_name = current_user.full_name or "-"
     signer_nip = getattr(current_user, "nip", None) or "-"
     signer_title = getattr(current_user, "jabatan", None) or label
+    signature_city = school.city if school and school.city else "-"
     qr_payload = "\n".join(
         [
             f"Nama: {signer_name}",
             f"NIP: {signer_nip}",
             f"Jabatan: {signer_title}",
+            f"Sekolah: {school.school_name if school else 'Sekolah Rakyat'}",
             f"Tanggal cetak: {generated_at.strftime('%d/%m/%Y')}",
         ]
     )
@@ -325,7 +328,7 @@ def _append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: 
             [
                 "",
                 [
-                    Paragraph(f"Bekasi, {generated_at.strftime('%d/%m/%Y')}", signature_style),
+                    Paragraph(f"{signature_city}, {generated_at.strftime('%d/%m/%Y')}", signature_style),
                     Paragraph(signer_title, signature_style),
                     signature_qr,
                     Paragraph(signer_name, signature_style),
@@ -476,7 +479,7 @@ Mohon dilakukan pemantauan dan tindak lanjut sesuai arahan petugas UKS."""
 
 def build_control_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
     parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
-    return f"""[UKS SRMA 13 Bekasi]
+    return f"""[EMR UKS Sekolah Rakyat]
 
 Yth. {parent_name},
 
@@ -491,7 +494,7 @@ Mohon wali asuh/orang tua memastikan jadwal kontrol terlaksana."""
 
 def build_rest_letter_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
     parent_name = patient.parent_name or "Wali Asuh / Orang Tua"
-    return f"""[UKS SRMA 13 Bekasi]
+    return f"""[EMR UKS Sekolah Rakyat]
 
 Yth. {parent_name},
 
@@ -1660,7 +1663,7 @@ def get_medicines_report_pdf(
         )
     )
     elements.append(table)
-    _append_pdf_signature(elements, doc, current_user, styles)
+    _append_pdf_signature(elements, doc, current_user, styles, school=pdf_school_for_user(db, current_user))
     doc.build(elements)
     buffer.seek(0)
 
@@ -1780,7 +1783,7 @@ def get_medicine_mutation_pdf(
     )
 
     elements.append(table)
-    _append_pdf_signature(elements, doc, current_user, styles)
+    _append_pdf_signature(elements, doc, current_user, styles, school=pdf_school_for_user(db, current_user))
 
     doc.build(elements)
 
@@ -2131,7 +2134,7 @@ def get_uks_visit_report_pdf(
         )
     )
     elements.append(table)
-    _append_pdf_signature(elements, doc, current_user, styles)
+    _append_pdf_signature(elements, doc, current_user, styles, school=pdf_school_for_user(db, current_user))
     doc.build(elements)
     buffer.seek(0)
     filename = f"laporan_kunjungan_uks_{period}.pdf"
@@ -2763,11 +2766,12 @@ def system_health_check(
         "status": "ok" if os.getenv("FONNTE_TOKEN") else "warning",
         "detail": "FONNTE_TOKEN terisi" if os.getenv("FONNTE_TOKEN") else "FONNTE_TOKEN belum diisi",
     })
-    letterhead = Path("static/img/kop-surat-sekolah-rakyat.png")
+    kemensos_logo = Path("app/ui/assets/logo-kemensoss.png")
+    sr_logo = Path("app/ui/assets/logo-sekolah-rakyat.png")
     checks.append({
-        "name": "Kop Surat PDF",
-        "status": "ok" if letterhead.exists() else "warning",
-        "detail": str(letterhead),
+        "name": "Logo Kop Surat PDF",
+        "status": "ok" if kemensos_logo.exists() and sr_logo.exists() else "warning",
+        "detail": f"{kemensos_logo}; {sr_logo}",
     })
     static_dir = Path("static")
     checks.append({
@@ -3029,7 +3033,7 @@ def uks_referral_letter_pdf(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("PADDING", (0, 0), (-1, -1), 7),
     ])))
-    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS")
+    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS", pdf_school_for_user(db, current_user))
     doc.build(elements)
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="surat_rujukan_{visit_id}.pdf"'})
@@ -3064,7 +3068,7 @@ def uks_rest_letter_pdf(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("PADDING", (0, 0), (-1, -1), 7),
     ])))
-    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS")
+    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS", pdf_school_for_user(db, current_user))
     doc.build(elements)
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="surat_izin_{visit_id}.pdf"'})
@@ -3086,7 +3090,7 @@ def notify_ckg_completed(
     )
     phone = student.parent_phone or (patient.parent_phone if patient else None)
     parent_name = student.parent_name or (patient.parent_name if patient else None) or "Wali Asuh / Orang Tua"
-    message = f"""[UKS SRMA 13 Bekasi]
+    message = f"""[EMR UKS Sekolah Rakyat]
 
 Yth. {parent_name},
 

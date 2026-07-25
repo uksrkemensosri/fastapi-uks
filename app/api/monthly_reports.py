@@ -25,7 +25,7 @@ from app.db.models import (
     MedicineInventoryORM,
     MedicineTransactionORM,
 )
-from app.api.recommendations import letterhead_flowable, qr_code_flowable, signature_image_flowable
+from app.api.recommendations import letterhead_flowable, pdf_school_for_user, qr_code_flowable, signature_image_flowable
 
 router = APIRouter(prefix="/reports", tags=["Monthly UKS Report"])
 
@@ -251,7 +251,8 @@ def get_monthly_report_pdf(
     header = ParagraphStyle("MonthlyHeaderCell", parent=cell, fontName="Helvetica-Bold")
     elements = []
 
-    letterhead = letterhead_flowable(doc.width)
+    school = pdf_school_for_user(db, current_user)
+    letterhead = letterhead_flowable(doc.width, school)
     if letterhead:
         elements.append(letterhead)
         elements.append(Spacer(1, 3))
@@ -313,7 +314,7 @@ def get_monthly_report_pdf(
     signature_cells = [
         "",
         [
-            Paragraph(f"Bekasi, {generated_at.strftime('%d/%m/%Y')}", right),
+            Paragraph(f"{school.city if school and school.city else '-'}, {generated_at.strftime('%d/%m/%Y')}", right),
             Paragraph(current_user.jabatan or "Petugas UKS", right),
         ],
     ]

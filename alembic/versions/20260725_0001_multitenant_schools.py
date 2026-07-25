@@ -70,6 +70,7 @@ def upgrade() -> None:
             sa.Column("school_name", sa.String(length=255), nullable=False),
             sa.Column("province", sa.String(length=100), nullable=True),
             sa.Column("city", sa.String(length=100), nullable=True),
+            sa.Column("postal_code", sa.String(length=20), nullable=True),
             sa.Column("address", sa.String(length=500), nullable=True),
             sa.Column("phone", sa.String(length=50), nullable=True),
             sa.Column("email", sa.String(length=255), nullable=True),
@@ -92,6 +93,9 @@ def upgrade() -> None:
             """
         )
     )
+
+    if _table_exists("schools") and "postal_code" not in _columns("schools"):
+        op.add_column("schools", sa.Column("postal_code", sa.String(length=20), nullable=True))
 
     default_school_id = bind.execute(
         text("SELECT id FROM schools WHERE school_code = 'SR-DEMO' ORDER BY id LIMIT 1")
