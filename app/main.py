@@ -17,9 +17,11 @@ from app.api.monthly_reports import router as monthly_reports_router
 from app.api.recommendations import router as recommendations_router
 from app.api.routes import router
 from app.auth.security import hash_password
+from app.auth.tenant import get_default_school
 from app.db import models  # noqa: F401
 from app.db.database import Base, SessionLocal, engine
 from app.db.models import PatientORM
+from app.db.models import SchoolORM
 from app.db.models import UserORM
 
 try:
@@ -81,6 +83,28 @@ Base.metadata.create_all(bind=engine)
 
 
 def ensure_database_columns() -> None:
+    tenant_tables = [
+        "users",
+        "audit_logs",
+        "recommendation_letters",
+        "ckg_events",
+        "ckg_students",
+        "ckg_station_assignments",
+        "ckg_anthropometry",
+        "ckg_ttv",
+        "ckg_vision",
+        "ckg_dental",
+        "ckg_general_screening",
+        "ckg_referrals",
+        "patients",
+        "assessments",
+        "recommendations",
+        "uks_visits",
+        "uks_medications",
+        "medicine_inventory",
+        "school_settings",
+        "medicine_transactions",
+    ]
     if engine.dialect.name == "sqlite":
         with engine.begin() as conn:
             user_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
@@ -94,6 +118,8 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN jabatan VARCHAR(100)"))
             if "signature_image" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN signature_image TEXT"))
+            if "school_id" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN school_id INTEGER"))
 
             patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
             if "class_name" not in patient_cols:
@@ -102,6 +128,8 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN parent_name VARCHAR(200)"))
             if "parent_phone" not in patient_cols:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN parent_phone VARCHAR(30)"))
+            if "school_id" not in patient_cols:
+                conn.execute(text("ALTER TABLE patients ADD COLUMN school_id INTEGER"))
 
             visit_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(uks_visits)")).fetchall()}
             if "diagnosis" not in visit_cols:
@@ -116,10 +144,16 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE uks_visits ADD COLUMN whatsapp_status VARCHAR(30)"))
             if "whatsapp_message" not in visit_cols:
                 conn.execute(text("ALTER TABLE uks_visits ADD COLUMN whatsapp_message TEXT"))
+            if "school_id" not in visit_cols:
+                conn.execute(text("ALTER TABLE uks_visits ADD COLUMN school_id INTEGER"))
 
             ckg_student_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_students)")).fetchall()}
             if "parent_phone" not in ckg_student_cols:
                 conn.execute(text("ALTER TABLE ckg_students ADD COLUMN parent_phone VARCHAR(30)"))
+            for table_name in tenant_tables:
+                cols = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()}
+                if "school_id" not in cols:
+                    conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN school_id INTEGER"))
         return
 
     if engine.dialect.name.startswith("postgresql"):
@@ -149,9 +183,52 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS whatsapp_status VARCHAR(30)"))
             conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS whatsapp_message TEXT"))
             conn.execute(text("ALTER TABLE ckg_students ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
+            for table_name in tenant_tables:
+                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS school_id INTEGER"))
+            conn.execute(text("ALTER TABLE medicine_inventory DROP CONSTRAINT IF EXISTS medicine_inventory_name_key"))
+
+
+def ensure_default_school_data() -> None:
+    db: Session = SessionLocal()
+    try:
+        school = get_default_school(db)
+        db.commit()
+        db.refresh(school)
+
+        tenant_models = [
+            UserORM,
+            models.AuditLogORM,
+            models.RecommendationLetterORM,
+            models.CKGEventORM,
+            models.CKGStudentORM,
+            models.CKGStationAssignmentORM,
+            models.CKGAnthropometryORM,
+            models.CKGTTVORM,
+            models.CKGVisionORM,
+            models.CKGDentalORM,
+            models.CKGGeneralScreeningORM,
+            models.CKGReferralORM,
+            PatientORM,
+            models.AssessmentORM,
+            models.RecommendationORM,
+            models.UKSVisitORM,
+            models.UKSMedicationORM,
+            models.MedicineInventoryORM,
+            models.SchoolSettingORM,
+            models.MedicineTransactionORM,
+        ]
+        for model in tenant_models:
+            db.query(model).filter(model.school_id.is_(None)).update(
+                {model.school_id: school.id},
+                synchronize_session=False,
+            )
+        db.commit()
+    finally:
+        db.close()
 
 
 ensure_database_columns()
+ensure_default_school_data()
 
 UI_INDEX_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
 UI_LOGIN_PATH = Path(__file__).resolve().parent / "ui" / "login.html"
@@ -162,6 +239,7 @@ UI_REPORTS_PATH = Path(__file__).resolve().parent / "ui" / "reports.html"
 UI_USERS_PATH = Path(__file__).resolve().parent / "ui" / "users.html"
 UI_AUDIT_LOGS_PATH = Path(__file__).resolve().parent / "ui" / "audit_logs.html"
 UI_CKG_PATH = Path(__file__).resolve().parent / "ui" / "ckg.html"
+UI_SCHOOLS_PATH = Path(__file__).resolve().parent / "ui" / "schools.html"
 UI_ACCESS_DENIED_PATH = Path(__file__).resolve().parent / "ui" / "access_denied.html"
 UI_ASSETS_PATH = Path(__file__).resolve().parent / "ui" / "assets"
 
@@ -184,9 +262,10 @@ def protected_ui_page(request: Request, path: Path, allowed_roles: set[str] | No
             "username": user.username,
             "full_name": user.full_name,
             "role": user.role,
+            "school_id": user.school_id,
         }
 
-        if allowed_roles is not None and user.role not in allowed_roles:
+        if allowed_roles is not None and user.role != "super_admin" and user.role not in allowed_roles:
             return FileResponse(UI_ACCESS_DENIED_PATH, status_code=403)
 
         return FileResponse(path)
@@ -203,10 +282,12 @@ def seed_admin_user() -> None:
 
     db: Session = SessionLocal()
     try:
+        default_school = get_default_school(db)
         admin = db.query(UserORM).filter(UserORM.username == admin_username).first()
         if admin is None:
             db.add(
                 UserORM(
+                    school_id=default_school.id,
                     username=admin_username,
                     full_name=admin_full_name,
                     role="admin",
@@ -226,6 +307,7 @@ def import_students_once() -> None:
     db: Session = SessionLocal()
 
     try:
+        default_school = get_default_school(db)
 
         existing = db.query(PatientORM).count()
 
@@ -239,6 +321,7 @@ def import_students_once() -> None:
         for _, row in df.iterrows():
 
             student = PatientORM(
+                school_id=default_school.id,
                 id=str(row["id"]),
                 name=row["name"],
                 gender=row["gender"],
@@ -271,7 +354,7 @@ def health() -> dict:
 
 @app.get("/dashboard", response_class=FileResponse)
 def dashboard(request: Request):
-    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
+    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
 
 
 @app.get("/login", response_class=FileResponse)
@@ -285,25 +368,30 @@ def student_detail_page(request: Request):
     return protected_ui_page(request, UI_STUDENT_DETAIL_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
 @app.get("/reports", response_class=FileResponse)
 def reports_page(request: Request):
-    return protected_ui_page(request, UI_REPORTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
+    return protected_ui_page(request, UI_REPORTS_PATH, {"admin", "perawat", "kepala_sekolah", "super_admin"})
 @app.get("/settings", response_class=FileResponse)
 def settings_page(request: Request):
     return protected_ui_page(request, UI_SETTINGS_PATH)
 @app.get("/users", response_class=FileResponse)
 def users_page(request: Request):
-    return protected_ui_page(request, UI_USERS_PATH, {"admin", "perawat"})
+    return protected_ui_page(request, UI_USERS_PATH, {"admin", "perawat", "super_admin"})
 
 
 @app.get("/audit-logs", response_class=FileResponse)
 def audit_logs_page(request: Request):
-    return protected_ui_page(request, UI_AUDIT_LOGS_PATH, {"admin"})
+    return protected_ui_page(request, UI_AUDIT_LOGS_PATH, {"admin", "super_admin"})
 
 
 @app.get("/ckg", response_class=FileResponse)
 def ckg_page(request: Request):
-    return protected_ui_page(request, UI_CKG_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
+    return protected_ui_page(request, UI_CKG_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
 
 
 @app.get("/ui", response_class=FileResponse)
 def ui_page(request: Request):
-    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr"})
+    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
+
+
+@app.get("/schools", response_class=FileResponse)
+def schools_page(request: Request):
+    return protected_ui_page(request, UI_SCHOOLS_PATH, {"super_admin"})

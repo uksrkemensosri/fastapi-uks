@@ -105,7 +105,8 @@ def test_register_role_normalization_and_access(client: TestClient):
     assert patients.status_code == 200
 
     users = client.get("/api/users", headers=headers)
-    assert users.status_code == 403
+    assert users.status_code == 200
+    assert all(item["school_id"] == reg.json()["school_id"] for item in users.json())
 
     settings_page = client.get("/settings")
     assert settings_page.status_code == 200

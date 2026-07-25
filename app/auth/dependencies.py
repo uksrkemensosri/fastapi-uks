@@ -6,6 +6,8 @@ from app.auth.security import parse_access_token
 from app.db.dependencies import get_db
 from app.db.models import UserORM
 
+ROLE_SUPER_ADMIN = "super_admin"
+
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -39,10 +41,9 @@ def get_current_user(
 
 def require_roles(*allowed_roles: str):
     def _dependency(current_user: UserORM = Depends(get_current_user)) -> UserORM:
-        expanded_roles = set(allowed_roles)
-        if "perawat" in expanded_roles:
-            expanded_roles.update({"kepala_sekolah", "tim_uksr"})
-        if current_user.role not in expanded_roles:
+        if current_user.role == ROLE_SUPER_ADMIN:
+            return current_user
+        if current_user.role not in set(allowed_roles):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         return current_user
 

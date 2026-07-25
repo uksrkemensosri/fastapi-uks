@@ -14,6 +14,7 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, 
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_roles
+from app.auth.tenant import tenant_query
 from app.db.dependencies import get_db
 from app.db.models import (
     PatientORM,
@@ -30,6 +31,7 @@ router = APIRouter(prefix="/reports", tags=["Monthly UKS Report"])
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
+ROLE_KEPALA_UKSR = "kepala_sekolah"
 
 MONTH_NAMES = {
     1: "Januari",
@@ -87,12 +89,12 @@ def pdf_paragraph(value: str | int | None, style: ParagraphStyle) -> Paragraph:
     return Paragraph(escape(str(value if value is not None else "-")), style)
 
 
-def monthly_report_data(db: Session, month: int, year: int) -> dict:
+def monthly_report_data(db: Session, month: int, year: int, current_user: UserORM) -> dict:
     prefix, month_name, period_label = validate_period(month, year)
     start_dt = datetime(year, month, 1)
     end_dt = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
     visits = (
-        db.query(UKSVisitORM)
+        tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.visit_date.like(f"{prefix}%"))
         .order_by(UKSVisitORM.visit_date.asc(), UKSVisitORM.id.asc())
         .all()
@@ -100,11 +102,11 @@ def monthly_report_data(db: Session, month: int, year: int) -> dict:
     patient_ids = [visit.patient_id for visit in visits if visit.patient_id]
     patients = {
         patient.id: patient
-        for patient in db.query(PatientORM).filter(PatientORM.id.in_(patient_ids)).all()
+        for patient in tenant_query(db.query(PatientORM), PatientORM, current_user).filter(PatientORM.id.in_(patient_ids)).all()
     } if patient_ids else {}
     visit_ids = [visit.id for visit in visits]
     medications = (
-        db.query(UKSMedicationORM)
+        tenant_query(db.query(UKSMedicationORM), UKSMedicationORM, current_user)
         .filter(UKSMedicationORM.visit_id.in_(visit_ids))
         .all()
         if visit_ids else []
@@ -122,7 +124,7 @@ def monthly_report_data(db: Session, month: int, year: int) -> dict:
     student_counter = Counter(visit.patient_id for visit in visits)
     referral_count = sum(1 for visit in visits if visit.referral_status == "dirujuk" or visit.referral_to or visit.referral_place)
     recommendation_count = (
-        db.query(RecommendationLetterORM)
+        tenant_query(db.query(RecommendationLetterORM), RecommendationLetterORM, current_user)
         .filter(RecommendationLetterORM.created_at >= start_dt)
         .filter(RecommendationLetterORM.created_at < end_dt)
         .count()
@@ -197,9 +199,9 @@ def get_monthly_report(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2000, le=2100),
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> dict:
-    return monthly_report_data(db, month, year)
+    return monthly_report_data(db, month, year, current_user)
 
 
 def table_style(font_size: float = 6.6) -> TableStyle:
@@ -235,9 +237,9 @@ def get_monthly_report_pdf(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2000, le=2100),
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
-    data = monthly_report_data(db, month, year)
+    data = monthly_report_data(db, month, year, current_user)
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=28, rightMargin=28, topMargin=14, bottomMargin=20)
     styles = getSampleStyleSheet()
@@ -372,7 +374,7 @@ def medicine_mutation_report(
     month: int = Query(..., ge=1, le=12),
     year: int = Query(..., ge=2000, le=2100),
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ):
     start_dt = datetime(year, month, 1)
     end_dt = (
@@ -382,7 +384,7 @@ def medicine_mutation_report(
     )
 
     transactions = (
-        db.query(MedicineTransactionORM)
+        tenant_query(db.query(MedicineTransactionORM), MedicineTransactionORM, current_user)
         .filter(MedicineTransactionORM.transaction_date >= start_dt)
         .filter(MedicineTransactionORM.transaction_date < end_dt)
         .all()
@@ -395,10 +397,11 @@ def medicine_mutation_report(
         if trx.medicine_name not in result:
 
             stock_item = (
-                db.query(MedicineInventoryORM)
+                tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user)
                 .filter(
                     MedicineInventoryORM.name
-                    == trx.medicine_name
+                    == trx.medicine_name,
+                    MedicineInventoryORM.school_id == trx.school_id,
                 )
                 .first()
             )

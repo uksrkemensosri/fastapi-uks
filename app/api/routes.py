@@ -15,6 +15,7 @@ load_dotenv()
 from io import BytesIO
 from app.api.recommendations import (
     letterhead_flowable,
+    pdf_school_for_user,
     signature_image_flowable,
     qr_code_flowable,
 )
@@ -36,6 +37,7 @@ from app.auth.security import (
     hash_password,
     verify_password,
 )
+from app.auth.tenant import assign_school, is_super_admin, tenant_get, tenant_query
 from app.core.expert_system import NursingExpertSystem
 from app.db.dependencies import get_db
 from app.db.models import (
@@ -46,6 +48,7 @@ from app.db.models import (
     PatientORM,
     RecommendationORM,
     RecommendationLetterORM,
+    SchoolORM,
     UKSMedicationORM,
     UKSVisitORM,
     UserORM,
@@ -71,6 +74,9 @@ from app.models.schemas import (
     PatientAssessmentsResponse,
     PatientSummary,
     PasswordResetRequest,
+    SchoolCreate,
+    SchoolResponse,
+    SchoolUpdate,
     TokenResponse,
     UKSDailyReportResponse,
     UKSMedicationCreate,
@@ -102,6 +108,9 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
 ROLE_WALI_ASUH = "wali_asuh"
+ROLE_SUPER_ADMIN = "super_admin"
+ROLE_KEPALA_UKSR = "kepala_sekolah"
+ROLE_TIM_UKSR = "tim_uksr"
 
 
 def build_local_care_suggestion(complaint: str, examination: str) -> str:
@@ -182,6 +191,7 @@ def _user_response(user: UserORM) -> UserResponse:
         username=user.username,
         full_name=user.full_name,
         role=user.role,
+        school_id=getattr(user, "school_id", None),
         is_active=user.is_active,
         nip=getattr(user, "nip", None),
         jabatan=getattr(user, "jabatan", None),
@@ -201,6 +211,7 @@ def write_audit_log(
 ) -> None:
     db.add(
         AuditLogORM(
+            school_id=getattr(user, "school_id", None) if user else None,
             user_id=user.id if user else None,
             username=user.username if user else None,
             action=action,
@@ -211,11 +222,28 @@ def write_audit_log(
     )
 
 
-def _active_admin_count(db: Session) -> int:
-    return (
-        db.query(UserORM)
-        .filter(UserORM.role == ROLE_ADMIN, UserORM.is_active.is_(True))
-        .count()
+def _active_admin_count(db: Session, school_id: int | None = None) -> int:
+    query = db.query(UserORM).filter(UserORM.role == ROLE_ADMIN, UserORM.is_active.is_(True))
+    if school_id is not None:
+        query = query.filter(UserORM.school_id == school_id)
+    return query.count()
+
+
+def _school_response(school: SchoolORM) -> SchoolResponse:
+    return SchoolResponse(
+        id=school.id,
+        school_code=school.school_code,
+        school_name=school.school_name,
+        province=school.province,
+        city=school.city,
+        address=school.address,
+        phone=school.phone,
+        email=school.email,
+        logo_url=school.logo_url,
+        principal_name=school.principal_name,
+        is_active=school.is_active,
+        created_at=school.created_at,
+        updated_at=school.updated_at,
     )
 
 
@@ -244,16 +272,23 @@ def _validate_month_yyyy_mm(value: str) -> str:
     return value
 
 
-def _find_inventory_by_name(db: Session, medicine_name: str) -> MedicineInventoryORM | None:
+def _find_inventory_by_name(
+    db: Session,
+    medicine_name: str,
+    current_user: UserORM | None = None,
+) -> MedicineInventoryORM | None:
+    query = db.query(MedicineInventoryORM)
+    if current_user is not None:
+        query = tenant_query(query, MedicineInventoryORM, current_user)
     return (
-        db.query(MedicineInventoryORM)
+        query
         .filter(MedicineInventoryORM.name.ilike(medicine_name.strip()))
         .first()
     )
 
 
-def _append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, subtitle: str | None, styles) -> None:
-    letterhead = letterhead_flowable(doc.width)
+def _append_pdf_letterhead(elements: list, doc: SimpleDocTemplate, title: str, subtitle: str | None, styles, school: SchoolORM | None = None) -> None:
+    letterhead = letterhead_flowable(doc.width, school)
     if letterhead:
         elements.append(letterhead)
         elements.append(Spacer(1, 8))
@@ -372,7 +407,11 @@ def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, 
 def build_uks_visit_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
     parent_name = patient.parent_name or "Wali Asuh"
 
-    tanggal = visit.visit_date.strftime("%d %B %Y")
+    tanggal = (
+        visit.visit_date.strftime("%d %B %Y")
+        if hasattr(visit.visit_date, "strftime")
+        else str(visit.visit_date)
+    )
 
     waktu = (
         visit.created_at.strftime("%H.%M WIB")
@@ -465,17 +504,94 @@ Diagnosa: {visit.diagnosis or "-"}
 Silakan cek surat izin dari petugas UKS."""
 
 
+@router.get("/schools", response_model=list[SchoolResponse])
+def list_schools(
+    db: Session = Depends(get_db),
+    _: UserORM = Depends(require_roles(ROLE_SUPER_ADMIN)),
+) -> list[SchoolResponse]:
+    schools = db.query(SchoolORM).order_by(SchoolORM.school_name.asc()).all()
+    return [_school_response(school) for school in schools]
+
+
+@router.post("/schools", response_model=SchoolResponse, status_code=status.HTTP_201_CREATED)
+def create_school(
+    payload: SchoolCreate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_SUPER_ADMIN)),
+) -> SchoolResponse:
+    existing = db.query(SchoolORM).filter(SchoolORM.school_code == payload.school_code).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="School code already exists")
+    school = SchoolORM(**payload.model_dump())
+    db.add(school)
+    db.flush()
+    write_audit_log(db, current_user, "create_school", "school", school.id, school.school_name)
+    db.commit()
+    db.refresh(school)
+    return _school_response(school)
+
+
+@router.put("/schools/{school_id}", response_model=SchoolResponse)
+def update_school(
+    school_id: int,
+    payload: SchoolUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_SUPER_ADMIN)),
+) -> SchoolResponse:
+    school = db.get(SchoolORM, school_id)
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    if payload.school_code and payload.school_code != school.school_code:
+        existing = db.query(SchoolORM).filter(SchoolORM.school_code == payload.school_code).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="School code already exists")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(school, field, value)
+    db.add(school)
+    write_audit_log(db, current_user, "edit_school", "school", school.id, school.school_name)
+    db.commit()
+    db.refresh(school)
+    return _school_response(school)
+
+
+@router.delete("/schools/{school_id}")
+def delete_school(
+    school_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_SUPER_ADMIN)),
+) -> dict:
+    school = db.get(SchoolORM, school_id)
+    if school is None:
+        raise HTTPException(status_code=404, detail="School not found")
+    school.is_active = False
+    db.add(school)
+    action = "deactivate_school"
+    write_audit_log(db, current_user, action, "school", school_id, school.school_name)
+    db.commit()
+    return {"message": "School updated"}
+
+
 @router.post("/auth/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UserResponse:
     existing = db.query(UserORM).filter(UserORM.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    if is_super_admin(current_user):
+        if payload.role != ROLE_SUPER_ADMIN and payload.school_id is None:
+            raise HTTPException(status_code=400, detail="school_id is required for school users")
+        school_id = payload.school_id
+    else:
+        if payload.role == ROLE_SUPER_ADMIN:
+            raise HTTPException(status_code=403, detail="Only super_admin can create super_admin users")
+        school_id = current_user.school_id
+
     user = UserORM(
+        school_id=school_id,
         username=payload.username,
         full_name=payload.full_name,
         role=payload.role,
@@ -500,12 +616,13 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
 
-    token = create_access_token(subject=str(user.id), role=user.role)
+    token = create_access_token(subject=str(user.id), role=user.role, school_id=user.school_id)
     request.session["user"] = {
         "id": user.id,
         "username": user.username,
         "full_name": user.full_name,
         "role": user.role,
+        "school_id": user.school_id,
     }
     response.set_cookie(
         "access_token",
@@ -517,7 +634,12 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     )
     write_audit_log(db, user, "login", "session", user.id, "User logged in")
     db.commit()
-    return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds(), role=user.role)
+    return TokenResponse(
+        access_token=token,
+        expires_in=get_access_token_expire_seconds(),
+        role=user.role,
+        school_id=user.school_id,
+    )
 
 
 @router.post("/auth/logout")
@@ -536,8 +658,13 @@ def logout(
 
 @router.post("/auth/refresh", response_model=TokenResponse)
 def refresh_token(current_user: UserORM = Depends(get_current_user)) -> TokenResponse:
-    token = create_access_token(subject=str(current_user.id), role=current_user.role)
-    return TokenResponse(access_token=token, expires_in=get_access_token_expire_seconds(), role=current_user.role)
+    token = create_access_token(subject=str(current_user.id), role=current_user.role, school_id=current_user.school_id)
+    return TokenResponse(
+        access_token=token,
+        expires_in=get_access_token_expire_seconds(),
+        role=current_user.role,
+        school_id=current_user.school_id,
+    )
 
 
 @router.get("/auth/me", response_model=UserResponse)
@@ -547,6 +674,7 @@ def get_me(request: Request, current_user: UserORM = Depends(get_current_user)) 
         "username": current_user.username,
         "full_name": current_user.full_name,
         "role": current_user.role,
+        "school_id": current_user.school_id,
     }
     return _user_response(current_user)
 
@@ -593,13 +721,14 @@ def update_profile(
 def assess_patient(
     payload: NursingAssessment,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> AssessmentResponse:
     recommendations = expert_system.infer(payload)
 
-    patient = db.get(PatientORM, payload.patient.id)
+    patient = tenant_get(db, PatientORM, payload.patient.id, current_user)
     if patient is None:
         patient = PatientORM(
+            school_id=current_user.school_id,
             id=payload.patient.id,
             name=payload.patient.name,
             age=payload.patient.age,
@@ -612,6 +741,7 @@ def assess_patient(
         patient.gender = payload.patient.gender
 
     assessment = AssessmentORM(
+        school_id=patient.school_id,
         patient_id=payload.patient.id,
         complaints=payload.complaints,
         observations=payload.observations,
@@ -623,6 +753,7 @@ def assess_patient(
     for rec in recommendations:
         db.add(
             RecommendationORM(
+                school_id=patient.school_id,
                 assessment_id=assessment.id,
                 nanda_code=rec.nanda_code,
                 nanda_label=rec.nanda_label,
@@ -642,7 +773,7 @@ def assess_patient(
 @router.post("/ai/suggest-care", response_model=AICareSuggestionResponse)
 def suggest_care_with_ai(
     payload: AICareSuggestionRequest,
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> AICareSuggestionResponse:
 
     prompt = f"""
@@ -748,13 +879,14 @@ Tetap ringkas, aman, dan cocok untuk dokumentasi UKS.
 def create_patient(
     payload: PatientCreate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> PatientSummary:
-    existing = db.get(PatientORM, payload.id)
+    existing = tenant_get(db, PatientORM, payload.id, current_user)
     if existing is not None:
         raise HTTPException(status_code=400, detail="Patient ID already exists")
 
     patient = PatientORM(
+        school_id=current_user.school_id,
         id=payload.id,
         name=payload.name,
         age=payload.age,
@@ -783,11 +915,11 @@ def create_patient(
 @router.get("/patients", response_model=list[PatientSummary])
 def get_patients(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> list[PatientSummary]:
 
     patients = (
-        db.query(PatientORM)
+        tenant_query(db.query(PatientORM), PatientORM, current_user)
         .order_by(PatientORM.name.asc())
         .all()
     )
@@ -814,7 +946,7 @@ def get_patients(
 def search_patients(
     q: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> list[PatientSummary]:
     keyword = q.strip()
     if not keyword:
@@ -822,7 +954,7 @@ def search_patients(
 
     like_expr = f"%{keyword}%"
     patients = (
-        db.query(PatientORM)
+        tenant_query(db.query(PatientORM), PatientORM, current_user)
         .filter((PatientORM.id.ilike(like_expr)) | (PatientORM.name.ilike(like_expr)))
         .order_by(PatientORM.name.asc())
         .all()
@@ -846,9 +978,9 @@ def search_patients(
 def get_patient_detail(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> PatientSummary:
-    patient = db.get(PatientORM, patient_id)
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
     return PatientSummary(
@@ -869,15 +1001,14 @@ def update_patient(
     current_user: UserORM = Depends(
         require_roles(
             ROLE_ADMIN,
-            ROLE_PERAWAT
+            ROLE_PERAWAT,
+            ROLE_KEPALA_UKSR,
+            ROLE_TIM_UKSR
         )
     ),
 ):
 
-    patient = db.get(
-        PatientORM,
-        patient_id
-    )
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
 
     if patient is None:
 
@@ -910,13 +1041,13 @@ def delete_patient(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
-    patient = db.get(PatientORM, patient_id)
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     patient_name = patient.name
     ckg_students = (
-        db.query(CKGStudentORM)
+        tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user)
         .filter(CKGStudentORM.nis == patient_id)
         .all()
     )
@@ -924,7 +1055,8 @@ def delete_patient(
         db.delete(ckg_student)
 
     db.query(RecommendationLetterORM).filter(
-        RecommendationLetterORM.student_id == patient_id
+        RecommendationLetterORM.student_id == patient_id,
+        RecommendationLetterORM.school_id == patient.school_id,
     ).delete(synchronize_session=False)
     db.delete(patient)
     write_audit_log(
@@ -945,13 +1077,14 @@ def delete_patient(
 def create_uks_visit(
     payload: UKSVisitCreate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> UKSVisitResponse:
-    patient = db.get(PatientORM, payload.patient_id)
+    patient = tenant_get(db, PatientORM, payload.patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     visit = UKSVisitORM(
+        school_id=patient.school_id,
         patient_id=payload.patient_id,
         visit_date=payload.visit_date,
         complaint=payload.complaint,
@@ -1005,11 +1138,11 @@ def create_uks_visit(
 def get_patient_visits(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
 
     visits = (
-        db.query(UKSVisitORM)
+        tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.patient_id == patient_id)
         .order_by(UKSVisitORM.visit_date.desc())
         .all()
@@ -1021,9 +1154,9 @@ def get_patient_visits(
 def get_all_uks_visits(
     month: str | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
-    query = db.query(UKSVisitORM)
+    query = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
     if month:
         month = _validate_month_yyyy_mm(month)
         query = query.filter(UKSVisitORM.visit_date.like(f"{month}%"))
@@ -1038,7 +1171,7 @@ def get_all_uks_visits(
 
     for visit in visits:
 
-        patient = db.get(PatientORM, visit.patient_id)
+        patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
 
         results.append({
             "id": visit.id,
@@ -1061,7 +1194,7 @@ def delete_uks_visit(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
 
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
 
     if visit is None:
         raise HTTPException(
@@ -1079,9 +1212,9 @@ def delete_uks_visit(
 def get_uks_visit_detail(
     visit_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> UKSVisitResponse:
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
 
@@ -1103,14 +1236,14 @@ def get_uks_visit_detail(
 def list_patient_uks_visits(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> list[UKSVisitResponse]:
-    patient = db.get(PatientORM, patient_id)
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     visits = (
-        db.query(UKSVisitORM)
+        tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.patient_id == patient_id)
         .order_by(UKSVisitORM.id.desc())
         .all()
@@ -1141,14 +1274,14 @@ def add_uks_medication(
     visit_id: int,
     payload: UKSMedicationCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UKSMedicationResponse:
 
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
 
-    inventory = _find_inventory_by_name(db, payload.medicine_name)
+    inventory = _find_inventory_by_name(db, payload.medicine_name, current_user)
     if inventory is None:
         raise HTTPException(status_code=404, detail="Medicine not found in inventory")
 
@@ -1159,6 +1292,7 @@ def add_uks_medication(
         )
 
     medication = UKSMedicationORM(
+        school_id=visit.school_id,
         visit_id=visit_id,
         medicine_name=inventory.name,
         dosage=payload.dosage,
@@ -1169,6 +1303,7 @@ def add_uks_medication(
     inventory.stock -= payload.quantity
 
     transaction = MedicineTransactionORM(
+        school_id=visit.school_id,
         medicine_name=inventory.name,
         transaction_type="OUT",
         quantity=payload.quantity,
@@ -1196,14 +1331,14 @@ def add_uks_medication(
 def list_uks_medications(
     visit_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> list[UKSMedicationResponse]:
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
 
     medications = (
-        db.query(UKSMedicationORM)
+        tenant_query(db.query(UKSMedicationORM), UKSMedicationORM, current_user)
         .filter(UKSMedicationORM.visit_id == visit_id)
         .order_by(UKSMedicationORM.id.asc())
         .all()
@@ -1230,12 +1365,13 @@ def list_uks_medications(
 def create_medicine_inventory(
     payload: MedicineInventoryCreate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> MedicineInventoryResponse:
 
     existing = _find_inventory_by_name(
         db,
-        payload.name
+        payload.name,
+        current_user,
     )
 
     # tambah stok jika obat sudah ada
@@ -1246,6 +1382,7 @@ def create_medicine_inventory(
         existing.minimum_stock = payload.minimum_stock
 
         transaction = MedicineTransactionORM(
+            school_id=existing.school_id,
             medicine_name=existing.name,
             transaction_type="IN",
             quantity=payload.stock,
@@ -1270,6 +1407,7 @@ def create_medicine_inventory(
 
     # buat obat baru
     med = MedicineInventoryORM(
+        school_id=current_user.school_id,
         name=payload.name.strip(),
         unit=payload.unit.strip(),
         stock=payload.stock,
@@ -1279,6 +1417,7 @@ def create_medicine_inventory(
     db.add(med)
 
     transaction = MedicineTransactionORM(
+        school_id=current_user.school_id,
         medicine_name=payload.name.strip(),
         transaction_type="IN",
         quantity=payload.stock,
@@ -1304,9 +1443,9 @@ def create_medicine_inventory(
 @router.get("/medicines", response_model=list[MedicineInventoryResponse])
 def list_medicines_inventory(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> list[MedicineInventoryResponse]:
-    meds = db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
+    meds = tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user).order_by(MedicineInventoryORM.name.asc()).all()
     return [
         MedicineInventoryResponse(
             id=m.id,
@@ -1325,9 +1464,9 @@ def update_medicine_inventory(
     medicine_id: int,
     payload: MedicineInventoryUpdate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> MedicineInventoryResponse:
-    med = db.get(MedicineInventoryORM, medicine_id)
+    med = tenant_get(db, MedicineInventoryORM, medicine_id, current_user)
     if med is None:
         raise HTTPException(status_code=404, detail="Medicine not found")
 
@@ -1356,9 +1495,9 @@ def adjust_medicine_stock(
     medicine_id: int,
     payload: MedicineStockAdjustment,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> MedicineInventoryResponse:
-    med = db.get(MedicineInventoryORM, medicine_id)
+    med = tenant_get(db, MedicineInventoryORM, medicine_id, current_user)
     if med is None:
         raise HTTPException(status_code=404, detail="Medicine not found")
 
@@ -1389,6 +1528,7 @@ def adjust_medicine_stock(
         med.stock = payload.quantity
 
     transaction = MedicineTransactionORM(
+        school_id=med.school_id,
         medicine_name=med.name,
         transaction_type=transaction_type,
         quantity=transaction_quantity,
@@ -1422,7 +1562,7 @@ def get_medicine_mutation_report(
     month: int,
     year: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> list[dict]:
     if month < 1 or month > 12:
         raise HTTPException(status_code=400, detail="Month must be 1-12")
@@ -1430,7 +1570,7 @@ def get_medicine_mutation_report(
     end_dt = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
 
     transactions = (
-        db.query(MedicineTransactionORM)
+        tenant_query(db.query(MedicineTransactionORM), MedicineTransactionORM, current_user)
         .filter(MedicineTransactionORM.transaction_date >= start_dt)
         .filter(MedicineTransactionORM.transaction_date < end_dt)
         .order_by(MedicineTransactionORM.medicine_name.asc())
@@ -1449,7 +1589,7 @@ def get_medicine_mutation_report(
 
     stocks = {
         med.name: med.stock
-        for med in db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
+        for med in tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user).order_by(MedicineInventoryORM.name.asc()).all()
     }
     for name, stock in stocks.items():
         item = summary.setdefault(
@@ -1464,11 +1604,9 @@ def get_medicine_mutation_report(
 @router.get("/reports/medicines/pdf")
 def get_medicines_report_pdf(
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(
-        require_roles("admin", "perawat")
-    ),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
-    medicines = db.query(MedicineInventoryORM).order_by(MedicineInventoryORM.name.asc()).all()
+    medicines = tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user).order_by(MedicineInventoryORM.name.asc()).all()
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -1489,6 +1627,7 @@ def get_medicines_report_pdf(
         "LAPORAN STOK OBAT UKS",
         f"Total item: {len(medicines)}",
         styles,
+        pdf_school_for_user(db, current_user),
     )
 
     data = [["No", "Nama Obat", "Stok", "Satuan", "Stok Minimum", "Status"]]
@@ -1535,9 +1674,7 @@ def get_medicine_mutation_pdf(
     month: int,
     year: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(
-    require_roles("admin", "perawat")
-    ),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
 
 
@@ -1550,7 +1687,7 @@ def get_medicine_mutation_pdf(
 )
 
     transactions = (
-        db.query(MedicineTransactionORM)
+        tenant_query(db.query(MedicineTransactionORM), MedicineTransactionORM, current_user)
         .filter(MedicineTransactionORM.transaction_date >= start_dt)
         .filter(MedicineTransactionORM.transaction_date < end_dt)
         .order_by(MedicineTransactionORM.transaction_date.asc())
@@ -1564,7 +1701,8 @@ def get_medicine_mutation_pdf(
         stock_item = (
             db.query(MedicineInventoryORM)
             .filter(
-                MedicineInventoryORM.name == trx.medicine_name
+                MedicineInventoryORM.name == trx.medicine_name,
+                MedicineInventoryORM.school_id == trx.school_id,
             )
             .first()
         )
@@ -1599,6 +1737,7 @@ def get_medicine_mutation_pdf(
         "LAPORAN MUTASI OBAT UKS",
         f"Periode: {month:02d}/{year}",
         styles,
+        pdf_school_for_user(db, current_user),
     )
 
     data = [
@@ -1660,9 +1799,9 @@ def update_uks_referral(
     visit_id: int,
     payload: UKSReferralUpdate,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> UKSVisitResponse:
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
 
@@ -1671,7 +1810,7 @@ def update_uks_referral(
     db.add(visit)
     db.commit()
     db.refresh(visit)
-    patient = db.get(PatientORM, visit.patient_id)
+    patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
 
     if patient and patient.parent_phone:
         send_whatsapp_message(
@@ -1710,10 +1849,10 @@ def update_uks_referral(
 def get_uks_daily_report(
     date: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> UKSDailyReportResponse:
     date = _validate_date_yyyy_mm_dd(date)
-    visits = db.query(UKSVisitORM).filter(UKSVisitORM.visit_date == date).all()
+    visits = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).filter(UKSVisitORM.visit_date == date).all()
     total_referrals = sum(1 for visit in visits if visit.referral_status == "dirujuk")
     return UKSDailyReportResponse(
         date=date,
@@ -1727,11 +1866,11 @@ def get_uks_daily_report(
 def get_uks_daily_report_excel(
     date: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
     date = _validate_date_yyyy_mm_dd(date)
     visits = (
-        db.query(UKSVisitORM)
+        tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.visit_date == date)
         .order_by(UKSVisitORM.id.asc())
         .all()
@@ -1768,7 +1907,7 @@ def get_uks_daily_report_excel(
         cell.border = border
 
     for idx, visit in enumerate(visits, start=1):
-        patient = db.get(PatientORM, visit.patient_id)
+        patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
         try:
             formatted_date = datetime.strptime(visit.visit_date, "%Y-%m-%d").strftime("%d/%m/%Y")
         except ValueError:
@@ -1831,11 +1970,11 @@ def get_uks_daily_report_excel(
 def get_uks_monthly_report(
     month: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> UKSMonthlyReportResponse:
     month = _validate_month_yyyy_mm(month)
     month_prefix = f"{month}%"
-    visits = db.query(UKSVisitORM).filter(UKSVisitORM.visit_date.like(month_prefix)).all()
+    visits = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).filter(UKSVisitORM.visit_date.like(month_prefix)).all()
     total_referrals = sum(1 for visit in visits if visit.referral_status == "dirujuk")
     return UKSMonthlyReportResponse(
         month=month,
@@ -1878,9 +2017,9 @@ def _visit_report_bounds(
     raise HTTPException(status_code=400, detail="period must be daily, weekly, or monthly")
 
 
-def _visit_report_rows(db: Session, start: str, end: str) -> list[dict]:
+def _visit_report_rows(db: Session, start: str, end: str, current_user: UserORM) -> list[dict]:
     visits = (
-        db.query(UKSVisitORM)
+        tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.visit_date >= start)
         .filter(UKSVisitORM.visit_date <= end)
         .order_by(UKSVisitORM.visit_date.asc(), UKSVisitORM.id.asc())
@@ -1889,7 +2028,7 @@ def _visit_report_rows(db: Session, start: str, end: str) -> list[dict]:
     patient_ids = [visit.patient_id for visit in visits if visit.patient_id]
     patients = {
         patient.id: patient
-        for patient in db.query(PatientORM).filter(PatientORM.id.in_(patient_ids)).all()
+        for patient in tenant_query(db.query(PatientORM), PatientORM, current_user).filter(PatientORM.id.in_(patient_ids)).all()
     } if patient_ids else {}
     rows = []
     for visit in visits:
@@ -1910,6 +2049,7 @@ def _visit_report_rows(db: Session, start: str, end: str) -> list[dict]:
 
 def _visit_report_payload(
     db: Session,
+    current_user: UserORM,
     period: str,
     report_date: str | None,
     start_date: str | None,
@@ -1917,7 +2057,7 @@ def _visit_report_payload(
     month: str | None,
 ) -> dict:
     start, end, label = _visit_report_bounds(period, report_date, start_date, end_date, month)
-    rows = _visit_report_rows(db, start, end)
+    rows = _visit_report_rows(db, start, end, current_user)
     return {
         "period": period,
         "label": label,
@@ -1936,9 +2076,9 @@ def get_uks_visit_report(
     end_date: str | None = None,
     month: str | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> dict:
-    return _visit_report_payload(db, period, date, start_date, end_date, month)
+    return _visit_report_payload(db, current_user, period, date, start_date, end_date, month)
 
 
 @router.get("/reports/uks/visits/pdf")
@@ -1949,9 +2089,9 @@ def get_uks_visit_report_pdf(
     end_date: str | None = None,
     month: str | None = None,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
-    payload = _visit_report_payload(db, period, date, start_date, end_date, month)
+    payload = _visit_report_payload(db, current_user, period, date, start_date, end_date, month)
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=28, rightMargin=28, topMargin=24, bottomMargin=24)
     styles = getSampleStyleSheet()
@@ -1967,6 +2107,7 @@ def get_uks_visit_report_pdf(
         "LAPORAN KUNJUNGAN UKS",
         escape(payload["label"]),
         styles,
+        pdf_school_for_user(db, current_user),
     )
     headers = ["Tanggal", "Nama Siswa", "Kelas", "Keluhan", "Diagnosa", "Tindakan", "Petugas"]
     table_rows = [[Paragraph(escape(header), body) for header in headers]]
@@ -2009,9 +2150,9 @@ def get_uks_visit_report_excel(
     end_date: str | None = None,
     month: str | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
-    payload = _visit_report_payload(db, period, date, start_date, end_date, month)
+    payload = _visit_report_payload(db, current_user, period, date, start_date, end_date, month)
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Laporan Kunjungan"
@@ -2058,14 +2199,14 @@ def get_uks_visit_report_excel(
 def get_patient_assessments(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> PatientAssessmentsResponse:
-    patient = db.get(PatientORM, patient_id)
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
     assessments = (
-        db.query(AssessmentORM)
+        tenant_query(db.query(AssessmentORM), AssessmentORM, current_user)
         .filter(AssessmentORM.patient_id == patient_id)
         .order_by(AssessmentORM.id.desc())
         .all()
@@ -2074,7 +2215,7 @@ def get_patient_assessments(
     payload = []
     for a in assessments:
         recs = (
-            db.query(RecommendationORM)
+            tenant_query(db.query(RecommendationORM), RecommendationORM, current_user)
             .filter(RecommendationORM.assessment_id == a.id)
             .order_by(RecommendationORM.id.asc())
             .all()
@@ -2115,14 +2256,14 @@ def get_patient_assessments(
 def get_assessment_detail(
     assessment_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles("admin", "perawat")),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> AssessmentSummary:
-    assessment = db.get(AssessmentORM, assessment_id)
+    assessment = tenant_get(db, AssessmentORM, assessment_id, current_user)
     if assessment is None:
         raise HTTPException(status_code=404, detail="Assessment not found")
 
     recs = (
-        db.query(RecommendationORM)
+        tenant_query(db.query(RecommendationORM), RecommendationORM, current_user)
         .filter(RecommendationORM.assessment_id == assessment.id)
         .order_by(RecommendationORM.id.asc())
         .all()
@@ -2150,10 +2291,10 @@ def update_uks_visit(
     visit_id: int,
     payload: UKSVisitCreate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ):
 
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
 
     if visit is None:
         raise HTTPException(
@@ -2162,6 +2303,9 @@ def update_uks_visit(
         )
 
     if payload.patient_id is not None:
+        patient = tenant_get(db, PatientORM, payload.patient_id, current_user)
+        if patient is None:
+            raise HTTPException(status_code=404, detail="Patient not found")
         visit.patient_id = payload.patient_id
 
     if payload.visit_date is not None:
@@ -2195,7 +2339,7 @@ def update_uks_visit(
     db.commit()
     db.refresh(visit)
     if payload.control_date is not None or payload.referral_place is not None:
-        patient = db.get(PatientORM, visit.patient_id)
+        patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
         if patient and patient.parent_phone:
             send_whatsapp_message(patient.parent_phone, build_control_whatsapp_message(patient, visit))
 
@@ -2209,20 +2353,20 @@ from datetime import date
 @router.get("/dashboard/stats")
 def dashboard_stats(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
 
-    total_students = db.query(PatientORM).count()
+    total_students = tenant_query(db.query(PatientORM), PatientORM, current_user).count()
 
-    today_visits = db.query(UKSVisitORM).filter(
+    today_visits = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).filter(
         UKSVisitORM.visit_date == date.today().isoformat()
     ).count()
 
     top_case = (
-        db.query(
+        tenant_query(db.query(
             UKSVisitORM.diagnosis,
             func.count(UKSVisitORM.diagnosis).label("total")
-        )
+        ), UKSVisitORM, current_user)
         .group_by(UKSVisitORM.diagnosis)
         .order_by(func.count(UKSVisitORM.diagnosis).desc())
         .first()
@@ -2237,11 +2381,11 @@ def dashboard_stats(
 @router.get("/users")
 def list_users(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN))
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT))
 ):
 
     users = (
-        db.query(UserORM)
+        tenant_query(db.query(UserORM), UserORM, current_user)
         .order_by(UserORM.full_name.asc())
         .all()
     )
@@ -2252,6 +2396,7 @@ def list_users(
             "username": user.username,
             "full_name": user.full_name,
             "role": user.role,
+            "school_id": user.school_id,
             "is_active": user.is_active,
             "nip": getattr(user, "nip", None),
             "jabatan": getattr(user, "jabatan", None),
@@ -2266,13 +2411,23 @@ def list_users(
 def create_user_from_admin(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UserResponse:
     existing = db.query(UserORM).filter(UserORM.username == payload.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    if is_super_admin(current_user):
+        if payload.role != ROLE_SUPER_ADMIN and payload.school_id is None:
+            raise HTTPException(status_code=400, detail="school_id is required for school users")
+        school_id = payload.school_id
+    else:
+        if payload.role == ROLE_SUPER_ADMIN:
+            raise HTTPException(status_code=403, detail="Only super_admin can create super_admin users")
+        school_id = current_user.school_id
+
     user = UserORM(
+        school_id=school_id,
         username=payload.username,
         full_name=payload.full_name,
         role=payload.role,
@@ -2295,9 +2450,9 @@ def update_user_from_admin(
     user_id: int,
     payload: UserUpdate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UserResponse:
-    user = db.get(UserORM, user_id)
+    user = tenant_get(db, UserORM, user_id, current_user)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -2317,14 +2472,14 @@ def update_user_from_admin(
         user.jabatan = payload.jabatan.strip() or None
 
     if payload.role is not None:
-        if user.role == ROLE_ADMIN and payload.role != ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:
+        if user.role == ROLE_ADMIN and payload.role != ROLE_ADMIN and user.is_active and _active_admin_count(db, user.school_id) <= 1:
             raise HTTPException(status_code=400, detail="Cannot remove the last active admin")
         user.role = payload.role
 
     if payload.is_active is not None:
         if user.id == current_user.id and payload.is_active is False:
             raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
-        if user.role == ROLE_ADMIN and user.is_active and payload.is_active is False and _active_admin_count(db) <= 1:
+        if user.role == ROLE_ADMIN and user.is_active and payload.is_active is False and _active_admin_count(db, user.school_id) <= 1:
             raise HTTPException(status_code=400, detail="Cannot deactivate the last active admin")
         user.is_active = payload.is_active
 
@@ -2340,9 +2495,9 @@ def reset_user_password(
     user_id: int,
     payload: PasswordResetRequest,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> dict:
-    user = db.get(UserORM, user_id)
+    user = tenant_get(db, UserORM, user_id, current_user)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -2357,9 +2512,9 @@ def reset_user_password(
 def activate_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UserResponse:
-    user = db.get(UserORM, user_id)
+    user = tenant_get(db, UserORM, user_id, current_user)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = True
@@ -2374,14 +2529,14 @@ def activate_user(
 def deactivate_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> UserResponse:
-    user = db.get(UserORM, user_id)
+    user = tenant_get(db, UserORM, user_id, current_user)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
-    if user.role == ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:
+    if user.role == ROLE_ADMIN and user.is_active and _active_admin_count(db, user.school_id) <= 1:
         raise HTTPException(status_code=400, detail="Cannot deactivate the last active admin")
     user.is_active = False
     write_audit_log(db, current_user, "deactivate_user", "user", user.id, f"Deactivated user {user.username}")
@@ -2395,14 +2550,14 @@ def deactivate_user(
 def delete_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> dict:
-    user = db.get(UserORM, user_id)
+    user = tenant_get(db, UserORM, user_id, current_user)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    if user.role == ROLE_ADMIN and user.is_active and _active_admin_count(db) <= 1:
+    if user.role == ROLE_ADMIN and user.is_active and _active_admin_count(db, user.school_id) <= 1:
         raise HTTPException(status_code=400, detail="Cannot delete the last active admin")
     username = user.username
     db.delete(user)
@@ -2421,9 +2576,9 @@ def list_audit_logs(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ) -> AuditLogListResponse:
-    query = db.query(AuditLogORM)
+    query = tenant_query(db.query(AuditLogORM), AuditLogORM, current_user)
 
     if user:
         like_user = f"%{user.strip()}%"
@@ -2474,16 +2629,16 @@ def list_audit_logs(
 @router.get("/dashboard/advanced-stats")
 def dashboard_advanced_stats(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     today = date.today().isoformat()
     month_prefix = today[:7]
 
-    visits = db.query(UKSVisitORM).all()
+    visits = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).all()
     monthly_visits = [v for v in visits if str(v.visit_date).startswith(month_prefix)]
     today_visits = [v for v in visits if str(v.visit_date) == today]
     low_stock = (
-        db.query(MedicineInventoryORM)
+        tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user)
         .filter(MedicineInventoryORM.stock <= MedicineInventoryORM.minimum_stock)
         .order_by(MedicineInventoryORM.name.asc())
         .limit(10)
@@ -2495,7 +2650,7 @@ def dashboard_advanced_stats(
     ]
     student_counter: dict[str, dict] = {}
     for visit in monthly_visits:
-        patient = db.get(PatientORM, visit.patient_id)
+        patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
         key = visit.patient_id
         if key not in student_counter:
             student_counter[key] = {
@@ -2524,7 +2679,7 @@ def dashboard_advanced_stats(
             {
                 "visit_id": visit.id,
                 "patient_id": visit.patient_id,
-                "patient_name": db.get(PatientORM, visit.patient_id).name if db.get(PatientORM, visit.patient_id) else visit.patient_id,
+                "patient_name": (tenant_get(db, PatientORM, visit.patient_id, current_user).name if tenant_get(db, PatientORM, visit.patient_id, current_user) else visit.patient_id),
                 "control_date": visit.control_date,
                 "referral_place": visit.referral_place or visit.referral_to,
             }
@@ -2532,8 +2687,8 @@ def dashboard_advanced_stats(
         ],
         "whatsapp": {
             "configured": bool(os.getenv("FONNTE_TOKEN")),
-            "visits_with_parent_phone": sum(1 for v in today_visits if (db.get(PatientORM, v.patient_id) and db.get(PatientORM, v.patient_id).parent_phone)),
-            "visits_without_parent_phone": sum(1 for v in today_visits if not (db.get(PatientORM, v.patient_id) and db.get(PatientORM, v.patient_id).parent_phone)),
+            "visits_with_parent_phone": sum(1 for v in today_visits if (tenant_get(db, PatientORM, v.patient_id, current_user) and tenant_get(db, PatientORM, v.patient_id, current_user).parent_phone)),
+            "visits_without_parent_phone": sum(1 for v in today_visits if not (tenant_get(db, PatientORM, v.patient_id, current_user) and tenant_get(db, PatientORM, v.patient_id, current_user).parent_phone)),
         },
     }
 
@@ -2543,15 +2698,15 @@ def list_whatsapp_logs(
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> list[dict]:
-    query = db.query(UKSVisitORM).order_by(UKSVisitORM.id.desc())
+    query = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).order_by(UKSVisitORM.id.desc())
     if status_filter:
         query = query.filter(UKSVisitORM.whatsapp_status == status_filter)
     visits = query.limit(limit).all()
     rows = []
     for visit in visits:
-        patient = db.get(PatientORM, visit.patient_id)
+        patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
         rows.append(
             {
                 "visit_id": visit.id,
@@ -2572,10 +2727,10 @@ def resend_visit_whatsapp(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> dict:
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
-    patient = db.get(PatientORM, visit.patient_id)
+    patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
@@ -2594,7 +2749,7 @@ def resend_visit_whatsapp(
 @router.get("/system/health-check")
 def system_health_check(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     checks = []
     try:
@@ -2626,7 +2781,7 @@ def system_health_check(
 @router.get("/admin/backup")
 def download_backup(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     payload = {
         "generated_at": datetime.utcnow().isoformat(),
@@ -2641,7 +2796,7 @@ def download_backup(
                 "parent_name": p.parent_name,
                 "parent_phone": p.parent_phone,
             }
-            for p in db.query(PatientORM).all()
+            for p in tenant_query(db.query(PatientORM), PatientORM, current_user).all()
         ],
         "visits": [
             {
@@ -2659,11 +2814,11 @@ def download_backup(
                 "control_date": v.control_date,
                 "control_done": v.control_done,
             }
-            for v in db.query(UKSVisitORM).all()
+            for v in tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).all()
         ],
         "medicines": [
             {"name": m.name, "unit": m.unit, "stock": m.stock, "minimum_stock": m.minimum_stock}
-            for m in db.query(MedicineInventoryORM).all()
+            for m in tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user).all()
         ],
     }
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
@@ -2678,13 +2833,13 @@ def download_backup(
 def restore_backup(
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     restored = {"patients": 0, "visits": 0, "medicines": 0}
     for item in payload.get("patients", []):
-        patient = db.get(PatientORM, str(item.get("id")))
+        patient = tenant_get(db, PatientORM, str(item.get("id")), current_user)
         if patient is None:
-            patient = PatientORM(id=str(item.get("id")), name=item.get("name") or "-", age=int(item.get("age") or 0), gender=item.get("gender") or "-")
+            patient = PatientORM(school_id=current_user.school_id, id=str(item.get("id")), name=item.get("name") or "-", age=int(item.get("age") or 0), gender=item.get("gender") or "-")
             db.add(patient)
         patient.name = item.get("name") or patient.name
         patient.age = int(item.get("age") or patient.age or 0)
@@ -2696,9 +2851,9 @@ def restore_backup(
         restored["patients"] += 1
 
     for item in payload.get("medicines", []):
-        med = db.query(MedicineInventoryORM).filter(MedicineInventoryORM.name == item.get("name")).first()
+        med = tenant_query(db.query(MedicineInventoryORM), MedicineInventoryORM, current_user).filter(MedicineInventoryORM.name == item.get("name")).first()
         if med is None:
-            med = MedicineInventoryORM(name=item.get("name") or "-", unit=item.get("unit") or "tablet", stock=0, minimum_stock=10)
+            med = MedicineInventoryORM(school_id=current_user.school_id, name=item.get("name") or "-", unit=item.get("unit") or "tablet", stock=0, minimum_stock=10)
             db.add(med)
         med.unit = item.get("unit") or med.unit
         med.stock = int(item.get("stock") or 0)
@@ -2707,13 +2862,14 @@ def restore_backup(
 
     for item in payload.get("visits", []):
         patient_id = str(item.get("patient_id") or "")
-        if not patient_id or db.get(PatientORM, patient_id) is None:
+        if not patient_id or tenant_get(db, PatientORM, patient_id, current_user) is None:
             continue
         visit = None
         if item.get("id") is not None:
-            visit = db.get(UKSVisitORM, int(item.get("id")))
+            visit = tenant_get(db, UKSVisitORM, int(item.get("id")), current_user)
         if visit is None:
             visit = UKSVisitORM(
+                school_id=current_user.school_id,
                 patient_id=patient_id,
                 visit_date=item.get("visit_date") or date.today().isoformat(),
                 complaint=item.get("complaint") or "-",
@@ -2743,7 +2899,7 @@ def restore_backup(
 def import_patients_excel(
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     content = payload.get("content_base64")
     if not content:
@@ -2794,9 +2950,15 @@ def import_patients_excel(
     created = 0
     updated = 0
     for item in rows:
-        patient = db.get(PatientORM, item["id"])
+        patient = tenant_get(db, PatientORM, item["id"], current_user)
         if patient is None:
-            patient = PatientORM(id=item["id"], name=item["name"], age=0, gender=item["gender"])
+            patient = PatientORM(
+                school_id=current_user.school_id,
+                id=item["id"],
+                name=item["name"],
+                age=0,
+                gender=item["gender"],
+            )
             db.add(patient)
             created += 1
         else:
@@ -2818,10 +2980,10 @@ def notify_rest_letter(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
-    patient = db.get(PatientORM, visit.patient_id)
+    patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
     status_text, message = send_whatsapp_message(patient.parent_phone, build_rest_letter_whatsapp_message(patient, visit))
@@ -2830,11 +2992,11 @@ def notify_rest_letter(
     return {"whatsapp_status": status_text, "whatsapp_message": message}
 
 
-def _visit_or_404(db: Session, visit_id: int) -> tuple[UKSVisitORM, PatientORM]:
-    visit = db.get(UKSVisitORM, visit_id)
+def _visit_or_404(db: Session, visit_id: int, current_user: UserORM) -> tuple[UKSVisitORM, PatientORM]:
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
-    patient = db.get(PatientORM, visit.patient_id)
+    patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
     return visit, patient
@@ -2846,12 +3008,12 @@ def uks_referral_letter_pdf(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
-    visit, patient = _visit_or_404(db, visit_id)
+    visit, patient = _visit_or_404(db, visit_id, current_user)
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=24, bottomMargin=28, leftMargin=42, rightMargin=42)
     styles = getSampleStyleSheet()
     elements = []
-    _append_pdf_letterhead(elements, doc, "SURAT RUJUKAN UKS", f"Tanggal: {visit.visit_date}", styles)
+    _append_pdf_letterhead(elements, doc, "SURAT RUJUKAN UKS", f"Tanggal: {visit.visit_date}", styles, pdf_school_for_user(db, current_user))
     rows = [
         ["Nama", patient.name],
         ["NIS", patient.id],
@@ -2881,12 +3043,12 @@ def uks_rest_letter_pdf(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
-    visit, patient = _visit_or_404(db, visit_id)
+    visit, patient = _visit_or_404(db, visit_id, current_user)
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=24, bottomMargin=28, leftMargin=42, rightMargin=42)
     styles = getSampleStyleSheet()
     elements = []
-    _append_pdf_letterhead(elements, doc, "SURAT IZIN ISTIRAHAT UKS", f"Tanggal: {visit.visit_date}", styles)
+    _append_pdf_letterhead(elements, doc, "SURAT IZIN ISTIRAHAT UKS", f"Tanggal: {visit.visit_date}", styles, pdf_school_for_user(db, current_user))
     rows = [
         ["Nama", patient.name],
         ["NIS", patient.id],
@@ -2914,10 +3076,14 @@ def notify_ckg_completed(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
-    student = db.get(CKGStudentORM, student_id)
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
-    patient = db.get(PatientORM, student.nis)
+    patient = (
+        tenant_query(db.query(PatientORM), PatientORM, current_user)
+        .filter(PatientORM.id == student.nis)
+        .first()
+    )
     phone = student.parent_phone or (patient.parent_phone if patient else None)
     parent_name = student.parent_name or (patient.parent_name if patient else None) or "Wali Asuh / Orang Tua"
     message = f"""[UKS SRMA 13 Bekasi]
@@ -2937,9 +3103,9 @@ Silakan hubungi petugas UKS bila diperlukan tindak lanjut."""
 @router.get("/audit-logs/export/excel")
 def export_audit_logs_excel(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ):
-    logs = db.query(AuditLogORM).order_by(AuditLogORM.timestamp.desc()).limit(5000).all()
+    logs = tenant_query(db.query(AuditLogORM), AuditLogORM, current_user).order_by(AuditLogORM.timestamp.desc()).limit(5000).all()
     wb = Workbook()
     ws = wb.active
     ws.title = "Audit Log"

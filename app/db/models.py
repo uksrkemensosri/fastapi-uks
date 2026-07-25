@@ -23,6 +23,7 @@ class UserORM(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -38,12 +39,34 @@ class UserORM(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    school: Mapped["SchoolORM | None"] = relationship(back_populates="users")
+
+
+class SchoolORM(Base):
+    __tablename__ = "schools"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    school_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    province: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    principal_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+
+    users: Mapped[list[UserORM]] = relationship(back_populates="school")
 
 
 class AuditLogORM(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     username: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     action: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
@@ -57,6 +80,7 @@ class RecommendationLetterORM(Base):
     __tablename__ = "recommendation_letters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     letter_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     student_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     student_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -74,6 +98,7 @@ class CKGEventORM(Base):
     __tablename__ = "ckg_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     academic_year: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     event_name: Mapped[str] = mapped_column(String(120), nullable=False)
     start_date: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -96,6 +121,7 @@ class CKGStudentORM(Base):
     __table_args__ = (UniqueConstraint("event_id", "nis", name="uq_ckg_students_event_nis"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("ckg_events.id"), nullable=False, index=True)
     nis: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
@@ -130,6 +156,7 @@ class CKGStationAssignmentORM(Base):
     __table_args__ = (UniqueConstraint("event_id", "user_id", "station", name="uq_ckg_assignment_event_user_station"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("ckg_events.id"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     station: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -143,6 +170,7 @@ class CKGAnthropometryORM(Base):
     __tablename__ = "ckg_anthropometry"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("ckg_students.id"), unique=True, nullable=False, index=True)
     weight: Mapped[float] = mapped_column(Float, nullable=False)
     height: Mapped[float] = mapped_column(Float, nullable=False)
@@ -158,6 +186,7 @@ class CKGTTVORM(Base):
     __tablename__ = "ckg_ttv"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("ckg_students.id"), unique=True, nullable=False, index=True)
     blood_pressure: Mapped[str] = mapped_column(String(30), nullable=False)
     pulse: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -174,6 +203,7 @@ class CKGVisionORM(Base):
     __tablename__ = "ckg_vision"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("ckg_students.id"), unique=True, nullable=False, index=True)
     right_eye: Mapped[str] = mapped_column(String(50), nullable=False)
     left_eye: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -188,6 +218,7 @@ class CKGDentalORM(Base):
     __tablename__ = "ckg_dental"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("ckg_students.id"), unique=True, nullable=False, index=True)
     caries: Mapped[str] = mapped_column(String(120), nullable=False)
     oral_hygiene: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -203,6 +234,7 @@ class CKGGeneralScreeningORM(Base):
     __tablename__ = "ckg_general_screening"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("ckg_students.id"), unique=True, nullable=False, index=True)
     physical_findings: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -218,6 +250,7 @@ class CKGReferralORM(Base):
     __tablename__ = "ckg_referrals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     student_id: Mapped[int] = mapped_column(ForeignKey("ckg_students.id"), nullable=False, index=True)
     station: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
@@ -236,6 +269,7 @@ class PatientORM(Base):
         String(50),
         primary_key=True
     )
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
 
     name: Mapped[str] = mapped_column(
         String(200),
@@ -285,6 +319,7 @@ class AssessmentORM(Base):
     __tablename__ = "assessments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False)
     complaints: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     observations: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -301,6 +336,7 @@ class RecommendationORM(Base):
     __tablename__ = "recommendations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     assessment_id: Mapped[int] = mapped_column(ForeignKey("assessments.id"), nullable=False)
     nanda_code: Mapped[str] = mapped_column(String(20), nullable=False)
     nanda_label: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -315,6 +351,7 @@ class UKSVisitORM(Base):
     __tablename__ = "uks_visits"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False, index=True)
     visit_date: Mapped[str] = mapped_column(String(10), nullable=False)
     complaint = mapped_column(String(255), nullable=False)
@@ -341,6 +378,7 @@ class UKSMedicationORM(Base):
     __tablename__ = "uks_medications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
     visit_id: Mapped[int] = mapped_column(ForeignKey("uks_visits.id"), nullable=False, index=True)
     medicine_name: Mapped[str] = mapped_column(String(255), nullable=False)
     dosage: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -354,7 +392,8 @@ class MedicineInventoryORM(Base):
     __tablename__ = "medicine_inventory"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=False, default="tablet")
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     minimum_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
@@ -366,6 +405,7 @@ class SchoolSettingORM(Base):
         primary_key=True,
         default=1
     )
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
 
     school_name: Mapped[str | None] = mapped_column(
         String(255),
@@ -399,6 +439,7 @@ class MedicineTransactionORM(Base):
         primary_key=True,
         autoincrement=True
     )
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
 
     medicine_name: Mapped[str] = mapped_column(
         String(255),

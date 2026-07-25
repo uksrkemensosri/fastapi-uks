@@ -17,12 +17,14 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_roles
+from app.auth.tenant import tenant_get, tenant_query
 from app.db.dependencies import get_db
 from app.db.models import (
     AuditLogORM,
     CKGStudentORM,
     PatientORM,
     RecommendationLetterORM,
+    SchoolORM,
     UKSMedicationORM,
     UKSVisitORM,
     UserORM,
@@ -38,6 +40,8 @@ router = APIRouter(prefix="/api", tags=["Student Health Record"])
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
 ROLE_WALI_ASUH = "wali_asuh"
+ROLE_KEPALA_UKSR = "kepala_sekolah"
+ROLE_TIM_UKSR = "tim_uksr"
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "ui" / "assets"
 LOGO_PATH = ASSETS_DIR / "logo-sekolah-rakyat.png"
 LETTERHEAD_PATH = Path(__file__).resolve().parents[2] / "static" / "img" / "kop-surat-sekolah-rakyat.png"
@@ -53,6 +57,7 @@ def write_audit(
 ) -> None:
     db.add(
         AuditLogORM(
+            school_id=getattr(user, "school_id", None) if user else None,
             user_id=user.id if user else None,
             username=user.username if user else None,
             action=action,
@@ -78,27 +83,27 @@ def recommendation_response(item: RecommendationLetterORM) -> RecommendationResp
     )
 
 
-def generate_letter_number(db: Session) -> str:
+def generate_letter_number(db: Session, current_user: UserORM) -> str:
     now = datetime.now()
     prefix = f"SR-UKS/{now.year}/{now.month:02d}"
     count = (
-        db.query(RecommendationLetterORM)
+        tenant_query(db.query(RecommendationLetterORM), RecommendationLetterORM, current_user)
         .filter(RecommendationLetterORM.letter_number.like(f"{prefix}/%"))
         .count()
     )
     return f"{prefix}/{count + 1:04d}"
 
 
-def get_patient_or_404(db: Session, patient_id: str) -> PatientORM:
-    patient = db.get(PatientORM, patient_id)
+def get_patient_or_404(db: Session, patient_id: str, current_user: UserORM) -> PatientORM:
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Student not found")
     return patient
 
 
-def uks_findings(db: Session, visit: UKSVisitORM) -> list[dict]:
+def uks_findings(db: Session, visit: UKSVisitORM, current_user: UserORM) -> list[dict]:
     meds = (
-        db.query(UKSMedicationORM)
+        tenant_query(db.query(UKSMedicationORM), UKSMedicationORM, current_user)
         .filter(UKSMedicationORM.visit_id == visit.id)
         .order_by(UKSMedicationORM.id.asc())
         .all()
@@ -149,23 +154,23 @@ def ckg_abnormal_findings(student: CKGStudentORM) -> list[dict]:
 def student_health_history(
     patient_id: str,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_WALI_ASUH)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> HealthHistoryResponse:
-    patient = get_patient_or_404(db, patient_id)
+    patient = get_patient_or_404(db, patient_id, current_user)
     visits = (
-        db.query(UKSVisitORM)
+        tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.patient_id == patient.id)
         .order_by(UKSVisitORM.id.desc())
         .all()
     )
     ckg_students = (
-        db.query(CKGStudentORM)
+        tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user)
         .filter(CKGStudentORM.nis == patient.id)
         .order_by(CKGStudentORM.id.desc())
         .all()
     )
     recommendations = (
-        db.query(RecommendationLetterORM)
+        tenant_query(db.query(RecommendationLetterORM), RecommendationLetterORM, current_user)
         .filter(RecommendationLetterORM.student_id == patient.id)
         .order_by(RecommendationLetterORM.id.desc())
         .all()
@@ -174,7 +179,7 @@ def student_health_history(
     medicine_rows = []
     for visit in visits:
         meds = (
-            db.query(UKSMedicationORM)
+            tenant_query(db.query(UKSMedicationORM), UKSMedicationORM, current_user)
             .filter(UKSMedicationORM.visit_id == visit.id)
             .order_by(UKSMedicationORM.id.asc())
             .all()
@@ -208,7 +213,7 @@ def student_health_history(
                 "tindakan": visit.treatment,
                 "obat": ", ".join(
                     med.medicine_name
-                    for med in db.query(UKSMedicationORM).filter(UKSMedicationORM.visit_id == visit.id).all()
+                    for med in tenant_query(db.query(UKSMedicationORM), UKSMedicationORM, current_user).filter(UKSMedicationORM.visit_id == visit.id).all()
                 ),
                 "petugas": "-",
                 "status": visit.referral_status or "-",
@@ -235,9 +240,9 @@ def student_health_history(
 def list_recommendations(
     student_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> list[RecommendationResponse]:
-    query = db.query(RecommendationLetterORM)
+    query = tenant_query(db.query(RecommendationLetterORM), RecommendationLetterORM, current_user)
     if student_id:
         query = query.filter(RecommendationLetterORM.student_id == student_id)
     items = query.order_by(RecommendationLetterORM.id.desc()).all()
@@ -251,18 +256,19 @@ def create_recommendation_from_uks(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> RecommendationResponse:
-    visit = db.get(UKSVisitORM, visit_id)
+    visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
-    patient = get_patient_or_404(db, visit.patient_id)
+    patient = get_patient_or_404(db, visit.patient_id, current_user)
     item = RecommendationLetterORM(
-        letter_number=generate_letter_number(db),
+        school_id=visit.school_id,
+        letter_number=generate_letter_number(db, current_user),
         student_id=patient.id,
         student_name=patient.name,
         source_type="UKS",
         source_id=str(visit.id),
         recommendation_text=payload.recommendation_text,
-        findings=uks_findings(db, visit),
+        findings=uks_findings(db, visit, current_user),
         created_by=current_user.id,
     )
     db.add(item)
@@ -280,14 +286,15 @@ def create_recommendation_from_ckg(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> RecommendationResponse:
-    ckg_student = db.get(CKGStudentORM, student_id)
+    ckg_student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if ckg_student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
     findings = ckg_abnormal_findings(ckg_student)
     if not findings and not ckg_student.needs_referral:
         raise HTTPException(status_code=400, detail="No abnormal CKG finding or referral flag found")
     item = RecommendationLetterORM(
-        letter_number=generate_letter_number(db),
+        school_id=ckg_student.school_id,
+        letter_number=generate_letter_number(db, current_user),
         student_id=ckg_student.nis,
         student_name=ckg_student.full_name,
         source_type="CKG",
@@ -314,7 +321,75 @@ def signature_image_flowable(user: UserORM | None):
         return None
 
 
-def letterhead_flowable(max_width: float):
+def _local_image_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if raw.startswith(("http://", "https://", "data:")):
+        return None
+    candidate = Path(raw.lstrip("/"))
+    if not candidate.is_absolute():
+        candidate = Path(__file__).resolve().parents[2] / candidate
+    return candidate if candidate.exists() else None
+
+
+def pdf_school_for_user(db: Session, user: UserORM | None, school_id: int | None = None) -> SchoolORM | None:
+    resolved_school_id = school_id if school_id is not None else getattr(user, "school_id", None)
+    if resolved_school_id is None:
+        return None
+    return db.get(SchoolORM, resolved_school_id)
+
+
+def letterhead_flowable(max_width: float, school: SchoolORM | None = None):
+    if school is not None:
+        styles = getSampleStyleSheet()
+        title = ParagraphStyle(
+            "TenantLetterheadTitle",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=13,
+            leading=15,
+            alignment=TA_CENTER,
+            textColor=colors.black,
+        )
+        subtitle = ParagraphStyle(
+            "TenantLetterheadSubtitle",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=7.4,
+            leading=9,
+            alignment=TA_CENTER,
+            textColor=colors.black,
+        )
+        logo_path = _local_image_path(school.logo_url) or LOGO_PATH
+        logo = Image(str(logo_path), width=52, height=52) if logo_path.exists() else ""
+        location = " ".join(part for part in [school.city, school.province] if part) or "Sekolah Rakyat"
+        contact = " | ".join(part for part in [school.phone, school.email] if part)
+        info_lines = [
+            Paragraph("KEMENTERIAN SOSIAL REPUBLIK INDONESIA", subtitle),
+            Paragraph((school.school_name or "SEKOLAH RAKYAT").upper(), title),
+            Paragraph(location, subtitle),
+        ]
+        if school.address:
+            info_lines.append(Paragraph(school.address, subtitle))
+        if contact:
+            info_lines.append(Paragraph(contact, subtitle))
+        table = Table([[logo, info_lines]], colWidths=[62, max_width - 62])
+        table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                    ("LINEBELOW", (0, 0), (-1, 0), 1.2, colors.black),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        return table
+
     if not LETTERHEAD_PATH.exists():
         return None
     try:
@@ -348,12 +423,12 @@ def qr_code_flowable(text: str, size: int = 58):
 def recommendation_pdf(
     recommendation_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)),
 ) -> StreamingResponse:
-    item = db.get(RecommendationLetterORM, recommendation_id)
+    item = tenant_get(db, RecommendationLetterORM, recommendation_id, current_user)
     if item is None:
         raise HTTPException(status_code=404, detail="Recommendation not found")
-    signer = db.get(UserORM, item.created_by) if item.created_by else None
+    signer = tenant_get(db, UserORM, item.created_by, current_user) if item.created_by else None
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=42, rightMargin=42, topMargin=20, bottomMargin=28)
@@ -441,13 +516,13 @@ def recommendation_pdf(
 
     source_date = "-"
     if item.source_type == "UKS":
-        visit = db.get(UKSVisitORM, int(item.source_id))
+        visit = tenant_get(db, UKSVisitORM, int(item.source_id), current_user)
         source_date = visit.visit_date if visit else "-"
     elif item.source_type == "CKG":
-        ckg_student = db.get(CKGStudentORM, int(item.source_id))
+        ckg_student = tenant_get(db, CKGStudentORM, int(item.source_id), current_user)
         source_date = str(ckg_student.updated_at.date()) if ckg_student and ckg_student.updated_at else "-"
 
-    patient = db.get(PatientORM, item.student_id)
+    patient = tenant_get(db, PatientORM, item.student_id, current_user)
     identity = [
         [Paragraph("Nama", table_header_text), Paragraph(item.student_name, table_text)],
         [Paragraph("NIS", table_header_text), Paragraph(item.student_id, table_text)],

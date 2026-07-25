@@ -3,13 +3,51 @@
 
   function hideAdminLinks(role) {
     const waliAsuhLinks = new Set(["/students", "/settings"]);
+    const timLinks = new Set(["/dashboard", "/students", "/ckg", "/settings"]);
+    const kepalaLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/settings"]);
+    const adminLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/users", "/audit-logs", "/settings"]);
+    const perawatLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/users", "/settings"]);
+    const superAdminLinks = new Set([...adminLinks, "/schools"]);
+    const sidebar = document.querySelector(".sidebar");
+    if (role === "super_admin" && sidebar && !sidebar.querySelector('a[href="/schools"]')) {
+      const usersLink = sidebar.querySelector('a[href="/users"]');
+      const schoolLink = document.createElement("a");
+      schoolLink.href = "/schools";
+      schoolLink.className = `menu-item${window.location.pathname === "/schools" ? " active" : ""}`;
+      schoolLink.textContent = "Schools";
+      if (usersLink) {
+        usersLink.insertAdjacentElement("beforebegin", schoolLink);
+      } else {
+        sidebar.appendChild(schoolLink);
+      }
+    }
     document.querySelectorAll(".menu-item").forEach((item) => {
       const href = item.getAttribute("href") || "";
       if (role === "wali_asuh" && !waliAsuhLinks.has(href)) {
         item.remove();
         return;
       }
-      if (role !== "admin" && ["/users", "/audit-logs"].includes(href)) {
+      if (role === "tim_uksr" && !timLinks.has(href)) {
+        item.remove();
+        return;
+      }
+      if (role === "kepala_sekolah" && !kepalaLinks.has(href)) {
+        item.remove();
+        return;
+      }
+      if (role === "admin" && !adminLinks.has(href)) {
+        item.remove();
+        return;
+      }
+      if (role === "perawat" && !perawatLinks.has(href)) {
+        item.remove();
+        return;
+      }
+      if (role === "super_admin" && !superAdminLinks.has(href)) {
+        item.remove();
+        return;
+      }
+      if (!["admin", "perawat", "super_admin"].includes(role) && ["/users", "/audit-logs", "/schools"].includes(href)) {
         item.remove();
       }
     });

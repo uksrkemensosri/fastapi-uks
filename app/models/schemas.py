@@ -181,7 +181,49 @@ class PatientAssessmentsResponse(BaseModel):
     assessments: List[AssessmentSummary]
 
 
-USER_ROLE_PATTERN = "^(admin|perawat|kepala_sekolah|wali_asuh|tim_uksr)$"
+USER_ROLE_PATTERN = "^(super_admin|admin|perawat|kepala_sekolah|wali_asuh|tim_uksr)$"
+
+
+class SchoolCreate(BaseModel):
+    school_code: str = Field(min_length=2, max_length=50)
+    school_name: str = Field(min_length=2, max_length=255)
+    province: Optional[str] = Field(default=None, max_length=100)
+    city: Optional[str] = Field(default=None, max_length=100)
+    address: Optional[str] = Field(default=None, max_length=500)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+    principal_name: Optional[str] = Field(default=None, max_length=200)
+    is_active: bool = True
+
+
+class SchoolUpdate(BaseModel):
+    school_code: Optional[str] = Field(default=None, min_length=2, max_length=50)
+    school_name: Optional[str] = Field(default=None, min_length=2, max_length=255)
+    province: Optional[str] = Field(default=None, max_length=100)
+    city: Optional[str] = Field(default=None, max_length=100)
+    address: Optional[str] = Field(default=None, max_length=500)
+    phone: Optional[str] = Field(default=None, max_length=50)
+    email: Optional[str] = Field(default=None, max_length=255)
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+    principal_name: Optional[str] = Field(default=None, max_length=200)
+    is_active: Optional[bool] = None
+
+
+class SchoolResponse(BaseModel):
+    id: int
+    school_code: str
+    school_name: str
+    province: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    logo_url: Optional[str] = None
+    principal_name: Optional[str] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class UserCreate(BaseModel):
@@ -191,6 +233,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=6)
     nip: Optional[str] = Field(default=None, max_length=50)
     jabatan: Optional[str] = Field(default=None, max_length=100)
+    school_id: Optional[int] = None
 
     @field_validator("role", mode="before")
     @classmethod
@@ -235,6 +278,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     role: Optional[str] = None
+    school_id: Optional[int] = None
 
 
 class UserResponse(BaseModel):
@@ -242,6 +286,7 @@ class UserResponse(BaseModel):
     username: str
     full_name: str
     role: str
+    school_id: Optional[int] = None
     is_active: bool
     nip: Optional[str] = None
     jabatan: Optional[str] = None

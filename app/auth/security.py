@@ -31,11 +31,12 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return hmac.compare_digest(candidate, expected)
 
 
-def create_access_token(subject: str, role: str) -> str:
+def create_access_token(subject: str, role: str, school_id: int | None = None) -> str:
     now = int(time.time())
     payload = {
         "sub": subject,
         "role": role,
+        "school_id": school_id,
         "iat": now,
         "exp": now + ACCESS_TOKEN_EXPIRE_SECONDS,
     }

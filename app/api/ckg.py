@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.recommendations import letterhead_flowable, qr_code_flowable
 from app.auth.dependencies import get_current_user, require_roles
+from app.auth.tenant import tenant_get, tenant_query
 from app.db.dependencies import get_db
 from app.db.models import (
     AuditLogORM,
@@ -55,6 +56,11 @@ router = APIRouter(prefix="/api/ckg", tags=["CKG"])
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
+ROLE_SUPER_ADMIN = "super_admin"
+ROLE_KEPALA_UKSR = "kepala_sekolah"
+ROLE_TIM_UKSR = "tim_uksr"
+ROLE_CKG_ACCESS = (ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)
+ROLE_CKG_REPORT_ACCESS = (ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR)
 
 QUEUE_STATUS_BY_STATION = {
     "REGISTRATION": None,
@@ -180,6 +186,7 @@ def write_ckg_audit(
 ) -> None:
     db.add(
         AuditLogORM(
+            school_id=getattr(user, "school_id", None) if user else None,
             user_id=user.id if user else None,
             username=user.username if user else None,
             action=action,
@@ -190,9 +197,9 @@ def write_ckg_audit(
     )
 
 
-def get_event_or_active(db: Session, event_id: int | None = None) -> CKGEventORM:
-    event = db.get(CKGEventORM, event_id) if event_id else (
-        db.query(CKGEventORM).filter(CKGEventORM.is_active.is_(True)).first()
+def get_event_or_active(db: Session, user: UserORM, event_id: int | None = None) -> CKGEventORM:
+    event = tenant_get(db, CKGEventORM, event_id, user) if event_id else (
+        tenant_query(db.query(CKGEventORM), CKGEventORM, user).filter(CKGEventORM.is_active.is_(True)).first()
     )
     if event is None:
         raise HTTPException(status_code=404, detail="CKG event not found")
@@ -231,11 +238,11 @@ def require_station_access(
     station = normalize_station(station)
     if station not in STATIONS:
         raise HTTPException(status_code=400, detail="Invalid station")
-    if user.role == ROLE_ADMIN:
+    if user.role in {ROLE_ADMIN, ROLE_SUPER_ADMIN}:
         return
 
     assignment = (
-        db.query(CKGStationAssignmentORM)
+        tenant_query(db.query(CKGStationAssignmentORM), CKGStationAssignmentORM, user)
         .filter(
             CKGStationAssignmentORM.event_id == event_id,
             CKGStationAssignmentORM.user_id == user.id,
@@ -257,10 +264,15 @@ def next_queue_number(db: Session, event_id: int) -> int:
 
 
 def sync_patient_from_ckg(db: Session, student: CKGStudentORM) -> None:
-    patient = db.get(PatientORM, student.nis)
+    patient = (
+        db.query(PatientORM)
+        .filter(PatientORM.id == student.nis, PatientORM.school_id == student.school_id)
+        .first()
+    )
     if patient is None:
         db.add(
             PatientORM(
+                school_id=student.school_id,
                 id=student.nis,
                 name=student.full_name,
                 gender=student.gender,
@@ -288,8 +300,8 @@ def create_event(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ) -> CKGEventResponse:
     if payload.is_active:
-        db.query(CKGEventORM).update({CKGEventORM.is_active: False})
-    event = CKGEventORM(**payload.model_dump())
+        tenant_query(db.query(CKGEventORM), CKGEventORM, current_user).update({CKGEventORM.is_active: False})
+    event = CKGEventORM(school_id=current_user.school_id, **payload.model_dump())
     db.add(event)
     db.flush()
     write_ckg_audit(db, current_user, "create_ckg_event", "ckg_event", event.id, event.event_name)
@@ -301,18 +313,18 @@ def create_event(
 @router.get("/events", response_model=list[CKGEventResponse])
 def list_events(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> list[CKGEventResponse]:
-    events = db.query(CKGEventORM).order_by(CKGEventORM.id.desc()).all()
+    events = tenant_query(db.query(CKGEventORM), CKGEventORM, current_user).order_by(CKGEventORM.id.desc()).all()
     return [CKGEventResponse(**event.__dict__) for event in events]
 
 
 @router.get("/events/active", response_model=CKGEventResponse)
 def get_active_event(
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGEventResponse:
-    event = get_event_or_active(db)
+    event = get_event_or_active(db, current_user)
     return CKGEventResponse(**event.__dict__)
 
 
@@ -323,13 +335,13 @@ def update_event(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ) -> CKGEventResponse:
-    event = db.get(CKGEventORM, event_id)
+    event = tenant_get(db, CKGEventORM, event_id, current_user)
     if event is None:
         raise HTTPException(status_code=404, detail="CKG event not found")
 
     data = payload.model_dump(exclude_unset=True)
     if data.get("is_active") is True:
-        db.query(CKGEventORM).filter(CKGEventORM.id != event_id).update({CKGEventORM.is_active: False})
+        tenant_query(db.query(CKGEventORM), CKGEventORM, current_user).filter(CKGEventORM.id != event_id).update({CKGEventORM.is_active: False})
     for key, value in data.items():
         setattr(event, key, value)
 
@@ -347,12 +359,12 @@ def create_assignment(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ) -> CKGStationAssignmentResponse:
-    event = get_event_or_active(db, event_id)
-    user = db.get(UserORM, payload.user_id)
+    event = get_event_or_active(db, current_user, event_id)
+    user = tenant_get(db, UserORM, payload.user_id, current_user)
     if user is None or not user.is_active:
         raise HTTPException(status_code=404, detail="User not found or inactive")
 
-    assignment = CKGStationAssignmentORM(event_id=event.id, user_id=user.id, station=payload.station)
+    assignment = CKGStationAssignmentORM(school_id=event.school_id, event_id=event.id, user_id=user.id, station=payload.station)
     db.add(assignment)
     try:
         db.flush()
@@ -377,11 +389,11 @@ def create_assignment(
 def list_assignments(
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN)),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
 ) -> list[CKGStationAssignmentResponse]:
-    event = get_event_or_active(db, event_id)
+    event = get_event_or_active(db, current_user, event_id)
     assignments = (
-        db.query(CKGStationAssignmentORM)
+        tenant_query(db.query(CKGStationAssignmentORM), CKGStationAssignmentORM, current_user)
         .filter(CKGStationAssignmentORM.event_id == event.id)
         .order_by(CKGStationAssignmentORM.station.asc())
         .all()
@@ -404,12 +416,13 @@ def register_student(
     payload: CKGStudentCreate,
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    event = get_event_or_active(db, event_id)
+    event = get_event_or_active(db, current_user, event_id)
     require_station_access(db, current_user, event.id, "REGISTRATION")
 
     student = CKGStudentORM(
+        school_id=event.school_id,
         event_id=event.id,
         queue_number=next_queue_number(db, event.id),
         status="REGISTERED",
@@ -434,16 +447,16 @@ def import_students(
     payload: CKGStudentImportRequest,
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> dict:
-    event = get_event_or_active(db, event_id)
+    event = get_event_or_active(db, current_user, event_id)
     require_station_access(db, current_user, event.id, "REGISTRATION")
     created = 0
     skipped = 0
 
     for item in payload.students:
         exists = (
-            db.query(CKGStudentORM)
+            tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user)
             .filter(CKGStudentORM.event_id == event.id, CKGStudentORM.nis == item.nis)
             .first()
         )
@@ -451,6 +464,7 @@ def import_students(
             skipped += 1
             continue
         student = CKGStudentORM(
+            school_id=event.school_id,
             event_id=event.id,
             queue_number=next_queue_number(db, event.id),
             status="REGISTERED",
@@ -471,10 +485,10 @@ def list_students(
     event_id: int | None = None,
     q: str | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> list[CKGStudentResponse]:
-    event = get_event_or_active(db, event_id)
-    query = db.query(CKGStudentORM).filter(CKGStudentORM.event_id == event.id)
+    event = get_event_or_active(db, current_user, event_id)
+    query = tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user).filter(CKGStudentORM.event_id == event.id)
     if q:
         like_expr = f"%{q.strip()}%"
         query = query.filter((CKGStudentORM.full_name.ilike(like_expr)) | (CKGStudentORM.nis.ilike(like_expr)))
@@ -486,9 +500,9 @@ def list_students(
 def delete_ckg_student(
     student_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> dict:
-    student = db.get(CKGStudentORM, student_id)
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
 
@@ -517,10 +531,10 @@ def station_queue(
     station: str,
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> list[CKGQueueItem]:
     station = normalize_station(station)
-    event = get_event_or_active(db, event_id)
+    event = get_event_or_active(db, current_user, event_id)
     require_station_access(db, current_user, event.id, station)
 
     if station == "SCREENING_UMUM":
@@ -529,7 +543,7 @@ def station_queue(
         statuses = (QUEUE_STATUS_BY_STATION[station],)
 
     students = (
-        db.query(CKGStudentORM)
+        tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user)
         .filter(CKGStudentORM.event_id == event.id, CKGStudentORM.status.in_(statuses))
         .order_by(CKGStudentORM.queue_number.asc(), CKGStudentORM.full_name.asc())
         .all()
@@ -548,8 +562,8 @@ def station_queue(
     ]
 
 
-def get_student_for_station(db: Session, student_id: int, station: str) -> CKGStudentORM:
-    student = db.get(CKGStudentORM, student_id)
+def get_student_for_station(db: Session, student_id: int, station: str, current_user: UserORM) -> CKGStudentORM:
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
     expected = QUEUE_STATUS_BY_STATION[station]
@@ -565,13 +579,14 @@ def submit_anthropometry(
     student_id: int,
     payload: CKGAnthropometrySubmit,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    student = get_student_for_station(db, student_id, "ANTROPOMETRI")
+    student = get_student_for_station(db, student_id, "ANTROPOMETRI", current_user)
     require_station_access(db, current_user, student.event_id, "ANTROPOMETRI")
     height_m = payload.height / 100
     bmi = round(payload.weight / (height_m * height_m), 2)
-    record = student.anthropometry or CKGAnthropometryORM(student_id=student.id)
+    record = student.anthropometry or CKGAnthropometryORM(school_id=student.school_id, student_id=student.id)
+    record.school_id = student.school_id
     record.weight = payload.weight
     record.height = payload.height
     record.bmi = bmi
@@ -590,11 +605,12 @@ def submit_ttv(
     student_id: int,
     payload: CKGTTVSubmit,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    student = get_student_for_station(db, student_id, "TTV")
+    student = get_student_for_station(db, student_id, "TTV", current_user)
     require_station_access(db, current_user, student.event_id, "TTV")
-    record = student.ttv or CKGTTVORM(student_id=student.id)
+    record = student.ttv or CKGTTVORM(school_id=student.school_id, student_id=student.id)
+    record.school_id = student.school_id
     record.blood_pressure = payload.blood_pressure
     record.pulse = payload.pulse
     record.respiratory_rate = payload.respiratory_rate
@@ -614,11 +630,12 @@ def submit_vision(
     student_id: int,
     payload: CKGVisionSubmit,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    student = get_student_for_station(db, student_id, "VISUS")
+    student = get_student_for_station(db, student_id, "VISUS", current_user)
     require_station_access(db, current_user, student.event_id, "VISUS")
-    record = student.vision or CKGVisionORM(student_id=student.id)
+    record = student.vision or CKGVisionORM(school_id=student.school_id, student_id=student.id)
+    record.school_id = student.school_id
     record.right_eye = payload.right_eye
     record.left_eye = payload.left_eye
     record.examined_by = current_user.id
@@ -636,11 +653,12 @@ def submit_dental(
     student_id: int,
     payload: CKGDentalSubmit,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    student = get_student_for_station(db, student_id, "GIGI")
+    student = get_student_for_station(db, student_id, "GIGI", current_user)
     require_station_access(db, current_user, student.event_id, "GIGI")
-    record = student.dental or CKGDentalORM(student_id=student.id)
+    record = student.dental or CKGDentalORM(school_id=student.school_id, student_id=student.id)
+    record.school_id = student.school_id
     record.caries = payload.caries
     record.oral_hygiene = payload.oral_hygiene
     record.notes = payload.notes
@@ -659,11 +677,12 @@ def submit_general_screening(
     student_id: int,
     payload: CKGGeneralSubmit,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    student = get_student_for_station(db, student_id, "SCREENING_UMUM")
+    student = get_student_for_station(db, student_id, "SCREENING_UMUM", current_user)
     require_station_access(db, current_user, student.event_id, "SCREENING_UMUM")
-    record = student.general_screening or CKGGeneralScreeningORM(student_id=student.id)
+    record = student.general_screening or CKGGeneralScreeningORM(school_id=student.school_id, student_id=student.id)
+    record.school_id = student.school_id
     record.physical_findings = payload.physical_findings
     record.notes = payload.notes
     record.recommendation = payload.recommendation
@@ -681,9 +700,9 @@ def submit_general_screening(
 def complete_student(
     student_id: int,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> CKGStudentResponse:
-    student = db.get(CKGStudentORM, student_id)
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
     require_station_access(db, current_user, student.event_id, "SCREENING_UMUM")
@@ -702,13 +721,14 @@ def create_referral(
     student_id: int,
     payload: CKGReferralCreate,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
 ) -> dict:
-    student = db.get(CKGStudentORM, student_id)
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
     require_station_access(db, current_user, student.event_id, payload.station)
     referral = CKGReferralORM(
+        school_id=student.school_id,
         student_id=student.id,
         station=payload.station,
         reason=payload.reason,
@@ -728,10 +748,10 @@ def create_referral(
 def dashboard(
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_REPORT_ACCESS)),
 ) -> CKGDashboardResponse:
-    event = get_event_or_active(db, event_id)
-    query = db.query(CKGStudentORM).filter(CKGStudentORM.event_id == event.id)
+    event = get_event_or_active(db, current_user, event_id)
+    query = tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user).filter(CKGStudentORM.event_id == event.id)
     students = query.all()
     total = len(students)
     completed = sum(1 for student in students if student.status == "COMPLETED")
@@ -745,12 +765,12 @@ def dashboard(
             station_counts[station] += 1
 
     daily_rows = (
-        db.query(func.substr(CKGStudentORM.created_at, 1, 10), func.count(CKGStudentORM.id))
+        tenant_query(db.query(func.substr(CKGStudentORM.created_at, 1, 10), func.count(CKGStudentORM.id)), CKGStudentORM, current_user)
         .filter(CKGStudentORM.event_id == event.id)
         .group_by(func.substr(CKGStudentORM.created_at, 1, 10))
         .all()
         if db.bind and db.bind.dialect.name == "sqlite"
-        else db.query(func.date(CKGStudentORM.created_at), func.count(CKGStudentORM.id))
+        else tenant_query(db.query(func.date(CKGStudentORM.created_at), func.count(CKGStudentORM.id)), CKGStudentORM, current_user)
         .filter(CKGStudentORM.event_id == event.id)
         .group_by(func.date(CKGStudentORM.created_at))
         .all()
@@ -776,12 +796,12 @@ def dashboard(
 def event_report_pdf(
     event_id: int | None = None,
     db: Session = Depends(get_db),
-    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_REPORT_ACCESS)),
 ) -> StreamingResponse:
-    event = get_event_or_active(db, event_id)
+    event = get_event_or_active(db, current_user, event_id)
     dashboard_data = dashboard(event.id, db, current_user)
     students = (
-        db.query(CKGStudentORM)
+        tenant_query(db.query(CKGStudentORM), CKGStudentORM, current_user)
         .filter(CKGStudentORM.event_id == event.id)
         .order_by(CKGStudentORM.queue_number.asc(), CKGStudentORM.full_name.asc())
         .all()
@@ -966,9 +986,9 @@ def build_summary(student: CKGStudentORM) -> CKGSummaryResponse:
 def student_summary(
     student_id: int,
     db: Session = Depends(get_db),
-    _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_REPORT_ACCESS)),
 ) -> CKGSummaryResponse:
-    student = db.get(CKGStudentORM, student_id)
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
     return build_summary(student)
@@ -980,7 +1000,7 @@ def student_summary_pdf(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ) -> StreamingResponse:
-    student = db.get(CKGStudentORM, student_id)
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
     if student is None:
         raise HTTPException(status_code=404, detail="CKG student not found")
     summary = build_summary(student)

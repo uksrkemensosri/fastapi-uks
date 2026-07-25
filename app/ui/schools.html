@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schools</title>
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=11">
+  <style>
+    .school-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:16px}
+    .school-grid input,.school-grid select{width:100%;min-width:0;padding:14px 16px;border:1px solid #dbe3ef;border-radius:12px;font-size:1rem}
+    .school-actions{display:flex;gap:10px;flex-wrap:wrap}
+    @media(max-width:760px){.school-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo-area">
+      <img src="/ui/assets/logo-sekolah-rakyat.png" class="sidebar-logo" alt="">
+      <div><div style="font-weight:700">EMR UKS</div><small>Sekolah Rakyat</small></div>
+    </div>
+    <nav>
+      <a href="/dashboard" class="menu-item">Dashboard</a>
+      <a href="/students" class="menu-item">Data Siswa</a>
+      <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item">CKG</a>
+      <a href="/schools" class="menu-item active">Schools</a>
+      <a href="/users" class="menu-item">Pengguna</a>
+      <a href="/audit-logs" class="menu-item">Audit Log</a>
+      <a href="/settings" class="menu-item">Pengaturan</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Schools</h1>
+        <p>Kelola tenant Sekolah Rakyat</p>
+      </div>
+      <button id="btnLogout" class="logout-button">Logout</button>
+    </div>
+
+    <section class="card">
+      <h2 id="formTitle">Tambah School</h2>
+      <form id="schoolForm">
+        <input type="hidden" id="schoolId">
+        <div class="school-grid">
+          <input id="schoolCode" placeholder="Kode sekolah" required>
+          <input id="schoolName" placeholder="Nama sekolah" required>
+          <input id="province" placeholder="Provinsi">
+          <input id="city" placeholder="Kota/Kabupaten">
+          <input id="address" placeholder="Alamat">
+          <input id="phone" placeholder="Telepon">
+          <input id="email" placeholder="Email">
+          <input id="logoUrl" placeholder="Logo URL">
+          <input id="principalName" placeholder="Nama kepala sekolah">
+          <select id="isActive">
+            <option value="true">Aktif</option>
+            <option value="false">Nonaktif</option>
+          </select>
+        </div>
+        <div class="school-actions">
+          <button class="btn btn-primary" type="submit">Simpan School</button>
+          <button class="btn btn-secondary" type="button" id="btnReset">Reset</button>
+        </div>
+      </form>
+      <p id="statusText"></p>
+    </section>
+
+    <section class="card">
+      <h2>Daftar Schools</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Kode</th>
+            <th>Nama</th>
+            <th>Kota</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="schoolRows"></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+<script src="/ui/assets/dialogs.js"></script>
+<script src="/ui/assets/rbac.js"></script>
+<script>
+const token = localStorage.getItem("access_token");
+const headers = {"Content-Type":"application/json", Authorization:`Bearer ${token}`};
+let schools = [];
+
+async function api(url, options={}){
+  const res = await fetch(url, {...options, headers:{...headers, ...(options.headers || {})}});
+  if(!res.ok) throw new Error((await res.json().catch(()=>({detail:"Gagal memuat data"}))).detail || "Gagal memuat data");
+  return res.status === 204 ? null : res.json();
+}
+
+function formPayload(){
+  return {
+    school_code: schoolCode.value.trim(),
+    school_name: schoolName.value.trim(),
+    province: province.value.trim() || null,
+    city: city.value.trim() || null,
+    address: address.value.trim() || null,
+    phone: phone.value.trim() || null,
+    email: email.value.trim() || null,
+    logo_url: logoUrl.value.trim() || null,
+    principal_name: principalName.value.trim() || null,
+    is_active: isActive.value === "true",
+  };
+}
+
+function resetForm(){
+  schoolForm.reset();
+  schoolId.value = "";
+  formTitle.textContent = "Tambah School";
+}
+
+function editSchool(id){
+  const item = schools.find((school)=>school.id === id);
+  if(!item) return;
+  schoolId.value = item.id;
+  schoolCode.value = item.school_code || "";
+  schoolName.value = item.school_name || "";
+  province.value = item.province || "";
+  city.value = item.city || "";
+  address.value = item.address || "";
+  phone.value = item.phone || "";
+  email.value = item.email || "";
+  logoUrl.value = item.logo_url || "";
+  principalName.value = item.principal_name || "";
+  isActive.value = item.is_active ? "true" : "false";
+  formTitle.textContent = "Edit School";
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+
+async function deactivateSchool(id){
+  const item = schools.find((school)=>school.id === id);
+  const ok = await appConfirm("Nonaktifkan School?", `School ${item?.school_name || id} akan dinonaktifkan.`, {confirmText:"Nonaktifkan", type:"danger"});
+  if(!ok) return;
+  await api(`/api/schools/${id}`, {method:"DELETE"});
+  await appAlert("Berhasil", "School dinonaktifkan.", "success");
+  await loadSchools();
+}
+
+async function loadSchools(){
+  schools = await api("/api/schools");
+  schoolRows.innerHTML = schools.map((school)=>`
+    <tr>
+      <td>${school.school_code}</td>
+      <td>${school.school_name}</td>
+      <td>${school.city || "-"}</td>
+      <td>${school.is_active ? "Aktif" : "Nonaktif"}</td>
+      <td>
+        <button class="btn btn-secondary" onclick="editSchool(${school.id})">Edit</button>
+        <button class="btn btn-danger" onclick="deactivateSchool(${school.id})">Nonaktifkan</button>
+      </td>
+    </tr>
+  `).join("") || `<tr><td colspan="5">Belum ada school</td></tr>`;
+}
+
+schoolForm.addEventListener("submit", async (event)=>{
+  event.preventDefault();
+  try{
+    const id = schoolId.value;
+    await api(id ? `/api/schools/${id}` : "/api/schools", {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(formPayload()),
+    });
+    resetForm();
+    await loadSchools();
+    await appAlert("Berhasil", "School berhasil disimpan.", "success");
+  }catch(err){
+    await appAlert("Gagal", err.message, "danger");
+  }
+});
+btnReset.addEventListener("click", resetForm);
+loadSchools().catch((err)=>appAlert("Gagal", err.message, "danger"));
+</script>
+</body>
+</html>

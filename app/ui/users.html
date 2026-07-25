@@ -216,7 +216,11 @@ body.dark .table tbody tr:hover{
         <input id="username" placeholder="Username">
         <input id="nip" placeholder="NIP (opsional)">
         <input id="password" type="password" placeholder="Password">
+        <select id="schoolId" style="display:none">
+          <option value="">Pilih School</option>
+        </select>
         <select id="role">
+          <option value="super_admin">Super Admin</option>
           <option value="perawat">Perawat</option>
           <option value="admin">Admin</option>
           <option value="kepala_sekolah">Kepala Sekolah</option>
@@ -261,6 +265,7 @@ body.dark .table tbody tr:hover{
 
 const token =
   localStorage.getItem("access_token");
+let currentUser = null;
 
 if(!token){
   window.location.href = "/login";
@@ -368,6 +373,26 @@ async function loadUsers(){
 
   });
 
+}
+
+async function loadCurrentUserAndSchools(){
+  const meRes = await fetch("/api/auth/me", {headers:{Authorization:`Bearer ${token}`}});
+  if(!meRes.ok){ return; }
+  currentUser = await meRes.json();
+  const schoolSelect = document.getElementById("schoolId");
+  if(currentUser.role !== "super_admin"){
+    document.querySelector('#role option[value="super_admin"]')?.remove();
+    schoolSelect.style.display = "none";
+    return;
+  }
+  schoolSelect.style.display = "block";
+  const schoolsRes = await fetch("/api/schools", {headers:{Authorization:`Bearer ${token}`}});
+  if(!schoolsRes.ok){ return; }
+  const schools = await schoolsRes.json();
+  schoolSelect.innerHTML = `<option value="">Pilih School</option>` + schools
+    .filter(school => school.is_active)
+    .map(school => `<option value="${school.id}">${school.school_name} (${school.school_code})</option>`)
+    .join("");
 }
 
 async function editUser(id){
@@ -513,10 +538,26 @@ async function saveUser(){
     document.getElementById(
       "role"
     ).value;
+  const school_id_value =
+    document.getElementById("schoolId").value;
 
   if(!full_name || !username || !password){
     appAlert("Data Belum Lengkap", "Nama lengkap, username, dan password wajib diisi.", "error");
     return;
+  }
+  if(currentUser?.role === "super_admin" && role !== "super_admin" && !school_id_value){
+    appAlert("School Belum Dipilih", "Pilih school untuk pengguna sekolah.", "error");
+    return;
+  }
+  const payload = {
+    full_name,
+    username,
+    password,
+    nip,
+    role
+  };
+  if(currentUser?.role === "super_admin" && role !== "super_admin"){
+    payload.school_id = Number(school_id_value);
   }
 
   const res = await fetch(
@@ -533,13 +574,7 @@ async function saveUser(){
           `Bearer ${token}`
       },
 
-      body:JSON.stringify({
-        full_name,
-        username,
-        password,
-        nip,
-        role
-      })
+      body:JSON.stringify(payload)
     }
 
   );
@@ -571,11 +606,13 @@ async function saveUser(){
   document.getElementById("nip").value = "";
   document.getElementById("password").value = "";
   document.getElementById("role").value = "perawat";
+  document.getElementById("schoolId").value = "";
 
   loadUsers();
 
 }
 
+loadCurrentUserAndSchools();
 </script>
 <script src="/ui/assets/rbac.js?v=2" defer></script>
 </body>
