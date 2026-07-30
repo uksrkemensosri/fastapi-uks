@@ -263,6 +263,66 @@ class CKGReferralORM(Base):
     student: Mapped[CKGStudentORM] = relationship(back_populates="referrals")
 
 
+class FitnessEventORM(Base):
+    __tablename__ = "fitness_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    academic_year: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    event_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    start_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    end_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    students: Mapped[list["FitnessStudentORM"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+
+
+class FitnessStudentORM(Base):
+    __tablename__ = "fitness_students"
+    __table_args__ = (UniqueConstraint("event_id", "nis", name="uq_fitness_students_event_nis"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("fitness_events.id"), nullable=False, index=True)
+    nis: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    gender: Mapped[str] = mapped_column(String(30), nullable=False)
+    birth_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    class_name: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    section: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    parent_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    parent_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="REGISTERED", index=True)
+    queue_number: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    event: Mapped[FitnessEventORM] = relationship(back_populates="students")
+    examination: Mapped["FitnessExaminationORM | None"] = relationship(back_populates="student", cascade="all, delete-orphan", uselist=False)
+
+
+class FitnessExaminationORM(Base):
+    __tablename__ = "fitness_examinations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int | None] = mapped_column(ForeignKey("schools.id"), nullable=True, index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("fitness_students.id"), unique=True, nullable=False, index=True)
+    weight: Mapped[float] = mapped_column(Float, nullable=False)
+    height: Mapped[float] = mapped_column(Float, nullable=False)
+    bmi: Mapped[float] = mapped_column(Float, nullable=False)
+    blood_pressure: Mapped[str] = mapped_column(String(30), nullable=False)
+    oxygen_saturation: Mapped[float] = mapped_column(Float, nullable=False)
+    temperature: Mapped[float] = mapped_column(Float, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    examined_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    student: Mapped[FitnessStudentORM] = relationship(back_populates="examination")
+
+
 class PatientORM(Base):
     __tablename__ = "patients"
 

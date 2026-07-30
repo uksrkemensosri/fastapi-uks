@@ -352,6 +352,131 @@ def _append_pdf_signature(elements: list, doc: SimpleDocTemplate, current_user: 
     elements.append(table)
 
 
+def _build_patient_import_template_workbook() -> Workbook:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Template Import Siswa"
+    headers = [
+        "NIS",
+        "Nama Lengkap",
+        "Jenis Kelamin",
+        "Tanggal Lahir",
+        "Kelas",
+        "Nama Wali Asuh",
+        "Nomor HP Wali Asuh",
+    ]
+    examples = [
+        ["01010001", "Contoh Siswa Laki-Laki", "Laki-Laki", "2010-01-15", "1A", "Ibu Contoh", "081234567890"],
+        ["01010002", "Contoh Siswa Perempuan", "Perempuan", "2010-05-21", "1B", "Bapak Contoh", "082123456789"],
+    ]
+    sheet.append(headers)
+    for row in examples:
+        sheet.append(row)
+
+    header_fill = PatternFill("solid", fgColor="8B5CF6")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+    for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row, max_col=len(headers)):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="center")
+    widths = [18, 32, 18, 18, 12, 28, 24]
+    for idx, width in enumerate(widths, start=1):
+        sheet.column_dimensions[sheet.cell(row=1, column=idx).column_letter].width = width
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:G{sheet.max_row}"
+
+    notes = workbook.create_sheet("Petunjuk")
+    notes.append(["Kolom", "Keterangan"])
+    notes_rows = [
+        ["NIS", "Wajib. Nomor induk siswa atau ID siswa. Simpan sebagai teks agar angka 0 di depan tidak hilang."],
+        ["Nama Lengkap", "Wajib. Nama lengkap siswa."],
+        ["Jenis Kelamin", "Opsional. Contoh: Laki-Laki / Perempuan / L / P."],
+        ["Tanggal Lahir", "Opsional. Gunakan format yyyy-mm-dd, contoh 2010-01-15."],
+        ["Kelas", "Opsional. Contoh: 1A, 1B, 7A."],
+        ["Nama Wali Asuh", "Opsional. Nama wali asuh atau orang tua."],
+        ["Nomor HP Wali Asuh", "Opsional. Nomor WhatsApp wali asuh, contoh 081234567890."],
+    ]
+    for row in notes_rows:
+        notes.append(row)
+    for cell in notes[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+    for row in notes.iter_rows(min_row=2, max_row=notes.max_row, max_col=2):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    notes.column_dimensions["A"].width = 24
+    notes.column_dimensions["B"].width = 78
+    return workbook
+
+
+def _build_medicine_import_template_workbook() -> Workbook:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Template Import Obat"
+    headers = ["Nama Obat", "Satuan", "Stok Awal", "Stok Minimum", "Catatan"]
+    examples = [
+        ["Paracetamol 500mg", "tablet", 100, 20, "Stok awal UKS"],
+        ["Betadine", "botol", 12, 5, "Contoh obat luar"],
+        ["Oralit", "sachet", 50, 10, "Contoh stok sachet"],
+    ]
+    sheet.append(headers)
+    for row in examples:
+        sheet.append(row)
+
+    header_fill = PatternFill("solid", fgColor="8B5CF6")
+    header_font = Font(bold=True, color="FFFFFF")
+    thin = Side(style="thin", color="CBD5E1")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+    for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row, max_col=len(headers)):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="center")
+    widths = [32, 18, 14, 16, 36]
+    for idx, width in enumerate(widths, start=1):
+        sheet.column_dimensions[sheet.cell(row=1, column=idx).column_letter].width = width
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:E{sheet.max_row}"
+
+    notes = workbook.create_sheet("Petunjuk")
+    notes.append(["Kolom", "Keterangan"])
+    notes_rows = [
+        ["Nama Obat", "Wajib. Nama obat atau ALKES. Jika nama sudah ada, data stok akan diperbarui."],
+        ["Satuan", "Opsional. Contoh: tablet, sirup, sachet, botol. Jika kosong akan diisi tablet."],
+        ["Stok Awal", "Opsional. Angka stok terkini. Jika obat sudah ada, stok akan dikoreksi ke angka ini."],
+        ["Stok Minimum", "Opsional. Batas minimum stok rendah. Jika kosong akan diisi 10."],
+        ["Catatan", "Opsional. Masuk ke catatan mutasi saat import."],
+    ]
+    for row in notes_rows:
+        notes.append(row)
+    for cell in notes[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+    for row in notes.iter_rows(min_row=2, max_row=notes.max_row, max_col=2):
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    notes.column_dimensions["A"].width = 22
+    notes.column_dimensions["B"].width = 82
+    return workbook
+
+
 def normalize_whatsapp_number(phone: str | None) -> str | None:
     if not phone:
         return None
@@ -396,8 +521,20 @@ def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, 
         print(f"Response : {response.text}")
 
         if response.ok:
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {}
+            process = str(payload.get("process") or "").lower()
+            detail = str(payload.get("detail") or payload.get("message") or response.text)
+            if process == "pending" or "message in queue" in detail.lower():
+                print("WhatsApp masuk antrean Fonnte")
+                return "queued", "WhatsApp masuk antrean"
+            if payload and payload.get("status") is False:
+                print("WhatsApp ditolak provider")
+                return "failed", detail[:300]
             print("✅ WhatsApp berhasil dikirim")
-            return "sent", response.text[:300]
+            return "sent", "WhatsApp sukses"
 
         print("❌ WhatsApp gagal dikirim")
         return "failed", f"HTTP {response.status_code}: {response.text[:300]}"
@@ -405,6 +542,18 @@ def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, 
     except Exception as exc:
         print(f"🔥 Error WhatsApp: {exc}")
         return "failed", str(exc)
+
+
+def friendly_whatsapp_message(status_text: str | None, message: str | None = None) -> str:
+    if status_text == "sent":
+        return "WhatsApp sukses"
+    if status_text == "queued":
+        return "WhatsApp masuk antrean"
+    if status_text == "skipped":
+        return message if message and not message.lstrip().startswith("{") else "WhatsApp belum dikirim"
+    if status_text == "failed":
+        return "WhatsApp gagal"
+    return message or "-"
 
 
 def build_uks_visit_whatsapp_message(patient: PatientORM, visit: UKSVisitORM) -> str:
@@ -977,6 +1126,21 @@ def search_patients(
     ]
 
 
+@router.get("/patients/import-template")
+def download_patients_import_template(
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+) -> StreamingResponse:
+    workbook = _build_patient_import_template_workbook()
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="template_import_siswa_uks.xlsx"'},
+    )
+
+
 @router.get("/patients/{patient_id}", response_model=PatientSummary)
 def get_patient_detail(
     patient_id: str,
@@ -1460,6 +1624,152 @@ def list_medicines_inventory(
         )
         for m in meds
     ]
+
+
+@router.get("/medicines/import-template")
+def download_medicines_import_template(
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+) -> StreamingResponse:
+    workbook = _build_medicine_import_template_workbook()
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="template_import_obat_uks.xlsx"'},
+    )
+
+
+@router.post("/medicines/import-excel")
+def import_medicines_excel(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+):
+    content = payload.get("content_base64")
+    if not content:
+        raise HTTPException(status_code=400, detail="content_base64 wajib diisi")
+
+    try:
+        raw = base64.b64decode(content.split(",", 1)[-1])
+        workbook = load_workbook(BytesIO(raw), data_only=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="File Excel tidak valid") from exc
+
+    sheet = workbook.active
+    headers = [str(cell.value or "").strip().lower() for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
+    aliases = {
+        "name": ["nama obat", "obat", "name", "medicine", "medicine name"],
+        "unit": ["satuan", "unit"],
+        "stock": ["stok awal", "stok", "stock", "jumlah"],
+        "minimum_stock": ["stok minimum", "minimum", "minimum stock", "min stock"],
+        "notes": ["catatan", "notes", "keterangan"],
+    }
+
+    def idx(key: str) -> int | None:
+        for alias in aliases[key]:
+            if alias in headers:
+                return headers.index(alias)
+        return None
+
+    def parse_int(value, default: int) -> int:
+        if value is None or str(value).strip() == "":
+            return default
+        try:
+            parsed = int(float(str(value).strip()))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"Nilai stok tidak valid: {value}") from exc
+        if parsed < 0:
+            raise HTTPException(status_code=400, detail="Stok tidak boleh kurang dari 0")
+        return parsed
+
+    name_idx = idx("name")
+    if name_idx is None:
+        raise HTTPException(status_code=400, detail="Kolom Nama Obat wajib ada")
+
+    unit_idx = idx("unit")
+    stock_idx = idx("stock")
+    minimum_idx = idx("minimum_stock")
+    notes_idx = idx("notes")
+    rows = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if not row or not row[name_idx]:
+            continue
+        name = str(row[name_idx]).strip()
+        if not name:
+            continue
+        rows.append(
+            {
+                "name": name,
+                "unit": str(row[unit_idx] or "tablet").strip() if unit_idx is not None else "tablet",
+                "stock": parse_int(row[stock_idx], 0) if stock_idx is not None else 0,
+                "minimum_stock": parse_int(row[minimum_idx], 10) if minimum_idx is not None else 10,
+                "notes": str(row[notes_idx] or "").strip() if notes_idx is not None else "",
+            }
+        )
+
+    if payload.get("preview", False):
+        return {"preview": rows[:20], "total": len(rows)}
+
+    created = 0
+    updated = 0
+    for item in rows:
+        medicine = _find_inventory_by_name(db, item["name"], current_user)
+        note_suffix = f" - {item['notes']}" if item["notes"] else ""
+        if medicine is None:
+            medicine = MedicineInventoryORM(
+                school_id=current_user.school_id,
+                name=item["name"],
+                unit=item["unit"] or "tablet",
+                stock=item["stock"],
+                minimum_stock=item["minimum_stock"],
+            )
+            db.add(medicine)
+            db.add(
+                MedicineTransactionORM(
+                    school_id=current_user.school_id,
+                    medicine_name=item["name"],
+                    transaction_type="IN",
+                    quantity=item["stock"],
+                    notes=f"Import Excel obat: stok awal {item['stock']}{note_suffix}",
+                )
+            )
+            created += 1
+            continue
+
+        before_stock = medicine.stock
+        medicine.unit = item["unit"] or medicine.unit
+        medicine.minimum_stock = item["minimum_stock"]
+        medicine.stock = item["stock"]
+        db.add(medicine)
+        if item["stock"] >= before_stock:
+            transaction_type = "IN"
+            quantity = item["stock"] - before_stock
+        else:
+            transaction_type = "OUT"
+            quantity = before_stock - item["stock"]
+        db.add(
+            MedicineTransactionORM(
+                school_id=medicine.school_id,
+                medicine_name=medicine.name,
+                transaction_type=transaction_type,
+                quantity=quantity,
+                notes=f"Import Excel obat: koreksi stok {before_stock} -> {item['stock']}{note_suffix}",
+            )
+        )
+        updated += 1
+
+    write_audit_log(
+        db,
+        current_user,
+        "import_medicines_excel",
+        "medicine",
+        None,
+        f"created={created}; updated={updated}",
+    )
+    db.commit()
+    return {"message": "Import obat selesai", "created": created, "updated": updated, "total": len(rows)}
 
 
 @router.patch("/medicines/{medicine_id}", response_model=MedicineInventoryResponse)
@@ -2718,7 +3028,7 @@ def list_whatsapp_logs(
                 "patient_name": patient.name if patient else visit.patient_id,
                 "parent_phone": patient.parent_phone if patient else None,
                 "status": visit.whatsapp_status or "skipped",
-                "message": visit.whatsapp_message or "-",
+                "message": friendly_whatsapp_message(visit.whatsapp_status, visit.whatsapp_message),
             }
         )
     return rows
@@ -2746,7 +3056,7 @@ def resend_visit_whatsapp(
     db.add(visit)
     write_audit_log(db, current_user, "resend_whatsapp_visit", "uks_visit", visit.id, f"{status_text}: {detail}")
     db.commit()
-    return {"whatsapp_status": status_text, "whatsapp_message": detail}
+    return {"whatsapp_status": status_text, "whatsapp_message": friendly_whatsapp_message(status_text, detail)}
 
 
 @router.get("/system/health-check")

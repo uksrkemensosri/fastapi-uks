@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=10">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
   <style>
 
 *{
@@ -94,9 +94,9 @@ body[data-role="admin"] .admin-only{
         <p>Kelola informasi dasar aplikasi UKS</p>
       </div>
 
-      <div class="user-box" style="display:flex;align-items:center;gap:10px;">
-        <button class="btn btn-secondary" id="btnTheme" style="margin:0;width:auto;padding:10px 12px;">🌙</button>
-        <button class="btn btn-secondary" id="btnLogout" style="margin:0;">Logout</button>
+      <div class="user-box">
+        <button class="btn btn-secondary theme-toggle" id="btnTheme" data-global-theme="true" type="button">&#127769;</button>
+        <button class="btn btn-secondary logout-button" id="btnLogout" type="button">Logout</button>
       </div>
 
     </div>
@@ -164,6 +164,7 @@ body[data-role="admin"] .admin-only{
     <input id="studentExcelFile" type="file" accept=".xlsx,.xls">
   </div>
   <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    <button class="btn btn-secondary" id="btnDownloadStudentTemplate" type="button">Download Template Excel</button>
     <button class="btn btn-secondary" id="btnPreviewImport" type="button">Preview Import</button>
     <button class="btn btn-primary" id="btnImportStudents" type="button">Import Siswa</button>
   </div>
@@ -352,6 +353,19 @@ btnRestore.addEventListener('click', async () => {
   input.click();
 });
 
+btnDownloadStudentTemplate.addEventListener('click', async () => {
+  const res = await fetch('/api/patients/import-template', {
+    headers:{Authorization:`Bearer ${token}`}
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({detail:'Template gagal dibuat.'}));
+    appAlert('Gagal', data.detail || 'Template gagal dibuat.', 'error');
+    return;
+  }
+  downloadBlob(await res.blob(), 'template_import_siswa_uks.xlsx');
+  appAlert('Berhasil', 'Template Excel import siswa berhasil diunduh.', 'success');
+});
+
 async function importStudents(preview){
   const file = studentExcelFile.files[0];
   if(!file){
@@ -494,6 +508,6 @@ document
 
 });
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=8" defer></script>
 </body>
 </html>

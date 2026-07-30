@@ -3,12 +3,22 @@
 
   function hideAdminLinks(role) {
     const waliAsuhLinks = new Set(["/students", "/settings"]);
-    const timLinks = new Set(["/dashboard", "/students", "/ckg", "/settings"]);
-    const kepalaLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/settings"]);
-    const adminLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/users", "/audit-logs", "/settings"]);
-    const perawatLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/users", "/settings"]);
+    const timLinks = new Set(["/dashboard", "/students", "/ckg", "/fitness", "/settings"]);
+    const kepalaLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/settings"]);
+    const adminLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/users", "/audit-logs", "/settings"]);
+    const perawatLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/users", "/settings"]);
     const superAdminLinks = new Set([...adminLinks, "/schools"]);
     const sidebar = document.querySelector(".sidebar");
+    if (sidebar && !sidebar.querySelector('a[href="/fitness"]')) {
+      const ckgLink = sidebar.querySelector('a[href="/ckg"]');
+      const fitnessLink = document.createElement("a");
+      fitnessLink.href = "/fitness";
+      fitnessLink.className = `menu-item${window.location.pathname === "/fitness" ? " active" : ""}`;
+      fitnessLink.textContent = "Cek Kebugaran";
+      if (ckgLink) {
+        ckgLink.insertAdjacentElement("afterend", fitnessLink);
+      }
+    }
     if (role === "super_admin" && sidebar && !sidebar.querySelector('a[href="/schools"]')) {
       const usersLink = sidebar.querySelector('a[href="/users"]');
       const schoolLink = document.createElement("a");
@@ -87,7 +97,89 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", async () => {
+  function applySavedTheme() {
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "dark" || savedTheme === "true") {
+      document.body.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    }
+  }
+
+  function updateThemeButton(button) {
+    if (!button) {
+      return;
+    }
+    const isDark = document.body.classList.contains("dark");
+    button.textContent = isDark ? "\u2600\uFE0F" : "\u{1F319}";
+    button.setAttribute("aria-label", isDark ? "Aktifkan mode terang" : "Aktifkan mode gelap");
+    button.title = isDark ? "Mode terang" : "Mode gelap";
+  }
+
+  function setupGlobalThemeToggle() {
+    applySavedTheme();
+
+    let themeButton =
+      document.getElementById("btnTheme") ||
+      document.getElementById("themeToggle");
+
+    if (!themeButton) {
+      const topbar = document.querySelector(".topbar");
+      if (!topbar) {
+        return;
+      }
+
+      let actions =
+        topbar.querySelector(".user-box") ||
+        topbar.querySelector(".topbar-actions") ||
+        topbar.querySelector(".user-actions");
+
+      if (!actions) {
+        actions = document.createElement("div");
+        actions.className = "user-box";
+        while (topbar.children.length > 1) {
+          actions.appendChild(topbar.children[1]);
+        }
+        topbar.appendChild(actions);
+      }
+
+      themeButton = document.createElement("button");
+      themeButton.id = "btnTheme";
+      themeButton.type = "button";
+      themeButton.dataset.globalTheme = "true";
+      themeButton.className = "btn btn-secondary theme-toggle";
+      const logoutButton = actions.querySelector("#btnLogout");
+      if (logoutButton) {
+        actions.insertBefore(themeButton, logoutButton);
+      } else {
+        actions.prepend(themeButton);
+      }
+    }
+
+    themeButton.classList.add("btn", "btn-secondary", "theme-toggle");
+    if (themeButton.dataset.globalTheme !== "true") {
+      return;
+    }
+
+    updateThemeButton(themeButton);
+
+    if (themeButton.dataset.globalTheme === "true" && themeButton.dataset.themeBound !== "true") {
+      themeButton.dataset.themeBound = "true";
+      themeButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        document.body.classList.toggle("dark");
+        localStorage.setItem(
+          "theme",
+          document.body.classList.contains("dark") ? "dark" : "light"
+        );
+        updateThemeButton(themeButton);
+      }, true);
+    }
+  }
+
+  async function initRbacUi() {
+    setupGlobalThemeToggle();
+
     const user = await loadCurrentUser();
     if (user) {
       hideAdminLinks(user.role);
@@ -103,8 +195,14 @@
           event.stopImmediatePropagation();
           logout();
         },
-        true
+          true
       );
     }
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initRbacUi);
+  } else {
+    initRbacUi();
+  }
 })();

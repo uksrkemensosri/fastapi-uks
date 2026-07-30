@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pengguna</title>
 
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=11">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
   <style>
     #btnAddUser{
       width:auto;
@@ -57,6 +57,13 @@
   align-items:center;
   gap:20px;
   flex-wrap:wrap;
+  background:rgba(255,255,255,.62);
+  backdrop-filter:blur(18px);
+  border:1px solid rgba(255,255,255,.65);
+  border-radius:28px;
+  padding:24px 22px;
+  box-shadow:0 10px 30px rgba(192,132,252,.10);
+  margin-bottom:28px;
 }
 .user-form-card{
   overflow:hidden;
@@ -64,6 +71,11 @@
 
 .users-card{
   max-width:100%;
+  border-radius:28px;
+  padding:28px;
+  background:rgba(255,255,255,.58);
+  border:1px solid rgba(255,255,255,.65);
+  box-shadow:0 10px 30px rgba(192,132,252,.10);
 }
 
 .user-actions{
@@ -84,28 +96,40 @@
   padding-inline:18px;
 }
 
-body.dark{
-  background:linear-gradient(180deg,#cbd5e1,#94a3b8);
-  color:#0f172a;
+.user-actions .theme-toggle{
+  width:52px;
+  min-width:52px;
+  padding:0;
+  border-radius:16px;
 }
 
-body.dark .sidebar{
-  background:linear-gradient(180deg,#334155,#0f172a);
+body.dark .main > .topbar{
+  border-radius:24px;
+  padding:24px 22px;
+  margin-bottom:28px;
+  background:rgba(255,255,255,.72);
+  border:1px solid rgba(255,255,255,.65);
+  box-shadow:0 18px 45px rgba(15,23,42,.10);
 }
 
-body.dark .main{
+body.dark .users-card{
+  background:rgba(255,255,255,.72);
+  border:1px solid rgba(255,255,255,.65);
+  box-shadow:0 18px 45px rgba(15,23,42,.10);
+}
+
+body.dark .users-card .table{
+  border-collapse:collapse;
+  border-spacing:0;
+}
+
+body.dark .users-card .table th,
+body.dark .users-card .table td{
   background:transparent;
 }
 
-body.dark .card,
-body.dark .topbar{
-  background:rgba(255,255,255,.72);
-  backdrop-filter:blur(18px);
-  border:1px solid rgba(255,255,255,.65);
-}
-
-body.dark .table tbody tr:hover{
-  background:rgba(255,255,255,.65);
+body.dark .users-card .table tbody tr:hover td{
+  background:rgba(255,255,255,.46);
 }
 
 @media(max-width:720px){
@@ -171,6 +195,7 @@ body.dark .table tbody tr:hover{
         <button
           class="btn btn-secondary theme-toggle"
           id="themeToggle"
+          data-global-theme="true"
           type="button"
           title="Mode malam"
         >
@@ -614,6 +639,6 @@ async function saveUser(){
 
 loadCurrentUserAndSchools();
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=8" defer></script>
 </body>
 </html>

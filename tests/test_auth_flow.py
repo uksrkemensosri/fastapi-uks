@@ -343,6 +343,53 @@ def test_medicine_inventory_and_stock_deduction(client: TestClient):
     assert len(mutation_pdf.content) > 1000
 
 
+def test_medicine_import_template_and_excel_import(client: TestClient):
+    headers = _auth_headers(client)
+
+    template = client.get("/api/medicines/import-template", headers=headers)
+    assert template.status_code == 200
+    assert template.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert len(template.content) > 1000
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Nama Obat", "Satuan", "Stok Awal", "Stok Minimum", "Catatan"])
+    sheet.append(["Obat Import Test", "sachet", 25, 8, "Import dari test"])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    payload = {
+        "filename": "obat.xlsx",
+        "content_base64": (
+            "data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,"
+            + encoded
+        ),
+    }
+
+    preview = client.post(
+        "/api/medicines/import-excel",
+        headers=headers,
+        json={**payload, "preview": True},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["total"] == 1
+    assert preview.json()["preview"][0]["name"] == "Obat Import Test"
+
+    imported = client.post("/api/medicines/import-excel", headers=headers, json=payload)
+    assert imported.status_code == 200
+    assert imported.json()["created"] == 1
+
+    medicines = client.get("/api/medicines", headers=headers)
+    imported_medicine = next(
+        item for item in medicines.json() if item["name"] == "Obat Import Test"
+    )
+    assert imported_medicine["stock"] == 25
+    assert imported_medicine["unit"] == "sachet"
+    assert imported_medicine["minimum_stock"] == 8
+
+
 def test_user_crud_and_audit_log(client: TestClient):
     headers = _auth_headers(client)
 
@@ -546,6 +593,89 @@ def test_ckg_event_registration_queue_and_anthropometry(client: TestClient):
 
     missing_patient = client.get("/api/patients/CKG-DELETE-001", headers=admin_headers)
     assert missing_patient.status_code == 404
+
+
+def test_fitness_event_registration_queue_examination_and_pdf(client: TestClient):
+    headers = _auth_headers(client)
+
+    page = client.get("/fitness")
+    assert page.status_code == 200
+    assert "Cek Kebugaran" in page.text
+    assert "/api/fitness/students" in page.text
+    assert "/api/patients/search?q=" in page.text
+
+    event = client.post(
+        "/api/fitness/events",
+        headers=headers,
+        json={
+            "academic_year": "2026/2027",
+            "event_name": "Cek Kebugaran 2026",
+            "start_date": "2026-07-31",
+            "end_date": "2026-07-31",
+            "is_active": True,
+        },
+    )
+    assert event.status_code == 201
+    assert event.json()["is_active"] is True
+
+    student = client.post(
+        "/api/fitness/students",
+        headers=headers,
+        json={
+            "nis": "FIT-001",
+            "full_name": "Siswa Fit Satu",
+            "gender": "Perempuan",
+            "birth_date": "2012-03-04",
+            "class_name": "7F",
+            "section": "F",
+            "parent_name": "Wali Fit",
+            "parent_phone": "081233334444",
+        },
+    )
+    assert student.status_code == 201
+    student_id = student.json()["id"]
+    assert student.json()["status"] == "REGISTERED"
+    assert student.json()["next_station"] == "PEMERIKSAAN_KEBUGARAN"
+
+    synced_patient = client.get("/api/patients/FIT-001", headers=headers)
+    assert synced_patient.status_code == 200
+    assert synced_patient.json()["parent_name"] == "Wali Fit"
+
+    queue = client.get("/api/fitness/queue", headers=headers)
+    assert queue.status_code == 200
+    assert queue.json()[0]["student_name"] == "Siswa Fit Satu"
+
+    exam = client.post(
+        f"/api/fitness/students/{student_id}/examination",
+        headers=headers,
+        json={
+            "weight": 45,
+            "height": 150,
+            "blood_pressure": "110/70",
+            "oxygen_saturation": 98,
+            "temperature": 36.5,
+            "notes": "Bugar",
+        },
+    )
+    assert exam.status_code == 200
+    assert exam.json()["status"] == "COMPLETED"
+    assert exam.json()["whatsapp_status"] == "skipped"
+    assert exam.json()["whatsapp_message"]
+
+    summary = client.get(f"/api/fitness/students/{student_id}/summary", headers=headers)
+    assert summary.status_code == 200
+    assert summary.json()["examination"]["bmi"] == 20.0
+    assert summary.json()["examination"]["oxygen_saturation"] == 98.0
+
+    dashboard = client.get("/api/fitness/dashboard", headers=headers)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["total_registered"] == 1
+    assert dashboard.json()["completed"] == 1
+
+    pdf = client.get("/api/fitness/report/pdf", headers=headers)
+    assert pdf.status_code == 200
+    assert pdf.headers["content-type"].startswith("application/pdf")
+    assert len(pdf.content) > 1000
 
 
 def test_health_history_recommendation_pdf_and_signature(client: TestClient):

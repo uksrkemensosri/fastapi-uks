@@ -2333,7 +2333,7 @@ async function loadWhatsappLogs(){
       <div class="top-student-item">
         <div>
           <strong>${item.patient_name}</strong>
-          <div style="color:#64748b;">${item.status} - ${item.message}</div>
+          <div style="color:#64748b;">${item.message || (item.status === "sent" ? "WhatsApp sukses" : item.status)}</div>
         </div>
         <button class="visit-badge" style="border:none;cursor:pointer;" onclick="resendVisitWhatsApp(${item.visit_id})">Kirim Ulang</button>
       </div>

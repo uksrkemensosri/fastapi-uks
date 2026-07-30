@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Schools</title>
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=11">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
   <style>
     .school-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:16px}
     .school-grid input,.school-grid select{width:100%;min-width:0;padding:14px 16px;border:1px solid #dbe3ef;border-radius:12px;font-size:1rem}
@@ -37,7 +37,7 @@
         <h1>Schools</h1>
         <p>Kelola tenant Sekolah Rakyat</p>
       </div>
-      <button id="btnLogout" class="logout-button">Logout</button>
+      <button id="btnLogout" class="btn btn-secondary logout-button" type="button">Logout</button>
     </div>
 
     <section class="card">
@@ -86,7 +86,7 @@
   </main>
 </div>
 <script src="/ui/assets/dialogs.js"></script>
-<script src="/ui/assets/rbac.js"></script>
+<script src="/ui/assets/rbac.js?v=8"></script>
 <script>
 const token = localStorage.getItem("access_token");
 const headers = {"Content-Type":"application/json", Authorization:`Bearer ${token}`};

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Audit Log</title>
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
   <style>
     .filters{
       display:grid;
@@ -54,7 +54,8 @@
         <p>Riwayat aktivitas sistem dan perubahan data</p>
       </div>
       <div class="topbar-actions">
-        <button class="btn btn-secondary" id="btnLogout" type="button">Logout</button>
+        <button class="btn btn-secondary theme-toggle" id="btnTheme" data-global-theme="true" type="button">&#127769;</button>
+        <button class="btn btn-secondary logout-button" id="btnLogout" type="button">Logout</button>
       </div>
     </div>
 
@@ -172,6 +173,6 @@ document.getElementById("nextPage").addEventListener("click", () => {
 });
 loadAuditLogs();
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=8" defer></script>
 </body>
 </html>

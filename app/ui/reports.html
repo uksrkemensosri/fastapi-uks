@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Laporan UKS</title>
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
   <style>
     .tabs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 22px}
     .tab-btn{border:none;border-radius:999px;background:rgba(255,255,255,.85);color:#6d28d9;font-weight:900;padding:13px 20px;cursor:pointer;box-shadow:0 10px 24px rgba(79,70,229,.08)}
@@ -90,6 +90,22 @@
     .mini-btn.danger{background:#fee2e2;color:#b91c1c}
     .medicine-tools{display:flex;gap:10px;flex-wrap:wrap}
     .medicine-tools .btn{min-height:44px;padding:0 18px}
+    .medicine-import-box{margin-top:18px;padding-top:18px;border-top:1px solid rgba(15,23,42,.08)}
+    .medicine-import-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .medicine-import-head h3{margin:0;color:#312e81}
+    .medicine-import-box input[type=file]{
+      width:100%;
+      min-height:50px;
+      border:1px solid rgba(124,58,237,.08);
+      border-radius:18px;
+      background:rgba(255,255,255,.82);
+      padding:12px 16px;
+      color:#334155;
+      font-weight:700;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 12px 26px rgba(124,58,237,.05);
+    }
+    .medicine-import-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .medicine-import-actions .btn{min-width:150px}
     @media(max-width:1200px){.visit-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:1100px){.filter-row,.medicine-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:900px){.report-grid{grid-template-columns:1fr}.topbar{flex-direction:column;align-items:flex-start}}
@@ -270,6 +286,17 @@
             <input id="medicineMinStock" type="number" min="0" value="10">
           </div>
           <button class="btn btn-primary" id="btnCreateMedicine" type="button" style="margin-top:16px;width:100%;">Simpan Obat</button>
+          <div class="medicine-import-box">
+            <div class="medicine-import-head">
+              <h3>Import Obat dari Excel</h3>
+              <button class="btn btn-secondary" id="btnMedicineTemplate" type="button">Download Template</button>
+            </div>
+            <input id="medicineExcelFile" type="file" accept=".xlsx,.xls">
+            <div class="medicine-import-actions">
+              <button class="btn btn-secondary" id="btnPreviewMedicineImport" type="button">Preview Import</button>
+              <button class="btn btn-primary" id="btnImportMedicines" type="button">Import Obat</button>
+            </div>
+          </div>
           <div id="medicineStatus" class="status"></div>
         </section>
 
@@ -653,6 +680,69 @@ async function downloadMedicineMutationPdf(){
   }
 }
 
+function readFileAsDataUrl(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Gagal membaca file Excel"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function downloadMedicineTemplate(){
+  try{
+    const res = await fetch("/api/medicines/import-template", {
+      headers:{Authorization:`Bearer ${token}`}
+    });
+    if(!res.ok){ throw new Error("Gagal download template obat"); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template_import_obat_uks.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showStatus("medicineStatus", "Template Excel obat berhasil diunduh", true);
+  }catch(err){
+    showStatus("medicineStatus", err.message, false);
+  }
+}
+
+async function importMedicinesFromExcel(preview = false){
+  const file = medicineExcelFile.files[0];
+  if(!file){
+    await appAlert("File Belum Dipilih", "Pilih file Excel obat terlebih dahulu.", "error");
+    return;
+  }
+  try{
+    showStatus("medicineStatus", preview ? "Membaca preview import..." : "Mengimport data obat...", true);
+    const contentBase64 = await readFileAsDataUrl(file);
+    const data = await api("/api/medicines/import-excel", "POST", {
+      filename: file.name,
+      content_base64: contentBase64,
+      preview
+    });
+    if(preview){
+      const rows = (data.preview || []).map(item =>
+        `${item.name} - ${item.stock} ${item.unit} (min. ${item.minimum_stock})`
+      ).join("\n") || "Tidak ada baris obat yang terbaca.";
+      await appAlert("Preview Import Obat", `Total data: ${data.total}\n\n${rows}`, "success");
+      showStatus("medicineStatus", `Preview ${data.total} data obat`, true);
+      return;
+    }
+    await appAlert("Berhasil", `Import obat selesai. Baru: ${data.created}, diperbarui: ${data.updated}.`, "success");
+    medicineExcelFile.value = "";
+    showStatus("medicineStatus", data.message || "Import obat selesai", true);
+    loadMedicines();
+    loadMedicineMutation();
+  }catch(err){
+    showStatus("medicineStatus", err.message, false);
+    await appAlert("Gagal", err.message, "error");
+  }
+}
+
 async function saveMedicine(){
   try{
     const payload = {
@@ -694,6 +784,9 @@ btnLowStockOnly.addEventListener("click", () => {
 });
 btnMedicinePdf.addEventListener("click", downloadMedicinePdf);
 btnCreateMedicine.addEventListener("click", saveMedicine);
+btnMedicineTemplate.addEventListener("click", downloadMedicineTemplate);
+btnPreviewMedicineImport.addEventListener("click", () => importMedicinesFromExcel(true));
+btnImportMedicines.addEventListener("click", () => importMedicinesFromExcel(false));
 btnMedicineMutationPdf.addEventListener(
   "click",
   downloadMedicineMutationPdf
@@ -703,6 +796,6 @@ loadMedicines();
 loadMedicineMutation();
 updateVisitFilters();
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=8" defer></script>
 </body>
 </html>

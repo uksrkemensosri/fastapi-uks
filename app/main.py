@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core import settings  # noqa: F401
 from app.api.ckg import router as ckg_router
+from app.api.fitness import router as fitness_router
 from app.api.monthly_reports import router as monthly_reports_router
 from app.api.recommendations import router as recommendations_router
 from app.api.routes import router
@@ -76,6 +77,7 @@ async def signed_session_middleware(request: Request, call_next):
 
 app.include_router(router)
 app.include_router(ckg_router)
+app.include_router(fitness_router)
 app.include_router(monthly_reports_router)
 app.include_router(recommendations_router)
 
@@ -96,6 +98,9 @@ def ensure_database_columns() -> None:
         "ckg_dental",
         "ckg_general_screening",
         "ckg_referrals",
+        "fitness_events",
+        "fitness_students",
+        "fitness_examinations",
         "patients",
         "assessments",
         "recommendations",
@@ -212,6 +217,9 @@ def ensure_default_school_data() -> None:
             models.CKGDentalORM,
             models.CKGGeneralScreeningORM,
             models.CKGReferralORM,
+            models.FitnessEventORM,
+            models.FitnessStudentORM,
+            models.FitnessExaminationORM,
             PatientORM,
             models.AssessmentORM,
             models.RecommendationORM,
@@ -243,6 +251,7 @@ UI_REPORTS_PATH = Path(__file__).resolve().parent / "ui" / "reports.html"
 UI_USERS_PATH = Path(__file__).resolve().parent / "ui" / "users.html"
 UI_AUDIT_LOGS_PATH = Path(__file__).resolve().parent / "ui" / "audit_logs.html"
 UI_CKG_PATH = Path(__file__).resolve().parent / "ui" / "ckg.html"
+UI_FITNESS_PATH = Path(__file__).resolve().parent / "ui" / "fitness.html"
 UI_SCHOOLS_PATH = Path(__file__).resolve().parent / "ui" / "schools.html"
 UI_ACCESS_DENIED_PATH = Path(__file__).resolve().parent / "ui" / "access_denied.html"
 UI_ASSETS_PATH = Path(__file__).resolve().parent / "ui" / "assets"
@@ -389,6 +398,11 @@ def audit_logs_page(request: Request):
 @app.get("/ckg", response_class=FileResponse)
 def ckg_page(request: Request):
     return protected_ui_page(request, UI_CKG_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
+
+
+@app.get("/fitness", response_class=FileResponse)
+def fitness_page(request: Request):
+    return protected_ui_page(request, UI_FITNESS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
 
 
 @app.get("/ui", response_class=FileResponse)

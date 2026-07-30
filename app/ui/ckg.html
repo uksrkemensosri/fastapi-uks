@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CKG</title>
-  <link rel="stylesheet" href="/ui/assets/theme.css?v=100">
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
   <style>
     .ckg-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
     .ckg-tab{border:none;border-radius:16px;padding:12px 18px;font-weight:800;cursor:pointer;background:rgba(255,255,255,.82);color:#6d28d9}
@@ -132,7 +132,8 @@
         <p>Cek Kesehatan Gratis siswa berbasis station dan queue</p>
       </div>
       <div class="user-box">
-        <button class="btn btn-secondary" id="btnLogout" type="button">Logout</button>
+        <button class="btn btn-secondary theme-toggle" id="btnTheme" data-global-theme="true" type="button">&#127769;</button>
+        <button class="btn btn-secondary logout-button" id="btnLogout" type="button">Logout</button>
       </div>
     </div>
 
@@ -797,6 +798,6 @@ setInterval(() => {
   loadQueue();
 }, 30000);
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=8" defer></script>
 </body>
 </html>

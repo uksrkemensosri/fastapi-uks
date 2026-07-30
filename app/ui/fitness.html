@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cek Kebugaran</title>
+  <link rel="stylesheet" href="/ui/assets/theme.css?v=125">
+  <style>
+    .fitness-tabs{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+    .fitness-tab{border:none;border-radius:16px;padding:12px 18px;font-weight:800;cursor:pointer;background:rgba(255,255,255,.82);color:#6d28d9}
+    .fitness-tab.active{background:linear-gradient(135deg,#f472b6,#c084fc,#60a5fa);color:white;box-shadow:0 14px 30px rgba(192,132,252,.22)}
+    .fitness-panel{display:none}
+    .fitness-panel.active{display:block}
+    .form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}
+    .form-grid input,.form-grid select,.form-grid textarea{width:100%;padding:14px 16px;border-radius:16px;border:1px solid #dbe3ef;background:white}
+    .form-grid textarea{grid-column:span 3;min-height:90px}
+    .cards-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:22px}
+    .mini-card{background:rgba(255,255,255,.68);border:1px solid rgba(255,255,255,.55);border-radius:22px;padding:20px;box-shadow:var(--shadow)}
+    .mini-label{color:#64748b;font-weight:700;margin-bottom:8px}
+    .mini-value{font-size:2rem;font-weight:900;color:#4c1d95}
+    .student-search{position:relative;min-width:0}
+    .student-search-results{position:absolute;z-index:30;top:calc(100% + 8px);left:0;right:0;display:none;max-height:260px;overflow:auto;padding:8px;border:1px solid rgba(124,58,237,.14);border-radius:16px;background:#fff;box-shadow:0 18px 38px rgba(76,29,149,.16)}
+    .student-search-results.open{display:block}
+    .student-search-item{width:100%;border:0;border-radius:12px;background:transparent;padding:11px 12px;text-align:left;cursor:pointer;color:#334155}
+    .student-search-item:hover,.student-search-item:focus{background:#f3e8ff;outline:none}
+    .student-search-name{font-weight:900;color:#312e81;overflow-wrap:anywhere}
+    .student-search-meta{margin-top:3px;color:#64748b;font-size:.82rem}
+    .student-search-empty{padding:12px;color:#64748b}
+    .status{margin-top:10px;color:#312e81;font-weight:800}
+    .fitness-modal-backdrop{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;padding:22px;background:rgba(15,23,42,.34);backdrop-filter:blur(7px)}
+    .fitness-modal-backdrop.open{display:flex}
+    .fitness-modal{width:min(720px,100%);max-height:calc(100vh - 44px);overflow:auto;border:1px solid rgba(255,255,255,.64);border-radius:28px;background:rgba(255,255,255,.96);box-shadow:0 28px 70px rgba(76,29,149,.26);padding:26px}
+    .fitness-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+    .fitness-modal-title{margin:0;color:#312e81;font-size:1.35rem}
+    .fitness-modal-subtitle{margin:5px 0 0;color:#64748b}
+    .fitness-modal-close{width:38px;height:38px;border:0;border-radius:14px;background:#f8fafc;color:#6d28d9;cursor:pointer;font-size:1.4rem;line-height:1}
+    .fitness-modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .fitness-field{display:flex;flex-direction:column;gap:7px}
+    .fitness-field.full{grid-column:1 / -1}
+    .fitness-field label{font-weight:800;color:#334155}
+    .fitness-field input,.fitness-field textarea{width:100%;border:1px solid #dbe3ef;border-radius:16px;background:#fff;padding:13px 15px;color:#334155}
+    .fitness-field textarea{min-height:94px;resize:vertical}
+    .fitness-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;flex-wrap:wrap}
+    .admin-only{display:none}
+    body[data-role="admin"] .admin-only,
+    body[data-role="perawat"] .admin-only,
+    body[data-role="super_admin"] .admin-only{display:block}
+    body[data-role="admin"] tr.admin-only,
+    body[data-role="perawat"] tr.admin-only,
+    body[data-role="super_admin"] tr.admin-only{display:table-row}
+    body.dark .fitness-tab{background:rgba(255,255,255,.9);color:#7c3aed}
+    body.dark .fitness-tab.active{background:linear-gradient(135deg,#f472b6,#c084fc,#60a5fa);color:#fff}
+    body.dark .fitness-modal,body.dark .student-search-results{background:rgba(255,255,255,.96);color:#0f172a}
+    @media(max-width:900px){.form-grid,.fitness-modal-grid{grid-template-columns:1fr}.form-grid textarea{grid-column:span 1}.topbar{flex-direction:column;align-items:flex-start}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="logo-area">
+      <img src="/ui/assets/logo-sekolah-rakyat.png" class="sidebar-logo" alt="">
+      <div><div class="logo-title">EMR UKS</div><div class="logo-sub">Sekolah Rakyat</div></div>
+    </div>
+    <div class="menu">
+      <a href="/dashboard" class="menu-item">Dashboard</a>
+      <a href="/students" class="menu-item">Data Siswa</a>
+      <a href="/reports" class="menu-item">Laporan</a>
+      <a href="/ckg" class="menu-item">CKG</a>
+      <a href="/fitness" class="menu-item active">Cek Kebugaran</a>
+      <a href="/users" class="menu-item">Pengguna</a>
+      <a href="/audit-logs" class="menu-item">Audit Log</a>
+      <a href="/settings" class="menu-item">Pengaturan</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Cek Kebugaran</h1>
+        <p>Pemeriksaan BB, TB, tensi, saturasi, dan suhu siswa</p>
+      </div>
+      <div class="user-box">
+        <button class="btn btn-secondary theme-toggle" id="btnTheme" data-global-theme="true" type="button">&#127769;</button>
+        <button class="btn btn-secondary logout-button" id="btnLogout" type="button">Logout</button>
+      </div>
+    </div>
+
+    <div class="fitness-tabs">
+      <button class="fitness-tab active" data-panel="dashboard">Dashboard</button>
+      <button class="fitness-tab" data-panel="registration">Registrasi</button>
+      <button class="fitness-tab" data-panel="queue">Queue Station</button>
+      <button class="fitness-tab admin-only" data-panel="events">Event</button>
+      <button class="fitness-tab admin-only" data-panel="assignments">Assignment</button>
+    </div>
+
+    <section class="fitness-panel active" id="panel-dashboard">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <button class="btn btn-primary" id="btnPrintReport" type="button">Cetak Laporan PDF</button>
+      </div>
+      <div class="cards-grid">
+        <div class="mini-card"><div class="mini-label">Total Terdaftar</div><div class="mini-value" id="totalRegistered">0</div></div>
+        <div class="mini-card"><div class="mini-label">Completed</div><div class="mini-value" id="completed">0</div></div>
+        <div class="mini-card"><div class="mini-label">In Progress</div><div class="mini-value" id="inProgress">0</div></div>
+        <div class="mini-card"><div class="mini-label">Waiting Queue</div><div class="mini-value" id="waitingQueue">0</div></div>
+      </div>
+      <section class="card">
+        <h2>Recent Students</h2>
+        <table class="table">
+          <thead><tr><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th></tr></thead>
+          <tbody id="recentRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="fitness-panel" id="panel-registration">
+      <section class="card">
+        <h2>Registrasi Siswa Cek Kebugaran</h2>
+        <p style="color:var(--muted);margin-top:-10px;margin-bottom:18px;">Cari siswa lama lewat nama/NIS, atau isi data baru.</p>
+        <div class="form-grid">
+          <input id="nis" placeholder="NIS">
+          <div class="student-search">
+            <input id="fullName" placeholder="Cari nama siswa lama atau input nama baru" autocomplete="off">
+            <div id="studentSearchResults" class="student-search-results"></div>
+          </div>
+          <select id="gender"><option value="Laki-Laki">Laki-Laki</option><option value="Perempuan">Perempuan</option></select>
+          <input id="birthDate" type="date">
+          <input id="className" placeholder="Kelas">
+          <input id="section" placeholder="Section">
+          <input id="parentName" placeholder="Nama wali asuh / orang tua">
+          <input id="parentPhone" placeholder="Nomor HP wali asuh">
+        </div>
+        <button class="btn btn-primary" id="btnRegisterStudent" type="button">Daftarkan</button>
+        <div id="registrationStatus" class="status"></div>
+      </section>
+      <section class="card" style="margin-top:24px;">
+        <h2>Siswa Cek Kebugaran</h2>
+        <table class="table">
+          <thead><tr><th>No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th><th>Aksi</th></tr></thead>
+          <tbody id="studentRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="fitness-panel" id="panel-queue">
+      <section class="card">
+        <div class="form-grid">
+          <input value="Pemeriksaan Kebugaran" disabled>
+          <button class="btn btn-primary" id="btnLoadQueue" type="button">Muat Queue</button>
+          <button class="btn btn-secondary" id="btnCallNextQueue" type="button">Panggil Berikutnya</button>
+        </div>
+        <div id="nextQueueCallout" class="mini-card" style="display:none;margin-bottom:16px;"></div>
+        <table class="table">
+          <thead><tr><th>No</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th><th>Aksi</th></tr></thead>
+          <tbody id="queueRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="fitness-panel admin-only" id="panel-events">
+      <section class="card">
+        <h2>Event Cek Kebugaran</h2>
+        <div class="form-grid">
+          <input id="academicYear" placeholder="Tahun Ajaran, contoh 2026/2027">
+          <input id="eventName" placeholder="Nama event">
+          <input id="startDate" type="date">
+          <input id="endDate" type="date">
+          <select id="isActive"><option value="true">Aktif</option><option value="false">Tidak Aktif</option></select>
+        </div>
+        <button class="btn btn-primary" id="btnCreateEvent" type="button">Simpan Event</button>
+      </section>
+      <section class="card" style="margin-top:24px;">
+        <h2>Daftar Event</h2>
+        <table class="table">
+          <thead><tr><th>Tahun</th><th>Event</th><th>Periode</th><th>Status</th></tr></thead>
+          <tbody id="eventRows"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="fitness-panel admin-only" id="panel-assignments">
+      <section class="card">
+        <h2>Assignment</h2>
+        <p style="color:var(--muted)">Cek Kebugaran memakai satu station pemeriksaan, jadi semua petugas yang punya akses Cek Kebugaran dapat membantu queue ini.</p>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div class="fitness-modal-backdrop" id="fitnessModalBackdrop">
+  <div class="fitness-modal">
+    <div class="fitness-modal-head">
+      <div>
+        <h3 class="fitness-modal-title" id="fitnessModalTitle">Pemeriksaan Kebugaran</h3>
+        <p class="fitness-modal-subtitle" id="fitnessModalSubtitle"></p>
+      </div>
+      <button class="fitness-modal-close" id="fitnessModalClose" type="button">&times;</button>
+    </div>
+    <form id="fitnessModalForm">
+      <input type="hidden" id="examStudentId">
+      <div class="fitness-modal-grid">
+        <div class="fitness-field"><label>Berat Badan (kg)</label><input id="examWeight" type="number" step="0.1" min="1" max="300" required></div>
+        <div class="fitness-field"><label>Tinggi Badan (cm)</label><input id="examHeight" type="number" step="0.1" min="1" max="250" required></div>
+        <div class="fitness-field"><label>Tensi</label><input id="examBloodPressure" placeholder="120/80" required></div>
+        <div class="fitness-field"><label>Saturasi (%)</label><input id="examSaturation" type="number" step="0.1" min="50" max="100" required></div>
+        <div class="fitness-field"><label>Suhu (C)</label><input id="examTemperature" type="number" step="0.1" min="30" max="45" required></div>
+        <div class="fitness-field full"><label>Catatan</label><textarea id="examNotes" placeholder="Opsional"></textarea></div>
+      </div>
+      <div class="fitness-modal-actions">
+        <button class="btn btn-secondary" id="fitnessModalCancel" type="button">Batal</button>
+        <button class="btn btn-primary" type="submit">Simpan Pemeriksaan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/ui/assets/dialogs.js?v=4"></script>
+<script>
+const token = localStorage.getItem("access_token") || localStorage.getItem("token") || "";
+const headers = {"Content-Type":"application/json"};
+if(token){ headers.Authorization = `Bearer ${token}`; }
+
+async function api(path, options={}){
+  const response = await fetch(path, {
+    credentials:"same-origin",
+    ...options,
+    headers:{...headers, ...(options.headers || {})}
+  });
+  if(response.status === 401){ location.href = "/login"; return; }
+  if(!response.ok){
+    let message = "Terjadi kesalahan";
+    try{ const data = await response.json(); message = data.detail || data.message || message; }catch(_){}
+    throw new Error(message);
+  }
+  if(response.status === 204){ return null; }
+  return response.json();
+}
+
+function html(value){ return String(value ?? "-").replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function setText(id, value){ const el = document.getElementById(id); if(el) el.textContent = value; }
+
+function downloadPdf(path, filename){
+  const link = document.createElement("a");
+  link.href = path;
+  link.download = filename;
+  if(token){ link.href = `${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`; }
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+document.querySelectorAll(".fitness-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".fitness-tab").forEach(item => item.classList.remove("active"));
+    document.querySelectorAll(".fitness-panel").forEach(item => item.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(`panel-${tab.dataset.panel}`).classList.add("active");
+  });
+});
+
+async function loadDashboard(){
+  try{
+    const data = await api("/api/fitness/dashboard");
+    setText("totalRegistered", data.total_registered);
+    setText("completed", data.completed);
+    setText("inProgress", data.in_progress);
+    setText("waitingQueue", data.waiting_queue);
+    document.getElementById("recentRows").innerHTML = data.recent_students.map(student => `
+      <tr><td>${html(student.nis)}</td><td>${html(student.full_name)}</td><td>${html(student.class_name)}</td><td>${html(student.status)}</td></tr>
+    `).join("") || `<tr><td colspan="4">Belum ada data</td></tr>`;
+  }catch(err){
+    document.getElementById("recentRows").innerHTML = `<tr><td colspan="4">${html(err.message)}</td></tr>`;
+  }
+}
+
+async function loadStudents(){
+  try{
+    const students = await api("/api/fitness/students");
+    document.getElementById("studentRows").innerHTML = students.map((student, index) => `
+      <tr>
+        <td>${student.queue_number || index + 1}</td>
+        <td>${html(student.nis)}</td>
+        <td>${html(student.full_name)}</td>
+        <td>${html(student.class_name)}</td>
+        <td>${html(student.status)}</td>
+        <td>${html(student.next_station || "-")}</td>
+        <td>
+          <button class="btn btn-secondary" type="button" onclick="openExam(${student.id}, '${html(student.full_name)}')">Periksa</button>
+          <button class="btn btn-danger" type="button" onclick="deleteStudent(${student.id}, '${html(student.full_name)}')">Hapus</button>
+        </td>
+      </tr>
+    `).join("") || `<tr><td colspan="7">Belum ada siswa</td></tr>`;
+  }catch(err){
+    document.getElementById("studentRows").innerHTML = `<tr><td colspan="7">${html(err.message)}</td></tr>`;
+  }
+}
+
+async function loadQueue(){
+  try{
+    const queue = await api("/api/fitness/queue");
+    document.getElementById("queueRows").innerHTML = queue.map(item => `
+      <tr>
+        <td>${item.queue_number || "-"}</td>
+        <td>${html(item.student_name)}</td>
+        <td>${html(item.class_name)}</td>
+        <td>${html(item.current_status)}</td>
+        <td>${html(item.next_station)}</td>
+        <td><button class="btn btn-primary" type="button" onclick="openExam(${item.id}, '${html(item.student_name)}')">Start Examination</button></td>
+      </tr>
+    `).join("") || `<tr><td colspan="6">Queue kosong</td></tr>`;
+  }catch(err){
+    document.getElementById("queueRows").innerHTML = `<tr><td colspan="6">${html(err.message)}</td></tr>`;
+  }
+}
+
+async function loadEvents(){
+  try{
+    const events = await api("/api/fitness/events");
+    document.getElementById("eventRows").innerHTML = events.map(event => `
+      <tr><td>${html(event.academic_year)}</td><td>${html(event.event_name)}</td><td>${html(event.start_date)} - ${html(event.end_date)}</td><td>${event.is_active ? "Aktif" : "Tidak aktif"}</td></tr>
+    `).join("") || `<tr><td colspan="4">Belum ada event</td></tr>`;
+  }catch(err){
+    document.getElementById("eventRows").innerHTML = `<tr><td colspan="4">${html(err.message)}</td></tr>`;
+  }
+}
+
+async function registerStudent(){
+  try{
+    await api("/api/fitness/students", {
+      method:"POST",
+      body:JSON.stringify({
+        nis: document.getElementById("nis").value.trim(),
+        full_name: document.getElementById("fullName").value.trim(),
+        gender: document.getElementById("gender").value,
+        birth_date: document.getElementById("birthDate").value || null,
+        class_name: document.getElementById("className").value.trim() || null,
+        section: document.getElementById("section").value.trim() || null,
+        parent_name: document.getElementById("parentName").value.trim() || null,
+        parent_phone: document.getElementById("parentPhone").value.trim() || null,
+      })
+    });
+    document.getElementById("registrationStatus").textContent = "Siswa berhasil didaftarkan.";
+    await loadStudents(); await loadQueue(); await loadDashboard();
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
+}
+
+async function createEvent(){
+  try{
+    await api("/api/fitness/events", {
+      method:"POST",
+      body:JSON.stringify({
+        academic_year: document.getElementById("academicYear").value.trim(),
+        event_name: document.getElementById("eventName").value.trim(),
+        start_date: document.getElementById("startDate").value,
+        end_date: document.getElementById("endDate").value,
+        is_active: document.getElementById("isActive").value === "true",
+      })
+    });
+    appAlert("Berhasil", "Event cek kebugaran dibuat.", "success");
+    await loadEvents(); await loadDashboard();
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
+}
+
+const modalBackdrop = document.getElementById("fitnessModalBackdrop");
+function openExam(id, name){
+  document.getElementById("examStudentId").value = id;
+  document.getElementById("fitnessModalSubtitle").textContent = name;
+  modalBackdrop.classList.add("open");
+}
+function closeExam(){ modalBackdrop.classList.remove("open"); document.getElementById("fitnessModalForm").reset(); }
+
+async function submitExam(event){
+  event.preventDefault();
+  try{
+    const id = document.getElementById("examStudentId").value;
+    const result = await api(`/api/fitness/students/${id}/examination`, {
+      method:"POST",
+      body:JSON.stringify({
+        weight: Number(document.getElementById("examWeight").value),
+        height: Number(document.getElementById("examHeight").value),
+        blood_pressure: document.getElementById("examBloodPressure").value.trim(),
+        oxygen_saturation: Number(document.getElementById("examSaturation").value),
+        temperature: Number(document.getElementById("examTemperature").value),
+        notes: document.getElementById("examNotes").value.trim() || null,
+      })
+    });
+    closeExam();
+    const whatsappText = result.whatsapp_message || "Hasil pemeriksaan tersimpan.";
+    const alertType = result.whatsapp_status === "failed" ? "warning" : "success";
+    appAlert("Berhasil", `Hasil pemeriksaan tersimpan. ${whatsappText}`, alertType);
+    await loadStudents(); await loadQueue(); await loadDashboard();
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
+}
+
+async function deleteStudent(id, name){
+  const ok = await appConfirm("Hapus Siswa?", `Hapus ${name} dari cek kebugaran?`, {confirmText:"Ya, Hapus", type:"danger"});
+  if(!ok) return;
+  try{
+    await api(`/api/fitness/students/${id}`, {method:"DELETE"});
+    await loadStudents(); await loadQueue(); await loadDashboard();
+  }catch(err){ appAlert("Gagal", err.message, "error"); }
+}
+
+let searchTimer = null;
+async function searchPatients(keyword){
+  const box = document.getElementById("studentSearchResults");
+  if(keyword.trim().length < 2){ box.classList.remove("open"); box.innerHTML = ""; return; }
+  try{
+    const patients = await api(`/api/patients/search?q=${encodeURIComponent(keyword.trim())}`);
+    box.innerHTML = patients.slice(0, 8).map(patient => `
+      <button class="student-search-item" type="button" data-patient='${JSON.stringify(patient).replace(/'/g, "&apos;")}'>
+        <div class="student-search-name">${html(patient.name)}</div>
+        <div class="student-search-meta">${html(patient.id)} | ${html(patient.class_name)} | ${html(patient.gender)}</div>
+      </button>
+    `).join("") || `<div class="student-search-empty">Siswa tidak ditemukan</div>`;
+    box.classList.add("open");
+    box.querySelectorAll(".student-search-item").forEach(button => {
+      button.addEventListener("click", () => {
+        const patient = JSON.parse(button.dataset.patient.replace(/&apos;/g, "'"));
+        document.getElementById("nis").value = patient.id || "";
+        document.getElementById("fullName").value = patient.name || "";
+        document.getElementById("gender").value = patient.gender || "Laki-Laki";
+        document.getElementById("birthDate").value = patient.birth_date || "";
+        document.getElementById("className").value = patient.class_name || "";
+        document.getElementById("parentName").value = patient.parent_name || "";
+        document.getElementById("parentPhone").value = patient.parent_phone || "";
+        box.classList.remove("open");
+      });
+    });
+  }catch(_){ box.classList.remove("open"); }
+}
+
+document.getElementById("fullName").addEventListener("input", event => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => searchPatients(event.target.value), 250);
+});
+document.addEventListener("click", event => {
+  if(!event.target.closest(".student-search")) document.getElementById("studentSearchResults").classList.remove("open");
+});
+
+document.getElementById("btnRegisterStudent").addEventListener("click", registerStudent);
+document.getElementById("btnLoadQueue").addEventListener("click", loadQueue);
+document.getElementById("btnCallNextQueue").addEventListener("click", async () => {
+  const queue = await api("/api/fitness/queue");
+  const first = queue[0];
+  const box = document.getElementById("nextQueueCallout");
+  box.style.display = "block";
+  box.innerHTML = first ? `<strong>Nomor ${first.queue_number}</strong><br>${html(first.student_name)} - ${html(first.class_name)}` : "Queue kosong";
+});
+document.getElementById("btnCreateEvent").addEventListener("click", createEvent);
+document.getElementById("btnPrintReport").addEventListener("click", () => downloadPdf("/api/fitness/report/pdf", "laporan_cek_kebugaran.pdf"));
+document.getElementById("fitnessModalForm").addEventListener("submit", submitExam);
+document.getElementById("fitnessModalClose").addEventListener("click", closeExam);
+document.getElementById("fitnessModalCancel").addEventListener("click", closeExam);
+modalBackdrop.addEventListener("click", event => { if(event.target === modalBackdrop) closeExam(); });
+
+loadDashboard();
+loadStudents();
+loadQueue();
+loadEvents();
+setInterval(loadQueue, 30000);
+</script>
+<script src="/ui/assets/rbac.js?v=8" defer></script>
+</body>
+</html>

@@ -1758,6 +1758,8 @@ document
     if(savedVisit && savedVisit.whatsapp_status){
       if(savedVisit.whatsapp_status === "sent"){
         whatsappText = "Notifikasi WhatsApp terkirim ke wali asuh.";
+      }else if(savedVisit.whatsapp_status === "queued"){
+        whatsappText = "Notifikasi WhatsApp masuk antrean Fonnte.";
       }else if(savedVisit.whatsapp_status === "skipped"){
         whatsappText = `Notifikasi WhatsApp belum dikirim: ${savedVisit.whatsapp_message || "konfigurasi belum lengkap"}.`;
       }else{
@@ -2010,12 +2012,16 @@ tbody.innerHTML = `
       const whatsappLabel =
         item.whatsapp_status === "sent"
         ? "WA Terkirim"
+        : item.whatsapp_status === "queued"
+        ? "WA Antrean"
         : item.whatsapp_status === "failed"
         ? "WA Gagal"
         : "";
       const whatsappClass =
         item.whatsapp_status === "sent"
         ? "rest-btn"
+        : item.whatsapp_status === "queued"
+        ? "referral-btn"
         : "delete-btn";
 
       row.innerHTML = `
