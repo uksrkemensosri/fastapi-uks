@@ -27,6 +27,8 @@ from app.db.models import (
     CKGStudentORM,
     CKGTTVORM,
     CKGVisionORM,
+    FitnessExaminationORM,
+    FitnessStudentORM,
     PatientORM,
     UserORM,
 )
@@ -576,6 +578,47 @@ def get_student_for_station(db: Session, student_id: int, station: str, current_
     return student
 
 
+@router.get("/students/{student_id}/prefill")
+def get_ckg_prefill(
+    student_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*ROLE_CKG_ACCESS)),
+) -> dict:
+    student = tenant_get(db, CKGStudentORM, student_id, current_user)
+    if student is None:
+        raise HTTPException(status_code=404, detail="CKG student not found")
+
+    fitness = (
+        tenant_query(db.query(FitnessStudentORM), FitnessStudentORM, current_user)
+        .join(FitnessExaminationORM, FitnessExaminationORM.student_id == FitnessStudentORM.id)
+        .filter(
+            FitnessStudentORM.nis == student.nis,
+            FitnessStudentORM.status == "COMPLETED",
+        )
+        .order_by(FitnessExaminationORM.updated_at.desc(), FitnessExaminationORM.id.desc())
+        .first()
+    )
+    if fitness is None or fitness.examination is None:
+        return {"anthropometry": None, "ttv": None}
+    exam = fitness.examination
+    return {
+        "anthropometry": {
+            "weight": exam.weight,
+            "height": exam.height,
+            "bmi": exam.bmi,
+            "source": "Cek Kebugaran",
+            "source_date": str(exam.updated_at.date()) if exam.updated_at else None,
+        },
+        "ttv": {
+            "blood_pressure": exam.blood_pressure,
+            "oxygen_saturation": exam.oxygen_saturation,
+            "temperature": exam.temperature,
+            "source": "Cek Kebugaran",
+            "source_date": str(exam.updated_at.date()) if exam.updated_at else None,
+        },
+    }
+
+
 @router.post("/students/{student_id}/anthropometry", response_model=CKGStudentResponse)
 def submit_anthropometry(
     student_id: int,
@@ -592,6 +635,7 @@ def submit_anthropometry(
     record.weight = payload.weight
     record.height = payload.height
     record.bmi = bmi
+    record.nutrition_status = payload.nutrition_status
     record.examined_by = current_user.id
     student.status = "ANTROPOMETRI_DONE"
     db.add(record)
@@ -614,6 +658,8 @@ def submit_ttv(
     record = student.ttv or CKGTTVORM(school_id=student.school_id, student_id=student.id)
     record.school_id = student.school_id
     record.blood_pressure = payload.blood_pressure
+    record.blood_pressure_status = payload.blood_pressure_status
+    record.oxygen_saturation = payload.oxygen_saturation
     record.pulse = payload.pulse
     record.respiratory_rate = payload.respiratory_rate
     record.temperature = payload.temperature
@@ -640,6 +686,9 @@ def submit_vision(
     record.school_id = student.school_id
     record.right_eye = payload.right_eye
     record.left_eye = payload.left_eye
+    record.external_eye_exam = payload.external_eye_exam
+    record.uses_glasses = payload.uses_glasses
+    record.vision_status = payload.vision_status
     record.examined_by = current_user.id
     student.status = "VISUS_DONE"
     db.add(record)
@@ -688,6 +737,20 @@ def submit_general_screening(
     record.physical_findings = payload.physical_findings
     record.notes = payload.notes
     record.recommendation = payload.recommendation
+    record.hemoglobin = payload.hemoglobin
+    record.anemia_status = payload.anemia_status
+    record.blood_glucose = payload.blood_glucose
+    record.diabetes_status = payload.diabetes_status
+    record.hbsag_result = payload.hbsag_result
+    record.anti_hcv_result = payload.anti_hcv_result
+    record.hearing_test = payload.hearing_test
+    record.cerumen_impaction = payload.cerumen_impaction
+    record.fitness_result = payload.fitness_result
+    record.frambusia_status = payload.frambusia_status
+    record.leprosy_status = payload.leprosy_status
+    record.scabies_status = payload.scabies_status
+    record.referral_conclusion = payload.referral_conclusion
+    record.remarks = payload.remarks
     record.examined_by = current_user.id
     student.status = "SCREENING_DONE"
     db.add(record)
@@ -863,27 +926,53 @@ def event_report_pdf(
             anthropometry_text = (
                 f"BB: {student.anthropometry.weight} kg\n"
                 f"TB: {student.anthropometry.height} cm\n"
-                f"BMI: {student.anthropometry.bmi}"
+                f"BMI: {student.anthropometry.bmi}\n"
+                f"Gizi: {student.anthropometry.nutrition_status or '-'}"
             )
         ttv_text = "-"
         if student.ttv:
             ttv_text = (
                 f"TD: {student.ttv.blood_pressure}\n"
+                f"Kategori: {student.ttv.blood_pressure_status or '-'}\n"
+                f"SpO2: {student.ttv.oxygen_saturation if student.ttv.oxygen_saturation is not None else '-'}%\n"
                 f"Nadi: {student.ttv.pulse} x/menit\n"
                 f"RR: {student.ttv.respiratory_rate} x/menit\n"
                 f"Suhu: {student.ttv.temperature} C"
             )
         eye_dental_text = []
         if student.vision:
+            if student.vision.external_eye_exam:
+                eye_dental_text.append(f"Mata luar: {student.vision.external_eye_exam}")
+            if student.vision.uses_glasses:
+                eye_dental_text.append(f"Kacamata: {student.vision.uses_glasses}")
             eye_dental_text.append(f"Visus: R {student.vision.right_eye} / L {student.vision.left_eye}")
+            if student.vision.vision_status:
+                eye_dental_text.append(f"Status visus: {student.vision.vision_status}")
         if student.dental:
             eye_dental_text.append(
                 f"Gigi: karies {student.dental.caries}; OH {student.dental.oral_hygiene}; {student.dental.notes or '-'}"
             )
         screening_text = []
         if student.general_screening:
+            lab_parts = []
+            if student.general_screening.hemoglobin is not None:
+                lab_parts.append(f"Hb {student.general_screening.hemoglobin} ({student.general_screening.anemia_status or '-'})")
+            if student.general_screening.blood_glucose is not None:
+                lab_parts.append(f"GDS {student.general_screening.blood_glucose} ({student.general_screening.diabetes_status or '-'})")
+            if lab_parts:
+                screening_text.append("; ".join(lab_parts))
+            screening_text.append(
+                f"Hep B/C: {student.general_screening.hbsag_result or '-'} / {student.general_screening.anti_hcv_result or '-'}"
+            )
+            screening_text.append(
+                f"Telinga: {student.general_screening.hearing_test or '-'}; Serumen {student.general_screening.cerumen_impaction or '-'}"
+            )
+            screening_text.append(
+                f"Kulit: Frambusia {student.general_screening.frambusia_status or '-'}; Kusta {student.general_screening.leprosy_status or '-'}; Skabies {student.general_screening.scabies_status or '-'}"
+            )
             screening_text.append(f"Temuan: {student.general_screening.physical_findings or '-'}")
             screening_text.append(f"Rekom: {student.general_screening.recommendation or '-'}")
+            screening_text.append(f"Kesimpulan: {student.general_screening.referral_conclusion or '-'}")
         screening_text.append(f"Rujukan: {referral_text}")
 
         student_rows.append(
@@ -945,12 +1034,19 @@ def build_summary(student: CKGStudentORM) -> CKGSummaryResponse:
     return CKGSummaryResponse(
         student=student_response(student),
         anthropometry=(
-            {"weight": student.anthropometry.weight, "height": student.anthropometry.height, "bmi": student.anthropometry.bmi}
+            {
+                "weight": student.anthropometry.weight,
+                "height": student.anthropometry.height,
+                "bmi": student.anthropometry.bmi,
+                "nutrition_status": student.anthropometry.nutrition_status,
+            }
             if student.anthropometry else None
         ),
         ttv=(
             {
                 "blood_pressure": student.ttv.blood_pressure,
+                "blood_pressure_status": student.ttv.blood_pressure_status,
+                "oxygen_saturation": student.ttv.oxygen_saturation,
                 "pulse": student.ttv.pulse,
                 "respiratory_rate": student.ttv.respiratory_rate,
                 "temperature": student.ttv.temperature,
@@ -958,7 +1054,13 @@ def build_summary(student: CKGStudentORM) -> CKGSummaryResponse:
             if student.ttv else None
         ),
         vision=(
-            {"right_eye": student.vision.right_eye, "left_eye": student.vision.left_eye}
+            {
+                "right_eye": student.vision.right_eye,
+                "left_eye": student.vision.left_eye,
+                "external_eye_exam": student.vision.external_eye_exam,
+                "uses_glasses": student.vision.uses_glasses,
+                "vision_status": student.vision.vision_status,
+            }
             if student.vision else None
         ),
         dental=(
@@ -970,6 +1072,20 @@ def build_summary(student: CKGStudentORM) -> CKGSummaryResponse:
                 "physical_findings": student.general_screening.physical_findings,
                 "notes": student.general_screening.notes,
                 "recommendation": student.general_screening.recommendation,
+                "hemoglobin": student.general_screening.hemoglobin,
+                "anemia_status": student.general_screening.anemia_status,
+                "blood_glucose": student.general_screening.blood_glucose,
+                "diabetes_status": student.general_screening.diabetes_status,
+                "hbsag_result": student.general_screening.hbsag_result,
+                "anti_hcv_result": student.general_screening.anti_hcv_result,
+                "hearing_test": student.general_screening.hearing_test,
+                "cerumen_impaction": student.general_screening.cerumen_impaction,
+                "fitness_result": student.general_screening.fitness_result,
+                "frambusia_status": student.general_screening.frambusia_status,
+                "leprosy_status": student.general_screening.leprosy_status,
+                "scabies_status": student.general_screening.scabies_status,
+                "referral_conclusion": student.general_screening.referral_conclusion,
+                "remarks": student.general_screening.remarks,
             }
             if student.general_screening else None
         ),
@@ -1057,12 +1173,15 @@ def student_summary_pdf(
         ["Berat Badan", f"{summary.anthropometry['weight']} kg" if summary.anthropometry else "-"],
         ["Tinggi Badan", f"{summary.anthropometry['height']} cm" if summary.anthropometry else "-"],
         ["BMI", summary.anthropometry["bmi"] if summary.anthropometry else "-"],
+        ["Status Gizi", summary.anthropometry.get("nutrition_status") or "-" if summary.anthropometry else "-"],
     ]
     elements.append(Paragraph("Antropometri", section_style))
     elements.append(simple_table(anthropometry_rows))
 
     ttv_rows = [
         ["Tekanan Darah", summary.ttv["blood_pressure"] if summary.ttv else "-"],
+        ["Kategori Tekanan Darah", summary.ttv.get("blood_pressure_status") or "-" if summary.ttv else "-"],
+        ["Saturasi Oksigen", f"{summary.ttv['oxygen_saturation']}%" if summary.ttv and summary.ttv.get("oxygen_saturation") is not None else "-"],
         ["Nadi", f"{summary.ttv['pulse']} x/menit" if summary.ttv else "-"],
         ["Respiratory Rate", f"{summary.ttv['respiratory_rate']} x/menit" if summary.ttv else "-"],
         ["Suhu", f"{summary.ttv['temperature']} C" if summary.ttv else "-"],
@@ -1071,8 +1190,11 @@ def student_summary_pdf(
     elements.append(simple_table(ttv_rows))
 
     vision_dental_rows = [
+        ["Pemeriksaan Mata Luar", summary.vision.get("external_eye_exam") or "-" if summary.vision else "-"],
+        ["Menggunakan Kacamata", summary.vision.get("uses_glasses") or "-" if summary.vision else "-"],
         ["Visus Kanan", summary.vision["right_eye"] if summary.vision else "-"],
         ["Visus Kiri", summary.vision["left_eye"] if summary.vision else "-"],
+        ["Status Tajam Penglihatan", summary.vision.get("vision_status") or "-" if summary.vision else "-"],
         ["Karies", summary.dental["caries"] if summary.dental else "-"],
         ["Oral Hygiene", summary.dental["oral_hygiene"] if summary.dental else "-"],
         ["Catatan Gigi", summary.dental["notes"] if summary.dental and summary.dental.get("notes") else "-"],
@@ -1081,9 +1203,23 @@ def student_summary_pdf(
     elements.append(simple_table(vision_dental_rows))
 
     screening_rows = [
+        ["Hemoglobin", f"{summary.general_screening['hemoglobin']} gr/dl" if summary.general_screening and summary.general_screening.get("hemoglobin") is not None else "-"],
+        ["Status Anemia", summary.general_screening.get("anemia_status") or "-" if summary.general_screening else "-"],
+        ["Gula Darah Sewaktu", f"{summary.general_screening['blood_glucose']} mg/dl" if summary.general_screening and summary.general_screening.get("blood_glucose") is not None else "-"],
+        ["Status Diabetes Melitus", summary.general_screening.get("diabetes_status") or "-" if summary.general_screening else "-"],
+        ["Hepatitis B - HbsAg", summary.general_screening.get("hbsag_result") or "-" if summary.general_screening else "-"],
+        ["Hepatitis C - AntiHCV", summary.general_screening.get("anti_hcv_result") or "-" if summary.general_screening else "-"],
+        ["Tes Tajam Pendengaran", summary.general_screening.get("hearing_test") or "-" if summary.general_screening else "-"],
+        ["Serumen Impaksi", summary.general_screening.get("cerumen_impaction") or "-" if summary.general_screening else "-"],
+        ["Kebugaran", summary.general_screening.get("fitness_result") or "-" if summary.general_screening else "-"],
+        ["Frambusia", summary.general_screening.get("frambusia_status") or "-" if summary.general_screening else "-"],
+        ["Kusta", summary.general_screening.get("leprosy_status") or "-" if summary.general_screening else "-"],
+        ["Skabies", summary.general_screening.get("scabies_status") or "-" if summary.general_screening else "-"],
         ["Temuan Fisik", summary.general_screening["physical_findings"] if summary.general_screening else "-"],
+        ["Kesimpulan", summary.general_screening.get("referral_conclusion") or "-" if summary.general_screening else "-"],
         ["Catatan", summary.general_screening["notes"] if summary.general_screening and summary.general_screening.get("notes") else "-"],
         ["Rekomendasi", summary.general_screening["recommendation"] if summary.general_screening else "-"],
+        ["Keterangan", summary.general_screening.get("remarks") or "-" if summary.general_screening else "-"],
     ]
     elements.append(Paragraph("Screening Umum", section_style))
     elements.append(simple_table(screening_rows))

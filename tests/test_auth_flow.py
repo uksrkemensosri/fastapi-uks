@@ -667,6 +667,51 @@ def test_fitness_event_registration_queue_examination_and_pdf(client: TestClient
     assert summary.json()["examination"]["bmi"] == 20.0
     assert summary.json()["examination"]["oxygen_saturation"] == 98.0
 
+    previous_ckg_active = client.get("/api/ckg/events/active", headers=headers)
+    previous_ckg_active_id = previous_ckg_active.json()["id"] if previous_ckg_active.status_code == 200 else None
+
+    ckg_event = client.post(
+        "/api/ckg/events",
+        headers=headers,
+        json={
+            "academic_year": "2026/2027",
+            "event_name": "CKG Setelah Kebugaran",
+            "start_date": "2026-08-05",
+            "end_date": "2026-08-05",
+            "is_active": True,
+        },
+    )
+    assert ckg_event.status_code == 201
+    ckg_student = client.post(
+        "/api/ckg/students",
+        headers=headers,
+        json={
+            "nis": "FIT-001",
+            "full_name": "Siswa Fit Satu",
+            "gender": "Perempuan",
+            "birth_date": "2012-03-04",
+            "class_name": "7F",
+            "section": "F",
+            "parent_name": "Wali Fit",
+            "parent_phone": "081233334444",
+        },
+    )
+    assert ckg_student.status_code == 201
+    prefill = client.get(f"/api/ckg/students/{ckg_student.json()['id']}/prefill", headers=headers)
+    assert prefill.status_code == 200
+    assert prefill.json()["anthropometry"]["weight"] == 45.0
+    assert prefill.json()["anthropometry"]["height"] == 150.0
+    assert prefill.json()["ttv"]["blood_pressure"] == "110/70"
+    assert prefill.json()["ttv"]["oxygen_saturation"] == 98.0
+    assert prefill.json()["ttv"]["temperature"] == 36.5
+    if previous_ckg_active_id:
+        restored = client.patch(
+            f"/api/ckg/events/{previous_ckg_active_id}",
+            headers=headers,
+            json={"is_active": True},
+        )
+        assert restored.status_code == 200
+
     dashboard = client.get("/api/fitness/dashboard", headers=headers)
     assert dashboard.status_code == 200
     assert dashboard.json()["total_registered"] == 1

@@ -135,7 +135,7 @@
       <section class="card" style="margin-top:24px;">
         <h2>Siswa Cek Kebugaran</h2>
         <table class="table">
-          <thead><tr><th>No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>Next</th><th>Aksi</th></tr></thead>
+          <thead><tr><th>No</th><th>NIS</th><th>Nama</th><th>Kelas</th><th>Status</th><th>WA</th><th>Next</th><th>Aksi</th></tr></thead>
           <tbody id="studentRows"></tbody>
         </table>
       </section>
@@ -237,6 +237,13 @@ async function api(path, options={}){
 
 function html(value){ return String(value ?? "-").replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function setText(id, value){ const el = document.getElementById(id); if(el) el.textContent = value; }
+function whatsappLabel(status, message){
+  if(status === "sent") return "WhatsApp sukses";
+  if(status === "queued") return "WhatsApp antre";
+  if(status === "failed") return "WhatsApp gagal";
+  if(status === "skipped") return message || "Belum dikirim";
+  return "-";
+}
 
 function downloadPdf(path, filename){
   const link = document.createElement("a");
@@ -282,15 +289,16 @@ async function loadStudents(){
         <td>${html(student.full_name)}</td>
         <td>${html(student.class_name)}</td>
         <td>${html(student.status)}</td>
+        <td>${html(whatsappLabel(student.whatsapp_status, student.whatsapp_message))}</td>
         <td>${html(student.next_station || "-")}</td>
         <td>
-          <button class="btn btn-secondary" type="button" onclick="openExam(${student.id}, '${html(student.full_name)}')">Periksa</button>
-          <button class="btn btn-danger" type="button" onclick="deleteStudent(${student.id}, '${html(student.full_name)}')">Hapus</button>
+          <button class="btn btn-secondary btn-exam" type="button" data-student-id="${student.id}" data-student-name="${html(student.full_name)}">Periksa</button>
+          <button class="btn btn-danger btn-delete-student" type="button" data-student-id="${student.id}" data-student-name="${html(student.full_name)}">Hapus</button>
         </td>
       </tr>
-    `).join("") || `<tr><td colspan="7">Belum ada siswa</td></tr>`;
+    `).join("") || `<tr><td colspan="8">Belum ada siswa</td></tr>`;
   }catch(err){
-    document.getElementById("studentRows").innerHTML = `<tr><td colspan="7">${html(err.message)}</td></tr>`;
+    document.getElementById("studentRows").innerHTML = `<tr><td colspan="8">${html(err.message)}</td></tr>`;
   }
 }
 
@@ -304,7 +312,7 @@ async function loadQueue(){
         <td>${html(item.class_name)}</td>
         <td>${html(item.current_status)}</td>
         <td>${html(item.next_station)}</td>
-        <td><button class="btn btn-primary" type="button" onclick="openExam(${item.id}, '${html(item.student_name)}')">Start Examination</button></td>
+        <td><button class="btn btn-primary btn-exam" type="button" data-student-id="${item.id}" data-student-name="${html(item.student_name)}">Start Examination</button></td>
       </tr>
     `).join("") || `<tr><td colspan="6">Queue kosong</td></tr>`;
   }catch(err){
@@ -399,6 +407,18 @@ async function deleteStudent(id, name){
     await loadStudents(); await loadQueue(); await loadDashboard();
   }catch(err){ appAlert("Gagal", err.message, "error"); }
 }
+
+document.addEventListener("click", event => {
+  const examButton = event.target.closest(".btn-exam");
+  if(examButton){
+    openExam(examButton.dataset.studentId, examButton.dataset.studentName || "");
+    return;
+  }
+  const deleteButton = event.target.closest(".btn-delete-student");
+  if(deleteButton){
+    deleteStudent(deleteButton.dataset.studentId, deleteButton.dataset.studentName || "");
+  }
+});
 
 let searchTimer = null;
 async function searchPatients(keyword){

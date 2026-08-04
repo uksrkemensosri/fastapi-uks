@@ -112,10 +112,13 @@ class CKGQueueItem(BaseModel):
 class CKGAnthropometrySubmit(BaseModel):
     weight: float = Field(gt=0, le=300)
     height: float = Field(gt=0, le=250)
+    nutrition_status: Optional[str] = Field(default=None, max_length=80)
 
 
 class CKGTTVSubmit(BaseModel):
     blood_pressure: str = Field(min_length=3, max_length=30)
+    blood_pressure_status: Optional[str] = Field(default=None, max_length=80)
+    oxygen_saturation: Optional[float] = Field(default=None, ge=0, le=100)
     pulse: int = Field(ge=20, le=250)
     respiratory_rate: int = Field(ge=5, le=80)
     temperature: float = Field(ge=30, le=45)
@@ -124,6 +127,9 @@ class CKGTTVSubmit(BaseModel):
 class CKGVisionSubmit(BaseModel):
     right_eye: str = Field(min_length=1, max_length=50)
     left_eye: str = Field(min_length=1, max_length=50)
+    external_eye_exam: Optional[str] = Field(default=None, max_length=120)
+    uses_glasses: Optional[str] = Field(default=None, max_length=20)
+    vision_status: Optional[str] = Field(default=None, max_length=120)
 
 
 class CKGDentalSubmit(BaseModel):
@@ -136,6 +142,20 @@ class CKGGeneralSubmit(BaseModel):
     physical_findings: Optional[str] = None
     notes: Optional[str] = None
     recommendation: Optional[str] = None
+    hemoglobin: Optional[float] = Field(default=None, ge=0, le=30)
+    anemia_status: Optional[str] = Field(default=None, max_length=80)
+    blood_glucose: Optional[float] = Field(default=None, ge=0, le=1000)
+    diabetes_status: Optional[str] = Field(default=None, max_length=80)
+    hbsag_result: Optional[str] = Field(default=None, max_length=80)
+    anti_hcv_result: Optional[str] = Field(default=None, max_length=80)
+    hearing_test: Optional[str] = Field(default=None, max_length=160)
+    cerumen_impaction: Optional[str] = Field(default=None, max_length=20)
+    fitness_result: Optional[str] = Field(default=None, max_length=160)
+    frambusia_status: Optional[str] = Field(default=None, max_length=120)
+    leprosy_status: Optional[str] = Field(default=None, max_length=120)
+    scabies_status: Optional[str] = Field(default=None, max_length=120)
+    referral_conclusion: Optional[str] = Field(default=None, max_length=40)
+    remarks: Optional[str] = None
 
 
 class CKGReferralCreate(BaseModel):

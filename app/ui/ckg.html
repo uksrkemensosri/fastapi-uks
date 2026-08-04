@@ -13,6 +13,56 @@
     .ckg-panel.active{display:block}
     .form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}
     .form-grid input,.form-grid select,.form-grid textarea{width:100%;padding:14px 16px;border-radius:16px;border:1px solid #dbe3ef;background:white}
+    .form-grid select,
+    .ckg-field select{
+      appearance:none;
+      -webkit-appearance:none;
+      width:100%;
+      min-height:50px;
+      border:1px solid rgba(124,58,237,.18);
+      border-radius:18px;
+      background:
+        linear-gradient(135deg,rgba(255,255,255,.98),rgba(248,250,252,.94)) padding-box,
+        linear-gradient(135deg,rgba(244,114,182,.38),rgba(96,165,250,.38)) border-box;
+      box-shadow:0 12px 28px rgba(76,29,149,.08);
+      color:#334155;
+      font-weight:800;
+      padding:13px 46px 13px 15px;
+      cursor:pointer;
+      transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease;
+    }
+    .form-grid select:focus,
+    .ckg-field select:focus{
+      outline:none;
+      border-color:rgba(124,58,237,.52);
+      box-shadow:0 0 0 4px rgba(196,181,253,.34),0 16px 34px rgba(76,29,149,.12);
+    }
+    .select-shell{position:relative}
+    .select-shell::after{
+      content:"";
+      position:absolute;
+      right:16px;
+      top:50%;
+      width:10px;
+      height:10px;
+      border-right:3px solid #7c3aed;
+      border-bottom:3px solid #7c3aed;
+      transform:translateY(-66%) rotate(45deg);
+      pointer-events:none;
+      opacity:.9;
+    }
+    .select-shell::before{
+      content:"";
+      position:absolute;
+      right:10px;
+      top:50%;
+      width:30px;
+      height:30px;
+      border-radius:12px;
+      background:linear-gradient(135deg,rgba(244,114,182,.16),rgba(96,165,250,.18));
+      transform:translateY(-50%);
+      pointer-events:none;
+    }
     .form-grid textarea{grid-column:span 3;min-height:90px}
     .cards-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:22px}
     .mini-card{background:rgba(255,255,255,.68);border:1px solid rgba(255,255,255,.55);border-radius:22px;padding:20px;box-shadow:var(--shadow)}
@@ -100,6 +150,16 @@
       color:#334155;
     }
     .ckg-field textarea{min-height:94px;resize:vertical}
+    html.dark .ckg-modal{background:rgba(226,232,240,.96);border-color:rgba(255,255,255,.5)}
+    html.dark .ckg-field input,
+    html.dark .ckg-field textarea,
+    html.dark .ckg-field select,
+    html.dark .form-grid select{
+      background:
+        linear-gradient(135deg,rgba(248,250,252,.96),rgba(226,232,240,.9)) padding-box,
+        linear-gradient(135deg,rgba(244,114,182,.32),rgba(96,165,250,.32)) border-box;
+      color:#1e293b;
+    }
     .ckg-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;flex-wrap:wrap}
     .admin-only{display:none}
     body[data-role="admin"] .admin-only{display:block}
@@ -304,7 +364,8 @@ const stationFormConfigs = {
     submitText: "Simpan Antropometri",
     fields: [
       {name:"weight", label:"Berat Badan (kg)", type:"number", step:"0.1", required:true, placeholder:"Contoh: 45.5"},
-      {name:"height", label:"Tinggi Badan (cm)", type:"number", step:"0.1", required:true, placeholder:"Contoh: 155"}
+      {name:"height", label:"Tinggi Badan (cm)", type:"number", step:"0.1", required:true, placeholder:"Contoh: 155"},
+      {name:"nutrition_status", label:"Status Gizi", type:"select", options:["", "Gizi Buruk", "Gizi Kurang", "Normal", "Gizi Lebih", "Obesitas"]}
     ]
   },
   TTV: {
@@ -313,6 +374,8 @@ const stationFormConfigs = {
     submitText: "Simpan TTV",
     fields: [
       {name:"blood_pressure", label:"Tekanan Darah", type:"text", required:true, placeholder:"Contoh: 120/80"},
+      {name:"blood_pressure_status", label:"Kategori Tekanan Darah", type:"select", options:["", "Normal", "Pre hipertensi", "Hipertensi tingkat 1", "Hipertensi tingkat 2"]},
+      {name:"oxygen_saturation", label:"Saturasi Oksigen (%)", type:"number", step:"0.1", placeholder:"Contoh: 98"},
       {name:"pulse", label:"Nadi", type:"number", required:true, placeholder:"Contoh: 88"},
       {name:"respiratory_rate", label:"Respiratory Rate", type:"number", required:true, placeholder:"Contoh: 20"},
       {name:"temperature", label:"Suhu", type:"number", step:"0.1", required:true, placeholder:"Contoh: 36.7"}
@@ -323,8 +386,11 @@ const stationFormConfigs = {
     subtitle: "Input hasil pemeriksaan mata kanan dan kiri.",
     submitText: "Simpan Visus",
     fields: [
+      {name:"external_eye_exam", label:"Pemeriksaan Mata Luar", type:"select", options:["", "Mata sehat", "Mata tidak sehat"]},
+      {name:"uses_glasses", label:"Menggunakan Kacamata", type:"select", options:["", "Tidak", "Ya"]},
       {name:"right_eye", label:"Mata Kanan", type:"text", required:true, placeholder:"Contoh: 6/6"},
-      {name:"left_eye", label:"Mata Kiri", type:"text", required:true, placeholder:"Contoh: 6/6"}
+      {name:"left_eye", label:"Mata Kiri", type:"text", required:true, placeholder:"Contoh: 6/6"},
+      {name:"vision_status", label:"Status Tajam Penglihatan", type:"select", options:["", "Normal (6/6 - 6/9)", "Gangguan (< 6/9)"]}
     ]
   },
   GIGI: {
@@ -332,19 +398,33 @@ const stationFormConfigs = {
     subtitle: "Catat kondisi gigi dan kebersihan mulut.",
     submitText: "Simpan Pemeriksaan Gigi",
     fields: [
-      {name:"caries", label:"Caries", type:"text", required:true, placeholder:"Contoh: Tidak ada"},
-      {name:"oral_hygiene", label:"Oral Hygiene", type:"text", required:true, placeholder:"Contoh: Baik"},
+      {name:"caries", label:"Karies", type:"select", required:true, options:["", "Normal", "Karies"]},
+      {name:"oral_hygiene", label:"Oral Hygiene", type:"select", required:true, options:["", "Baik sekali", "Baik", "Cukup", "Kurang", "Kurang sekali"]},
       {name:"notes", label:"Catatan", type:"textarea", full:true, placeholder:"Catatan tambahan"}
     ]
   },
   SCREENING_UMUM: {
-    title: "Screening Umum",
-    subtitle: "Input temuan fisik, catatan, dan rekomendasi.",
+    title: "Screening Umum PKG",
+    subtitle: "Input indikator lanjutan sesuai Form PKG SMA/SMK/MA sederajat.",
     submitText: "Simpan Screening",
     fields: [
-      {name:"physical_findings", label:"Temuan Fisik", type:"textarea", full:true, required:true, placeholder:"Contoh: Tidak ada kelainan bermakna"},
-      {name:"notes", label:"Catatan", type:"textarea", full:true, placeholder:"Catatan tambahan"},
-      {name:"recommendation", label:"Rekomendasi", type:"textarea", full:true, required:true, placeholder:"Contoh: Sehat / edukasi kesehatan"}
+      {name:"hemoglobin", label:"Hemoglobin (gr/dl)", type:"number", step:"0.1", placeholder:"Contoh: 12.5"},
+      {name:"anemia_status", label:"Status Anemia", type:"select", options:["", "Tidak Anemia", "Anemia Ringan", "Anemia Sedang", "Anemia Berat"]},
+      {name:"blood_glucose", label:"Gula Darah Sewaktu (mg/dl)", type:"number", step:"0.1", placeholder:"Contoh: 110"},
+      {name:"diabetes_status", label:"Status Diabetes Melitus", type:"select", options:["", "Normal", "Pre-diabetes", "Hiperglikemia"]},
+      {name:"hbsag_result", label:"Hepatitis B - RDT HbsAg", type:"select", options:["", "Non Reaktif", "Reaktif"]},
+      {name:"anti_hcv_result", label:"Hepatitis C - RDT AntiHCV", type:"select", options:["", "Non Reaktif", "Reaktif"]},
+      {name:"hearing_test", label:"Tes Tajam Pendengaran", type:"select", options:["", "Dapat mengulang kata > 80%", "Tidak dapat mengulang kata < 80%"]},
+      {name:"cerumen_impaction", label:"Serumen Impaksi", type:"select", options:["", "Tidak", "Ya"]},
+      {name:"fitness_result", label:"Kebugaran", type:"text", placeholder:"Contoh: Baik / Cukup / Kurang"},
+      {name:"frambusia_status", label:"Frambusia", type:"select", options:["", "Bukan Frambusia", "Suspek Frambusia"]},
+      {name:"leprosy_status", label:"Kusta", type:"select", options:["", "Bukan Kusta", "Curiga/suspek Kusta"]},
+      {name:"scabies_status", label:"Skabies", type:"select", options:["", "Tidak", "Suspek Skabies"]},
+      {name:"physical_findings", label:"Temuan Pemeriksaan", type:"textarea", full:true, placeholder:"Catatan temuan pemeriksaan umum"},
+      {name:"referral_conclusion", label:"Kesimpulan", type:"select", options:["", "Tidak dirujuk", "Rujuk"]},
+      {name:"recommendation", label:"Rekomendasi", type:"textarea", full:true, placeholder:"Contoh: Sehat / edukasi kesehatan / rujuk"},
+      {name:"remarks", label:"Keterangan", type:"textarea", full:true, placeholder:"Keterangan tambahan"},
+      {name:"notes", label:"Catatan Internal", type:"textarea", full:true, placeholder:"Catatan tambahan"}
     ]
   },
   REFERRAL: {
@@ -368,9 +448,14 @@ function fieldMarkup(field){
     ${field.required ? "required" : ""}
     placeholder="${escapeHtml(field.placeholder || "")}"
   `;
-  const input = field.type === "textarea"
-    ? `<textarea ${common}></textarea>`
-    : `<input ${common} type="${field.type || "text"}" ${field.step ? `step="${field.step}"` : ""}>`;
+  let input = "";
+  if(field.type === "textarea"){
+    input = `<textarea ${common}></textarea>`;
+  }else if(field.type === "select"){
+    input = `<div class="select-shell"><select ${common}>${(field.options || []).map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option || "Pilih")}</option>`).join("")}</select></div>`;
+  }else{
+    input = `<input ${common} type="${field.type || "text"}" ${field.step ? `step="${field.step}"` : ""}>`;
+  }
 
   return `
     <div class="ckg-field ${field.full ? "full" : ""}">
@@ -380,13 +465,25 @@ function fieldMarkup(field){
   `;
 }
 
-function openCkgModal(config){
+function openCkgModal(config, initialValues = {}){
   ckgModalTitle.textContent = config.title;
   ckgModalSubtitle.textContent = config.subtitle || "";
   ckgModalSubmit.textContent = config.submitText || "Simpan";
   ckgModalFields.innerHTML = config.fields.map(fieldMarkup).join("");
+  Object.entries(initialValues).forEach(([key, value]) => {
+    const field = ckgModalFields.querySelector(`[name="${key}"]`);
+    if(field && value !== null && value !== undefined && value !== ""){
+      field.value = value;
+    }
+  });
+  if(initialValues.__note){
+    ckgModalFields.insertAdjacentHTML(
+      "afterbegin",
+      `<div class="ckg-field full"><div style="padding:12px 14px;border-radius:16px;background:#ecfeff;color:#0f766e;font-weight:800;">${escapeHtml(initialValues.__note)}</div></div>`
+    );
+  }
   ckgModalBackdrop.classList.add("open");
-  const firstField = ckgModalFields.querySelector("input, textarea");
+  const firstField = ckgModalFields.querySelector("input, textarea, select");
   if(firstField){ firstField.focus(); }
 
   return new Promise(resolve => {
@@ -610,31 +707,77 @@ async function startStationExam(station, id){
 async function submitStation(station, id){
   try{
     let path = "";
-    let body = await openCkgModal(stationFormConfigs[station]);
+    let initialValues = {};
+    if(station === "ANTROPOMETRI" || station === "TTV"){
+      try{
+        const prefill = await api(`/api/ckg/students/${id}/prefill`);
+        if(station === "ANTROPOMETRI" && prefill.anthropometry){
+          initialValues = {
+            weight: prefill.anthropometry.weight,
+            height: prefill.anthropometry.height,
+            __note: `BB/TB otomatis terisi dari ${prefill.anthropometry.source}${prefill.anthropometry.source_date ? " tanggal " + prefill.anthropometry.source_date : ""}.`
+          };
+        }else if(station === "TTV" && prefill.ttv){
+          initialValues = {
+            blood_pressure: prefill.ttv.blood_pressure,
+            oxygen_saturation: prefill.ttv.oxygen_saturation,
+            temperature: prefill.ttv.temperature,
+            __note: `Tensi, saturasi, dan suhu otomatis terisi dari ${prefill.ttv.source}${prefill.ttv.source_date ? " tanggal " + prefill.ttv.source_date : ""}. Nadi dan RR tetap diisi manual.`
+          };
+        }
+      }catch(_){}
+    }
+    let body = await openCkgModal(stationFormConfigs[station], initialValues);
     if(!body){ return; }
     if(station === "ANTROPOMETRI"){
       path = `/api/ckg/students/${id}/anthropometry`;
-      body = {weight:Number(body.weight), height:Number(body.height)};
+      body = {
+        weight:Number(body.weight),
+        height:Number(body.height),
+        nutrition_status:body.nutrition_status || null
+      };
     }else if(station === "TTV"){
       path = `/api/ckg/students/${id}/ttv`;
       body = {
         blood_pressure:body.blood_pressure,
+        blood_pressure_status:body.blood_pressure_status || null,
+        oxygen_saturation:body.oxygen_saturation ? Number(body.oxygen_saturation) : null,
         pulse:Number(body.pulse),
         respiratory_rate:Number(body.respiratory_rate),
         temperature:Number(body.temperature)
       };
     }else if(station === "VISUS"){
       path = `/api/ckg/students/${id}/vision`;
-      body = {right_eye:body.right_eye, left_eye:body.left_eye};
+      body = {
+        right_eye:body.right_eye,
+        left_eye:body.left_eye,
+        external_eye_exam:body.external_eye_exam || null,
+        uses_glasses:body.uses_glasses || null,
+        vision_status:body.vision_status || null
+      };
     }else if(station === "GIGI"){
       path = `/api/ckg/students/${id}/dental`;
       body = {caries:body.caries, oral_hygiene:body.oral_hygiene, notes:body.notes || null};
     }else{
       path = `/api/ckg/students/${id}/general-screening`;
       body = {
-        physical_findings:body.physical_findings,
+        physical_findings:body.physical_findings || null,
         notes:body.notes || null,
-        recommendation:body.recommendation
+        recommendation:body.recommendation || null,
+        hemoglobin:body.hemoglobin ? Number(body.hemoglobin) : null,
+        anemia_status:body.anemia_status || null,
+        blood_glucose:body.blood_glucose ? Number(body.blood_glucose) : null,
+        diabetes_status:body.diabetes_status || null,
+        hbsag_result:body.hbsag_result || null,
+        anti_hcv_result:body.anti_hcv_result || null,
+        hearing_test:body.hearing_test || null,
+        cerumen_impaction:body.cerumen_impaction || null,
+        fitness_result:body.fitness_result || null,
+        frambusia_status:body.frambusia_status || null,
+        leprosy_status:body.leprosy_status || null,
+        scabies_status:body.scabies_status || null,
+        referral_conclusion:body.referral_conclusion || null,
+        remarks:body.remarks || null
       };
     }
     await api(path, {method:"POST", body:JSON.stringify(body)});

@@ -82,6 +82,7 @@ def student_response(
     whatsapp_status: str | None = None,
     whatsapp_message: str | None = None,
 ) -> FitnessStudentResponse:
+    exam = student.examination
     return FitnessStudentResponse(
         id=student.id,
         event_id=student.event_id,
@@ -96,8 +97,8 @@ def student_response(
         status=student.status,
         queue_number=student.queue_number,
         next_station=next_station_for_status(student.status),
-        whatsapp_status=whatsapp_status,
-        whatsapp_message=whatsapp_message,
+        whatsapp_status=whatsapp_status or (exam.whatsapp_status if exam else None),
+        whatsapp_message=whatsapp_message or (friendly_whatsapp_message(exam.whatsapp_status, exam.whatsapp_message) if exam else None),
     )
 
 
@@ -352,6 +353,8 @@ def submit_examination(
         phone,
         build_fitness_whatsapp_message(student, record, student.event),
     )
+    record.whatsapp_status = whatsapp_status
+    record.whatsapp_message = whatsapp_detail
     write_fitness_audit(
         db,
         current_user,
@@ -397,9 +400,11 @@ def build_summary(student: FitnessStudentORM) -> FitnessSummaryResponse:
             "bmi": exam.bmi,
             "blood_pressure": exam.blood_pressure,
             "oxygen_saturation": exam.oxygen_saturation,
-            "temperature": exam.temperature,
-            "notes": exam.notes,
-        },
+        "temperature": exam.temperature,
+        "notes": exam.notes,
+        "whatsapp_status": exam.whatsapp_status,
+        "whatsapp_message": friendly_whatsapp_message(exam.whatsapp_status, exam.whatsapp_message),
+    },
         generated_at=datetime.now(),
     )
 

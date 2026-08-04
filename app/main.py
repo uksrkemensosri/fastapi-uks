@@ -158,6 +158,46 @@ def ensure_database_columns() -> None:
             ckg_student_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_students)")).fetchall()}
             if "parent_phone" not in ckg_student_cols:
                 conn.execute(text("ALTER TABLE ckg_students ADD COLUMN parent_phone VARCHAR(30)"))
+            ckg_anthro_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_anthropometry)")).fetchall()}
+            if "nutrition_status" not in ckg_anthro_cols:
+                conn.execute(text("ALTER TABLE ckg_anthropometry ADD COLUMN nutrition_status VARCHAR(80)"))
+            ckg_ttv_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_ttv)")).fetchall()}
+            if "blood_pressure_status" not in ckg_ttv_cols:
+                conn.execute(text("ALTER TABLE ckg_ttv ADD COLUMN blood_pressure_status VARCHAR(80)"))
+            if "oxygen_saturation" not in ckg_ttv_cols:
+                conn.execute(text("ALTER TABLE ckg_ttv ADD COLUMN oxygen_saturation FLOAT"))
+            ckg_vision_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_vision)")).fetchall()}
+            if "external_eye_exam" not in ckg_vision_cols:
+                conn.execute(text("ALTER TABLE ckg_vision ADD COLUMN external_eye_exam VARCHAR(120)"))
+            if "uses_glasses" not in ckg_vision_cols:
+                conn.execute(text("ALTER TABLE ckg_vision ADD COLUMN uses_glasses VARCHAR(20)"))
+            if "vision_status" not in ckg_vision_cols:
+                conn.execute(text("ALTER TABLE ckg_vision ADD COLUMN vision_status VARCHAR(120)"))
+            ckg_general_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(ckg_general_screening)")).fetchall()}
+            ckg_general_columns = {
+                "hemoglobin": "FLOAT",
+                "anemia_status": "VARCHAR(80)",
+                "blood_glucose": "FLOAT",
+                "diabetes_status": "VARCHAR(80)",
+                "hbsag_result": "VARCHAR(80)",
+                "anti_hcv_result": "VARCHAR(80)",
+                "hearing_test": "VARCHAR(160)",
+                "cerumen_impaction": "VARCHAR(20)",
+                "fitness_result": "VARCHAR(160)",
+                "frambusia_status": "VARCHAR(120)",
+                "leprosy_status": "VARCHAR(120)",
+                "scabies_status": "VARCHAR(120)",
+                "referral_conclusion": "VARCHAR(40)",
+                "remarks": "TEXT",
+            }
+            for column_name, column_type in ckg_general_columns.items():
+                if column_name not in ckg_general_cols:
+                    conn.execute(text(f"ALTER TABLE ckg_general_screening ADD COLUMN {column_name} {column_type}"))
+            fitness_exam_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(fitness_examinations)")).fetchall()}
+            if "whatsapp_status" not in fitness_exam_cols:
+                conn.execute(text("ALTER TABLE fitness_examinations ADD COLUMN whatsapp_status VARCHAR(30)"))
+            if "whatsapp_message" not in fitness_exam_cols:
+                conn.execute(text("ALTER TABLE fitness_examinations ADD COLUMN whatsapp_message TEXT"))
             for table_name in tenant_tables:
                 cols = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table_name})")).fetchall()}
                 if "school_id" not in cols:
@@ -192,6 +232,28 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS whatsapp_status VARCHAR(30)"))
             conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS whatsapp_message TEXT"))
             conn.execute(text("ALTER TABLE ckg_students ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE ckg_anthropometry ADD COLUMN IF NOT EXISTS nutrition_status VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE ckg_ttv ADD COLUMN IF NOT EXISTS blood_pressure_status VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE ckg_ttv ADD COLUMN IF NOT EXISTS oxygen_saturation DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE ckg_vision ADD COLUMN IF NOT EXISTS external_eye_exam VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE ckg_vision ADD COLUMN IF NOT EXISTS uses_glasses VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE ckg_vision ADD COLUMN IF NOT EXISTS vision_status VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS hemoglobin DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS anemia_status VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS blood_glucose DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS diabetes_status VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS hbsag_result VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS anti_hcv_result VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS hearing_test VARCHAR(160)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS cerumen_impaction VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS fitness_result VARCHAR(160)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS frambusia_status VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS leprosy_status VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS scabies_status VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS referral_conclusion VARCHAR(40)"))
+            conn.execute(text("ALTER TABLE ckg_general_screening ADD COLUMN IF NOT EXISTS remarks TEXT"))
+            conn.execute(text("ALTER TABLE fitness_examinations ADD COLUMN IF NOT EXISTS whatsapp_status VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE fitness_examinations ADD COLUMN IF NOT EXISTS whatsapp_message TEXT"))
             for table_name in tenant_tables:
                 conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS school_id INTEGER"))
             conn.execute(text("ALTER TABLE medicine_inventory DROP CONSTRAINT IF EXISTS medicine_inventory_name_key"))
