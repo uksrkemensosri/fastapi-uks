@@ -629,7 +629,7 @@ user-select:none;
     </div>
 
     <h1 class="title">SEHATI</h1>
-    <div class="subtitle">Sistem Pelayanan Kesehatan Digital Terintegrasi untuk Sekolah Rakyat</div>
+    <div class="subtitle">Sistem Pelayanan Kesehatan Digital Terintegrasi untuk Sekolah Rakyat Menengah Atas 13 Bekasi</div>
     <div class="hero-divider"></div>
     <p class="desc">Smart Healthcare System for Student Care</p>
 
@@ -688,7 +688,7 @@ user-select:none;
       }).then((res) => {
         if (res.ok) {
           res.json().then((user) => {
-            window.location.href = user.role === 'wali_asuh' ? '/students' : '/dashboard';
+            window.location.href = '/welcome';
           });
         } else {
           localStorage.removeItem('access_token');
@@ -717,7 +717,7 @@ user-select:none;
         if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
 
         localStorage.setItem('access_token', data.access_token);
-        window.location.href = data.role === 'wali_asuh' ? '/students' : '/dashboard';
+        window.location.href = '/welcome';
       } catch (err) {
         statusEl.textContent = `Login gagal: ${err.message}`;
         btnLogin.disabled = false;

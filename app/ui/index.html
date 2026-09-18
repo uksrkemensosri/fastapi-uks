@@ -1202,6 +1202,13 @@ body.dark .activity-item{
         </div>
       </section>
 
+      <section class="card" id="bpjsReferralReminder">
+        <h2>Rujukan BPJS</h2>
+        <div id="bpjsReferralSummary" class="top-students-list">
+          <div class="empty-state">Memuat pengingat...</div>
+        </div>
+      </section>
+
       <section class="card">
         <h2>Status WhatsApp Hari Ini</h2>
         <div id="whatsappStatusList" class="top-students-list">
@@ -1714,9 +1721,22 @@ tbody.innerHTML = "";
 
 }
 
-window.addEventListener("load", () => {
+let dashboardRole = "";
+
+window.addEventListener("load", async () => {
 
   if (!token) return;
+  try {
+    const me = await api("/api/auth/me");
+    dashboardRole = me.role;
+    if (dashboardRole === "wali_asuh") {
+      document.getElementById("lowStockList").closest("section").remove();
+      document.getElementById("whatsappStatusList").closest("section").remove();
+    }
+  } catch (err) {
+    console.error("Identitas dashboard gagal dimuat:", err);
+    return;
+  }
 
   loadDashboardStats();
   loadVisitChart();
@@ -1727,6 +1747,7 @@ window.addEventListener("load", () => {
   loadTodayPanel();
   loadTopStudents();
   loadAdvancedDashboard();
+  loadBpjsReferralReminders();
 
 });
 async function loadControlAlerts(){
@@ -2279,6 +2300,21 @@ async function loadDashboardStats() {
 
 async function loadAdvancedDashboard(){
   try{
+    if (dashboardRole === "wali_asuh") {
+      const visits = await api("/api/uks/visits");
+      const pending = document.getElementById("pendingControlList");
+      pending.replaceChildren();
+      const controls = visits.filter(v => v.control_date && !v.control_done)
+        .sort((a, b) => String(a.control_date).localeCompare(String(b.control_date)));
+      for (const visit of controls.slice(0, 10)) {
+        const item = document.createElement("div");
+        item.className = "top-student-item";
+        item.textContent = `${visit.patient_name} - ${visit.referral_place || "-"} - ${visit.control_date}`;
+        pending.appendChild(item);
+      }
+      if (!controls.length) pending.textContent = "Tidak ada kontrol tertunda";
+      return;
+    }
     const data = await api("/api/dashboard/advanced-stats");
 
     const lowStock = document.getElementById("lowStockList");
@@ -2321,6 +2357,27 @@ async function loadAdvancedDashboard(){
     }
   }catch(err){
     console.error("Advanced dashboard error:", err);
+  }
+}
+
+async function loadBpjsReferralReminders(){
+  const container = document.getElementById("bpjsReferralSummary");
+  if(!container){ return; }
+  try{
+    const data = await api("/api/dashboard/bpjs-referrals");
+    const summary = `
+      <div class="top-student-item"><div><strong>Aktif</strong><div style="color:#64748b;">Masih berlaku</div></div><div class="visit-badge">${data.active || 0}</div></div>
+      <div class="top-student-item"><div><strong>Segera habis</strong><div style="color:#64748b;">Dalam 30 hari</div></div><div class="visit-badge">${data.expiring || 0}</div></div>
+      <div class="top-student-item"><div><strong>Kedaluwarsa</strong><div style="color:#64748b;">Perlu diperbarui</div></div><div class="visit-badge">${data.expired || 0}</div></div>`;
+    const priority = (data.priority || []).map(item => `
+      <a class="top-student-item" style="text-decoration:none;color:inherit;" href="/student-detail?id=${encodeURIComponent(item.patient_id)}">
+        <div><strong>${item.patient_name}</strong><div style="color:#64748b;">${item.destination_facility || "-"} · ${item.valid_until_date}</div></div>
+        <div class="visit-badge">${item.label}</div>
+      </a>`).join("");
+    container.innerHTML = summary + (priority || `<div class="empty-state">Tidak ada rujukan yang segera habis</div>`);
+  }catch(err){
+    console.error("BPJS referral dashboard error:", err);
+    container.innerHTML = `<div class="empty-state">Pengingat rujukan belum dapat dimuat</div>`;
   }
 }
 
@@ -3377,6 +3434,6 @@ async function loadTopStudents(){
 
 }
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=11" defer></script>
 </body>
 </html>

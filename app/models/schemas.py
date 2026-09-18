@@ -32,6 +32,7 @@ class AssessmentResponse(BaseModel):
 
 class PatientSummary(BaseModel):
     id: str
+    nik: Optional[str] = None
     name: str
     age: int
     gender: str
@@ -43,6 +44,7 @@ class PatientSummary(BaseModel):
 
 class PatientCreate(BaseModel):
     id: str = Field(min_length=1, max_length=50)
+    nik: Optional[str] = Field(default=None, pattern=r"^[0-9]{16}$")
     name: str = Field(min_length=2, max_length=200)
     age: int = Field(ge=0, le=120)
     gender: str = Field(min_length=1, max_length=30)
@@ -50,6 +52,7 @@ class PatientCreate(BaseModel):
     birth_date: Optional[str] = None
     parent_name: Optional[str] = Field(default=None, max_length=200)
     parent_phone: Optional[str] = Field(default=None, max_length=30)
+
 
 class UKSVisitCreate(BaseModel):
 
@@ -81,6 +84,46 @@ class UKSVisitResponse(BaseModel):
     referral_status: Optional[str] = None
     whatsapp_status: Optional[str] = None
     whatsapp_message: Optional[str] = None
+
+
+class PublicComplaintStudent(BaseModel):
+    selection_token: str
+    name: str
+    class_name: Optional[str] = None
+
+
+class PublicComplaintCreate(BaseModel):
+    selection_token: str = Field(min_length=20, max_length=1000)
+    complaint: str = Field(min_length=2, max_length=500)
+
+    @field_validator("complaint")
+    @classmethod
+    def complaint_must_not_be_blank(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 2:
+            raise ValueError("Keluhan wajib diisi")
+        return cleaned
+
+
+class PublicComplaintResponse(BaseModel):
+    id: int
+    status: str
+    submitted_at: datetime
+    duplicate: bool = False
+
+
+class StudentComplaintResponse(BaseModel):
+    id: int
+    patient_id: str
+    patient_name: str
+    class_name: Optional[str] = None
+    complaint: str
+    submitted_at: datetime
+    status: str
+    handled_by: Optional[int] = None
+    handled_by_name: Optional[str] = None
+    handled_at: Optional[datetime] = None
+    visit_id: Optional[int] = None
 
 
 class AICareSuggestionRequest(BaseModel):
@@ -146,6 +189,38 @@ class MedicineInventoryResponse(BaseModel):
 class UKSReferralUpdate(BaseModel):
     referral_to: Optional[str] = Field(default=None, max_length=255)
     referral_status: str = Field(pattern="^(dirujuk|selesai|ditunda)$")
+
+
+class BPJSReferralCreate(BaseModel):
+    patient_id: str = Field(min_length=1, max_length=50)
+    referral_date: date
+    referring_facility: str = Field(min_length=2, max_length=255)
+    destination_facility: str = Field(min_length=2, max_length=255)
+    valid_until_date: Optional[date] = None
+    control_date: Optional[date] = None
+    referral_number: Optional[str] = Field(default=None, max_length=100)
+    complaint: Optional[str] = Field(default=None, max_length=2000)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    document_base64: str = Field(min_length=20)
+    document_name: str = Field(min_length=1, max_length=255)
+
+
+class BPJSReferralResponse(BaseModel):
+    id: int
+    patient_id: str
+    patient_name: Optional[str] = None
+    referral_date: str
+    valid_until_date: str
+    control_date: Optional[str] = None
+    referring_facility: str
+    destination_facility: str
+    referral_number: Optional[str] = None
+    complaint: Optional[str] = None
+    notes: Optional[str] = None
+    status: str
+    document_name: str
+    created_by_name: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class ComplaintStat(BaseModel):
@@ -296,6 +371,10 @@ class UserResponse(BaseModel):
     signature_image: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class GuardianAssignmentUpdate(BaseModel):
+    patient_ids: List[str] = Field(default_factory=list, max_length=500)
 
 
 class UserProfileUpdate(BaseModel):

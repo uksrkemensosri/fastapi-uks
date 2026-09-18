@@ -10,6 +10,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/ui/assets/theme.css?v=1">
 <link rel="stylesheet" href="/ui/assets/students.css?v=3">
+  <style>
+    body[data-role="wali_asuh"] #kunjungan { display: none !important; }
+    body[data-role="wali_asuh"] #siswa { grid-column: 1 / -1; }
+  </style>
   
   
 </head>
@@ -256,6 +260,10 @@
         <div class="form-group">
           <label>ID / NIS</label>
           <input id="patientId">
+        </div>
+        <div class="form-group">
+          <label>NIK</label>
+          <input id="patientNik" type="text" inputmode="numeric" maxlength="16" pattern="[0-9]{16}" autocomplete="off" placeholder="16 digit NIK (opsional)">
         </div>
 
 <div class="form-group">
@@ -1049,11 +1057,21 @@ function showRestLetterDialog(){
   const cancelBtn = document.getElementById("cancelDelete");
   const confirmBtn = document.getElementById("confirmDelete");
 
-  titleEl.textContent = "Cetak Surat Izin";
+  titleEl.textContent = "Buat Surat Izin";
   messageEl.innerHTML = `
-    <span style="display:block;margin-bottom:12px;">Lengkapi alasan dan jumlah hari izin.</span>
-    <input id="restReasonInput" style="width:100%;padding:14px 16px;border:1px solid #dbe3ef;border-radius:16px;margin-bottom:12px;" placeholder="Alasan izin">
-    <input id="restDaysInput" type="number" min="1" style="width:100%;padding:14px 16px;border:1px solid #dbe3ef;border-radius:16px;" placeholder="Jumlah hari izin">
+    <span style="display:block;margin-bottom:14px;color:#64748b;">Atur periode istirahat sebelum surat dicetak.</span>
+    <label style="display:block;font-weight:700;color:#334155;margin:0 0 6px;">Alasan izin</label>
+    <input id="restReasonInput" style="box-sizing:border-box;width:100%;padding:13px 14px;border:1px solid #dbe3ef;border-radius:12px;margin-bottom:14px;" placeholder="Contoh: Istirahat karena pusing dan demam">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:14px;">
+      <label style="display:block;font-weight:700;color:#334155;">Tanggal mulai
+        <input id="restStartDateInput" type="date" style="box-sizing:border-box;display:block;width:100%;padding:13px 12px;border:1px solid #dbe3ef;border-radius:12px;margin-top:6px;background:#fff;">
+      </label>
+      <label style="display:block;font-weight:700;color:#334155;">Lama izin (hari)
+        <input id="restDaysInput" type="number" min="1" max="30" value="1" style="box-sizing:border-box;display:block;width:100%;padding:13px 12px;border:1px solid #dbe3ef;border-radius:12px;margin-top:6px;background:#fff;">
+      </label>
+    </div>
+    <label style="display:block;font-weight:700;color:#334155;margin:0 0 6px;">Catatan untuk wali asuh <span style="font-weight:400;color:#94a3b8;">(opsional)</span></label>
+    <textarea id="restNotesInput" rows="3" style="box-sizing:border-box;width:100%;padding:13px 14px;border:1px solid #dbe3ef;border-radius:12px;resize:vertical;" placeholder="Contoh: Mohon pemantauan dan istirahat cukup."></textarea>
   `;
   cancelBtn.textContent = "Batal";
   cancelBtn.style.display = "inline-flex";
@@ -1061,13 +1079,19 @@ function showRestLetterDialog(){
   confirmBtn.style.background = "linear-gradient(135deg,#ec6cc4,#8b5cf6,#60a5fa)";
   confirmBtn.style.color = "white";
   modal.style.display = "flex";
-  setTimeout(() => document.getElementById("restReasonInput")?.focus(), 0);
+  setTimeout(() => {
+    const startDate = document.getElementById("restStartDateInput");
+    if(startDate) startDate.value = new Date().toISOString().slice(0, 10);
+    document.getElementById("restReasonInput")?.focus();
+  }, 0);
 
   return new Promise(resolve => {
     appDialogResolver = resolve;
     appDialogPayloadReader = () => ({
       reason: document.getElementById("restReasonInput").value.trim(),
-      days: document.getElementById("restDaysInput").value.trim()
+      days: document.getElementById("restDaysInput").value.trim(),
+      startDate: document.getElementById("restStartDateInput").value,
+      notes: document.getElementById("restNotesInput").value.trim()
     });
   });
 }
@@ -1524,6 +1548,7 @@ document
     let data;
 
 const body = {
+  nik: document.getElementById("patientNik").value.trim() || null,
 
   id:
     document
@@ -1603,6 +1628,7 @@ renderPatientTable();
 loadStats();
 
 editingPatientId = null;
+document.getElementById("patientNik").value = "";
 document.getElementById(
   "btnCreatePatient"
 ).innerHTML =
@@ -1709,6 +1735,7 @@ document
 
     let savedVisitId;
     let savedVisit;
+    const isNewVisit = !editingVisitId;
 
     if (editingVisitId) {
 
@@ -1737,6 +1764,26 @@ document
       savedVisitId =
         savedVisit.id;
 
+    }
+
+    if(isNewVisit){
+      const storedPrefill = sessionStorage.getItem("sehati_complaint_visit_prefill");
+      if(storedPrefill){
+        try{
+          const complaintPrefill = JSON.parse(storedPrefill);
+          if(complaintPrefill.complaint_id && complaintPrefill.patient_id === body.patient_id){
+            await api(
+              `/api/complaints/${complaintPrefill.complaint_id}/attach-visit/${savedVisitId}`,
+              "POST",
+              null,
+              true
+            );
+            sessionStorage.removeItem("sehati_complaint_visit_prefill");
+          }
+        }catch(linkError){
+          console.warn("Kunjungan tersimpan, tetapi keluhan belum tertaut.", linkError);
+        }
+      }
     }
 
     for(const med of visitMedicines){
@@ -2494,16 +2541,21 @@ async function downloadRestLetter(id){
 
     if(!restLetterData) return;
 
-    const {reason, days} = restLetterData;
+    const {reason, days, startDate, notes} = restLetterData;
 
-    if(!reason || !days){
-      showAppAlert("Data Belum Lengkap", "Alasan dan jumlah hari izin wajib diisi.", "error");
+    if(!reason || !days || !startDate){
+      showAppAlert("Data Belum Lengkap", "Alasan, tanggal mulai, dan lama izin wajib diisi.", "error");
+      return;
+    }
+
+    if(Number(days) < 1 || Number(days) > 30){
+      showAppAlert("Lama Izin Tidak Valid", "Lama izin harus antara 1 sampai 30 hari.", "error");
       return;
     }
 
     const res = await fetch(
 
-      `/api/uks/visits/${id}/rest-letter?reason=${encodeURIComponent(reason)}&days=${days}`,
+      `/api/uks/visits/${id}/rest-letter?reason=${encodeURIComponent(reason)}&days=${days}&start_date=${encodeURIComponent(startDate)}&notes=${encodeURIComponent(notes || "")}`,
 
       {
         headers:{
@@ -2802,6 +2854,24 @@ function clearVisitForm(){
   ).value = "";
 
 }
+
+function applyComplaintVisitPrefill(){
+  const storedPrefill = sessionStorage.getItem("sehati_complaint_visit_prefill");
+  if(!storedPrefill) return;
+  try{
+    const prefill = JSON.parse(storedPrefill);
+    if(!prefill.patient_id || !prefill.complaint) return;
+    document.getElementById("visitPatientId").value = prefill.patient_id;
+    document.getElementById("patientSearch").value = `${prefill.patient_name || "Siswa"} - ${prefill.class_name || "-"}`;
+    document.getElementById("visitComplaint").value = prefill.complaint;
+    document.getElementById("visitDate").value = today;
+    showStatus("visitStatus", "Keluhan dari QR sudah diisikan. Lengkapi pemeriksaan sebelum menyimpan kunjungan.", true);
+    document.getElementById("kunjungan")?.scrollIntoView({behavior:"smooth"});
+  }catch(err){
+    console.warn("Prefill keluhan tidak dapat dimuat.", err);
+    sessionStorage.removeItem("sehati_complaint_visit_prefill");
+  }
+}
 function renderPatientTable(
   keyword = ""
 ){
@@ -2816,6 +2886,7 @@ const filteredPatients =
     const text = `
       ${patient.name}
       ${patient.id}
+      ${patient.nik || ""}
     `.toLowerCase();
 
     return text.includes(
@@ -2973,6 +3044,7 @@ async function editPatient(id){
   );
   if(!patient) return;
   editingPatientId = id;
+  document.getElementById("patientNik").value = patient.nik || "";
 
   document.getElementById(
     "patientId"
@@ -3119,6 +3191,7 @@ window.addEventListener("load", () => {
   if (!token) return;
 
   loadPatients();
+  applyComplaintVisitPrefill();
   loadVisits();
   loadMedicines();
   loadStats();
@@ -3252,6 +3325,8 @@ async function createReferral(id){
 }
 
 async function createRestLetter(id){
+
+  return downloadRestLetter(id);
 
   try{
 
@@ -3492,6 +3567,6 @@ window.print();
 
 };
 </script>
-<script src="/ui/assets/rbac.js?v=2" defer></script>
+<script src="/ui/assets/rbac.js?v=11" defer></script>
 </body>
 </html>

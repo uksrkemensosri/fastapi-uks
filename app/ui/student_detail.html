@@ -14,6 +14,13 @@
     .kv{display:grid;grid-template-columns:180px 1fr;gap:12px;margin-bottom:10px}
     .kv strong{color:#4c1d95}
     .actions{display:flex;gap:8px;flex-wrap:wrap}
+    .referral-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-bottom:22px}
+    .referral-form .full{grid-column:1/-1}
+    .referral-form label{display:grid;gap:6px;font-weight:700;color:#334155}
+    .referral-form input,.referral-form textarea{width:100%;padding:11px 12px;border:1px solid #d8dff0;border-radius:10px;font:inherit}
+    .referral-form textarea{min-height:82px;resize:vertical}
+    .referral-note{margin:0 0 16px;color:#64748b}
+    @media(max-width:800px){.referral-form{grid-template-columns:1fr}}
     @media(max-width:800px){.kv{grid-template-columns:1fr}.topbar{flex-direction:column;align-items:flex-start}}
   </style>
 </head>
@@ -52,6 +59,7 @@
       <button class="tab" data-panel="ckg">Riwayat CKG</button>
       <button class="tab" data-panel="obat">Riwayat Obat</button>
       <button class="tab" data-panel="rekomendasi">Riwayat Rekomendasi</button>
+      <button class="tab" data-panel="rujukan-bpjs">Rujukan BPJS</button>
     </div>
 
     <section class="panel active card" id="panel-biodata"></section>
@@ -83,6 +91,31 @@
         <tbody id="recommendationRows"></tbody>
       </table>
     </section>
+
+    <section class="panel card" id="panel-rujukan-bpjs">
+      <div id="bpjsReferralFormWrap">
+        <h2>Tambah Rujukan BPJS</h2>
+        <p class="referral-note">Simpan surat rujukan dari faskes perujuk. Masa berlaku otomatis tiga bulan bila tidak diubah.</p>
+        <form id="bpjsReferralForm" class="referral-form">
+          <label>Tanggal Rujukan<input id="bpjsReferralDate" type="date" required></label>
+          <label>Berlaku Sampai<input id="bpjsValidUntilDate" type="date"></label>
+          <label>Faskes Perujuk<input id="bpjsReferringFacility" placeholder="Contoh: Puskesmas Karangkitri" required></label>
+          <label>Faskes Tujuan<input id="bpjsDestinationFacility" placeholder="Contoh: RS Primaya" required></label>
+          <label>Nomor Rujukan <span style="font-weight:400">(opsional)</span><input id="bpjsReferralNumber" placeholder="Nomor surat/BPJS"></label>
+          <label>Jadwal Kontrol <span style="font-weight:400">(opsional)</span><input id="bpjsControlDate" type="date"></label>
+          <label class="full">Keluhan / Diagnosis Singkat <textarea id="bpjsComplaint" placeholder="Keluhan atau informasi singkat dari surat rujukan"></textarea></label>
+          <label class="full">Catatan <span style="font-weight:400">(opsional)</span><textarea id="bpjsNotes" placeholder="Catatan tambahan"></textarea></label>
+          <label class="full">Foto atau PDF Surat Rujukan<input id="bpjsDocument" type="file" accept="image/jpeg,image/png,application/pdf" required><span style="font-weight:400;color:#64748b">JPG, PNG, atau PDF, maksimal 8 MB.</span></label>
+          <div class="full"><button class="btn btn-primary" type="submit">Simpan Rujukan BPJS</button></div>
+        </form>
+      </div>
+      <h2>Riwayat Rujukan BPJS</h2>
+      <table class="table">
+        <thead><tr><th>Tanggal</th><th>Faskes Tujuan</th><th>Berlaku Sampai</th><th>Kontrol</th><th>Status</th><th>Lampiran</th></tr></thead>
+        <tbody id="bpjsReferralRows"></tbody>
+      </table>
+    </section>
+
   </main>
 </div>
 
@@ -102,6 +135,16 @@ async function api(path, options = {}){
   const data = await res.json().catch(() => ({}));
   if(!res.ok){ throw new Error(data.detail || data.message || `HTTP ${res.status}`); }
   return data;
+}
+
+async function configureBpjsReferralPermissions(){
+  try{
+    const me = await api("/api/auth/me");
+    const canCreate = ["admin", "perawat", "tim_uksr", "wali_asuh"].includes(me.role);
+    if(!canCreate){ document.getElementById("bpjsReferralFormWrap").hidden = true; }
+  }catch(_){
+    document.getElementById("bpjsReferralFormWrap").hidden = true;
+  }
 }
 
 async function downloadPdf(path, filename){
@@ -132,11 +175,59 @@ function dateText(value){
   return new Date(value).toLocaleDateString("id-ID");
 }
 
+function escapeHtml(value){
+  return String(value ?? "-").replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+}
+
+function addMonths(value, months){
+  const dateValue = new Date(`${value}T00:00:00`);
+  if(Number.isNaN(dateValue.getTime())) return "";
+  const originalDay = dateValue.getDate();
+  dateValue.setMonth(dateValue.getMonth() + months, 1);
+  const lastDay = new Date(dateValue.getFullYear(), dateValue.getMonth() + 1, 0).getDate();
+  dateValue.setDate(Math.min(originalDay, lastDay));
+  return dateValue.toISOString().slice(0, 10);
+}
+
+async function loadBpjsReferrals(){
+  const rows = document.getElementById("bpjsReferralRows");
+  try{
+    const referrals = await api(`/api/patients/${encodeURIComponent(studentId)}/bpjs-referrals`);
+    rows.innerHTML = referrals.map(item => {
+      const expiry = new Date(`${item.valid_until_date}T00:00:00`);
+      const dayDiff = Math.ceil((expiry - new Date()) / 86400000);
+      const status = dayDiff < 0 ? "Kedaluwarsa" : dayDiff <= 30 ? `Segera habis (${dayDiff} hari)` : "Aktif";
+      return `<tr>
+        <td>${escapeHtml(item.referral_date)}</td>
+        <td><strong>${escapeHtml(item.destination_facility)}</strong><br><small>${escapeHtml(item.referring_facility)}</small></td>
+        <td>${escapeHtml(item.valid_until_date)}</td>
+        <td>${escapeHtml(item.control_date)}</td>
+        <td>${status}</td>
+        <td><button class="btn btn-secondary" type="button" onclick="downloadBpjsDocument(${item.id}, '${encodeURIComponent(item.document_name || 'rujukan-bpjs')}')">Buka Lampiran</button></td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="6">Belum ada rujukan BPJS</td></tr>`;
+  }catch(err){
+    rows.innerHTML = `<tr><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function downloadBpjsDocument(id, fileName){
+  const res = await fetch(`/api/bpjs-referrals/${id}/document`, {headers:{Authorization:`Bearer ${token}`}});
+  if(!res.ok){
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Lampiran tidak dapat dibuka");
+  }
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function loadHistory(){
   try{
     const data = await api(`/api/students/${encodeURIComponent(studentId)}/health-history`);
     pageTitle.textContent = data.biodata.nama_lengkap || "Detail Siswa";
     document.getElementById("panel-biodata").innerHTML = `
+      <div class="kv"><strong>NIK</strong><span>${escapeHtml(data.biodata.nik || "Belum diisi")}</span></div>
       <div class="kv"><strong>NIS</strong><span>${data.biodata.nis || "-"}</span></div>
       <div class="kv"><strong>Nama Lengkap</strong><span>${data.biodata.nama_lengkap || "-"}</span></div>
       <div class="kv"><strong>Jenis Kelamin</strong><span>${data.biodata.jenis_kelamin || "-"}</span></div>
@@ -189,10 +280,57 @@ async function loadHistory(){
         </div></td>
       </tr>
     `).join("") || `<tr><td colspan="4">Belum ada surat rekomendasi</td></tr>`;
+    await loadBpjsReferrals();
   }catch(err){
     appAlert("Gagal", err.message, "error");
   }
 }
+
+document.getElementById("bpjsReferralDate").value = new Date().toISOString().slice(0,10);
+document.getElementById("bpjsReferralDate").addEventListener("change", event => {
+  const validUntil = document.getElementById("bpjsValidUntilDate");
+  if(!validUntil.value){ validUntil.value = addMonths(event.target.value, 3); }
+});
+
+document.getElementById("bpjsReferralForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const file = document.getElementById("bpjsDocument").files[0];
+  if(!file){ return; }
+  if(file.size > 8 * 1024 * 1024){
+    await appAlert("File Terlalu Besar", "Ukuran lampiran maksimal 8 MB.", "error");
+    return;
+  }
+  const documentBase64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  try{
+    await api("/api/bpjs-referrals", {
+      method:"POST",
+      body:JSON.stringify({
+        patient_id: studentId,
+        referral_date: document.getElementById("bpjsReferralDate").value,
+        valid_until_date: document.getElementById("bpjsValidUntilDate").value || null,
+        control_date: document.getElementById("bpjsControlDate").value || null,
+        referring_facility: document.getElementById("bpjsReferringFacility").value,
+        destination_facility: document.getElementById("bpjsDestinationFacility").value,
+        referral_number: document.getElementById("bpjsReferralNumber").value || null,
+        complaint: document.getElementById("bpjsComplaint").value || null,
+        notes: document.getElementById("bpjsNotes").value || null,
+        document_base64: documentBase64,
+        document_name: file.name
+      })
+    });
+    event.target.reset();
+    document.getElementById("bpjsReferralDate").value = new Date().toISOString().slice(0,10);
+    await appAlert("Berhasil", "Rujukan BPJS berhasil disimpan.", "success");
+    await loadBpjsReferrals();
+  }catch(err){
+    await appAlert("Gagal", err.message, "error");
+  }
+});
 
 async function generateUksRecommendation(visitId){
   const recommendation_text = await appPrompt("Isi Rekomendasi", "Masukkan isi rekomendasi pemeriksaan lanjutan.", "Pemeriksaan lanjutan di fasilitas kesehatan terdekat.", {multiline:true, confirmText:"Cetak"});
@@ -225,7 +363,8 @@ function showUksDetail(keluhan, tindakan, obat){
 }
 
 loadHistory();
+configureBpjsReferralPermissions();
 </script>
-<script src="/ui/assets/rbac.js?v=8" defer></script>
+<script src="/ui/assets/rbac.js?v=11" defer></script>
 </body>
 </html>

@@ -40,6 +40,10 @@ class UserORM(Base):
         nullable=False,
     )
     school: Mapped["SchoolORM | None"] = relationship(back_populates="users")
+    guardian_assignments: Mapped[list["GuardianStudentAssignmentORM"]] = relationship(
+        back_populates="guardian",
+        cascade="all, delete-orphan",
+    )
 
 
 class SchoolORM(Base):
@@ -347,6 +351,7 @@ class FitnessExaminationORM(Base):
 
 class PatientORM(Base):
     __tablename__ = "patients"
+    nik: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
 
     id: Mapped[str] = mapped_column(
         String(50),
@@ -396,6 +401,62 @@ class PatientORM(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
+    complaints: Mapped[list["StudentComplaintORM"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    guardian_assignments: Mapped[list["GuardianStudentAssignmentORM"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    bpjs_referrals: Mapped[list["BPJSReferralORM"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+class GuardianStudentAssignmentORM(Base):
+    """Explicit access assignment between a wali asuh account and a student."""
+
+    __tablename__ = "guardian_student_assignments"
+    __table_args__ = (
+        UniqueConstraint("guardian_id", "patient_id", name="uq_guardian_student_assignment"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False, index=True)
+    guardian_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    guardian: Mapped[UserORM] = relationship(back_populates="guardian_assignments")
+    patient: Mapped[PatientORM] = relationship(back_populates="guardian_assignments")
+
+
+class BPJSReferralORM(Base):
+    """Referral document from a first-level facility to a specialist hospital."""
+
+    __tablename__ = "bpjs_referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False, index=True)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False, index=True)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    referral_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    valid_until_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    control_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    referring_facility: Mapped[str] = mapped_column(String(255), nullable=False)
+    destination_facility: Mapped[str] = mapped_column(String(255), nullable=False)
+    referral_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    complaint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    document_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    document_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    document_content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="aktif", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    patient: Mapped[PatientORM] = relationship(back_populates="bpjs_referrals")
+    created_by: Mapped[UserORM] = relationship()
 
 
 class AssessmentORM(Base):
@@ -455,6 +516,26 @@ class UKSVisitORM(Base):
         back_populates="visit",
         cascade="all, delete-orphan",
     )
+
+
+class StudentComplaintORM(Base):
+    """Initial public complaint submitted by a student before UKS verification."""
+
+    __tablename__ = "student_complaints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    school_id: Mapped[int] = mapped_column(ForeignKey("schools.id"), nullable=False, index=True)
+    patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False, index=True)
+    complaint: Mapped[str] = mapped_column(String(500), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="MENUNGGU", index=True)
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    visit_id: Mapped[int | None] = mapped_column(ForeignKey("uks_visits.id"), nullable=True, unique=True, index=True)
+
+    patient: Mapped[PatientORM] = relationship(back_populates="complaints")
+    handler: Mapped[UserORM | None] = relationship(foreign_keys=[handled_by])
+    visit: Mapped[UKSVisitORM | None] = relationship(foreign_keys=[visit_id])
 
 
 class UKSMedicationORM(Base):

@@ -1,13 +1,19 @@
+import os
+from pathlib import Path
+
 import pandas as pd
 import requests
 
-BASE_URL = "https://fastapi-uks-production.up.railway.app"
+BASE_URL = os.getenv("SEHATI_API_BASE_URL", "https://fastapi-uks-production.up.railway.app").rstrip("/")
+TOKEN = os.getenv("SEHATI_API_TOKEN", "")
+IMPORT_FILE = Path(os.getenv("SEHATI_MEDICINE_IMPORT_FILE", "data/imports/medicine_inventory_export.csv"))
 
-TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzgwMjQwNzY3LCJleHAiOjE3ODAyNDQzNjd9.LboTv-DGOnCwjWgVAS7zb657XTQvgKx5HFVrLYwagzM"
+if not TOKEN:
+    raise RuntimeError("Set SEHATI_API_TOKEN before running this import script.")
+if not IMPORT_FILE.is_file():
+    raise FileNotFoundError(f"Medicine import file not found: {IMPORT_FILE}")
 
-df = pd.read_csv(
-    "medicine_inventory_export.csv"
-)
+df = pd.read_csv(IMPORT_FILE)
 
 for _, row in df.iterrows():
 

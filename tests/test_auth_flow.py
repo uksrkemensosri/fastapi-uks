@@ -198,6 +198,45 @@ def test_create_and_search_patient(client: TestClient):
     assert "create_patient" in actions
 
 
+def test_admin_assigns_students_to_wali_asuh_and_scope_is_enforced(client: TestClient):
+    admin_headers = _auth_headers(client)
+    for patient_id, name in (("WALI-SISWA-001", "Anak Asuh Satu"), ("WALI-SISWA-002", "Bukan Anak Asuh")):
+        response = client.post(
+            "/api/patients",
+            headers=admin_headers,
+            json={"id": patient_id, "name": name, "age": 12, "gender": "P", "class_name": "7A"},
+        )
+        assert response.status_code == 201
+
+    guardian = client.post(
+        "/api/users",
+        headers=admin_headers,
+        json={
+            "username": "wali_assignment_test",
+            "full_name": "Wali Assignment Test",
+            "role": "wali_asuh",
+            "password": "rahasia123",
+        },
+    )
+    assert guardian.status_code == 201
+    guardian_id = guardian.json()["id"]
+
+    assigned = client.put(
+        f"/api/guardian-assignments/{guardian_id}",
+        headers=admin_headers,
+        json={"patient_ids": ["WALI-SISWA-001"]},
+    )
+    assert assigned.status_code == 200
+    assert assigned.json()["assigned_count"] == 1
+
+    guardian_headers = _login_headers(client, "wali_assignment_test", "rahasia123")
+    students = client.get("/api/patients", headers=guardian_headers)
+    assert students.status_code == 200
+    assert [student["id"] for student in students.json()] == ["WALI-SISWA-001"]
+    assert client.get("/api/patients/WALI-SISWA-002", headers=guardian_headers).status_code == 404
+    assert client.get("/api/students/WALI-SISWA-002/health-history", headers=guardian_headers).status_code == 404
+
+
 def test_create_and_list_uks_visits(client: TestClient):
     headers = _auth_headers(client)
 

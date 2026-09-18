@@ -2,11 +2,11 @@
   const token = localStorage.getItem("access_token") || "";
 
   function hideAdminLinks(role) {
-    const waliAsuhLinks = new Set(["/students", "/settings"]);
-    const timLinks = new Set(["/dashboard", "/students", "/ckg", "/fitness", "/settings"]);
+    const waliAsuhLinks = new Set(["/dashboard", "/students", "/settings"]);
+    const timLinks = new Set(["/dashboard", "/students", "/complaints", "/ckg", "/fitness", "/settings"]);
     const kepalaLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/settings"]);
-    const adminLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/users", "/audit-logs", "/settings"]);
-    const perawatLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/users", "/settings"]);
+    const adminLinks = new Set(["/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/audit-logs", "/settings"]);
+    const perawatLinks = new Set(["/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/settings"]);
     const superAdminLinks = new Set([...adminLinks, "/schools"]);
     const sidebar = document.querySelector(".sidebar");
     if (sidebar && !sidebar.querySelector('a[href="/fitness"]')) {
@@ -17,6 +17,18 @@
       fitnessLink.textContent = "Cek Kebugaran";
       if (ckgLink) {
         ckgLink.insertAdjacentElement("afterend", fitnessLink);
+      }
+    }
+    if (["admin", "perawat", "tim_uksr", "super_admin"].includes(role) && sidebar && !sidebar.querySelector('a[href="/complaints"]')) {
+      const studentsLink = sidebar.querySelector('a[href="/students"]');
+      const complaintLink = document.createElement("a");
+      complaintLink.href = "/complaints";
+      complaintLink.className = `menu-item${window.location.pathname === "/complaints" ? " active" : ""}`;
+      complaintLink.textContent = "Keluhan Masuk";
+      if (studentsLink) {
+        studentsLink.insertAdjacentElement("afterend", complaintLink);
+      } else {
+        sidebar.appendChild(complaintLink);
       }
     }
     if (role === "super_admin" && sidebar && !sidebar.querySelector('a[href="/schools"]')) {
@@ -177,13 +189,49 @@
     }
   }
 
+  function loadAppTour() {
+    if (document.getElementById("sehatiAppTourScript")) {
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.id = "sehatiAppTourScript";
+    script.src = "/ui/assets/app-tour.js?v=4";
+    script.async = false;
+    document.body.appendChild(script);
+  }
+
+  async function loadComplaintBadge(role) {
+    if (!["admin", "perawat", "tim_uksr", "super_admin"].includes(role)) {
+      return;
+    }
+    const link = document.querySelector('a[href="/complaints"]');
+    if (!link) {
+      return;
+    }
+    try {
+      const response = await fetch("/api/complaints/pending-count", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        return;
+      }
+      const { count } = await response.json();
+      link.textContent = count > 0 ? `Keluhan Masuk (${count})` : "Keluhan Masuk";
+    } catch (err) {
+      console.warn("Complaint badge unavailable", err);
+    }
+  }
+
   async function initRbacUi() {
     setupGlobalThemeToggle();
 
     const user = await loadCurrentUser();
     if (user) {
       hideAdminLinks(user.role);
+      loadComplaintBadge(user.role);
       document.body.dataset.role = user.role;
+      loadAppTour();
     }
 
     const logoutButton = document.getElementById("btnLogout");

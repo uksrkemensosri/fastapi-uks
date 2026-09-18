@@ -132,6 +132,44 @@ body.dark .users-card .table tbody tr:hover td{
   background:rgba(255,255,255,.46);
 }
 
+.guardian-modal[hidden]{display:none;}
+.guardian-modal{
+  position:fixed;
+  inset:0;
+  z-index:1000;
+  display:grid;
+  place-items:center;
+  padding:20px;
+  background:rgba(15,23,42,.58);
+}
+.guardian-modal__dialog{
+  width:min(760px,100%);
+  max-height:min(760px,calc(100vh - 40px));
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border-radius:20px;
+  background:var(--surface,#fff);
+  box-shadow:0 24px 80px rgba(15,23,42,.35);
+}
+.guardian-modal__header,.guardian-modal__footer{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding:20px 22px;
+  border-bottom:1px solid var(--border,#e2e8f0);
+}
+.guardian-modal__footer{border-top:1px solid var(--border,#e2e8f0);border-bottom:0;}
+.guardian-modal__body{padding:18px 22px;overflow:auto;}
+.guardian-student-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:14px;}
+.guardian-student-item{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border,#dbe3ef);border-radius:12px;cursor:pointer;}
+.guardian-student-item input{width:auto;}
+.guardian-student-meta{display:flex;flex-direction:column;gap:2px;}
+.guardian-student-meta small{color:var(--muted,#64748b);}
+body.dark .guardian-modal__dialog{background:#f8fafc;color:#172033;}
+@media(max-width:600px){.guardian-student-list{grid-template-columns:1fr;}}
+
 @media(max-width:720px){
   .user-actions{
     width:100%;
@@ -282,6 +320,27 @@ body.dark .users-card .table tbody tr:hover td{
 
     </section>
 
+    <div class="guardian-modal" id="guardianAssignmentModal" hidden>
+      <div class="guardian-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="guardianAssignmentTitle">
+        <div class="guardian-modal__header">
+          <div>
+            <h2 id="guardianAssignmentTitle" style="margin:0">Atur Anak Asuh</h2>
+            <p id="guardianAssignmentSubtitle" style="margin:4px 0 0;color:#64748b"></p>
+          </div>
+          <button class="btn btn-secondary" id="btnCloseGuardianAssignment" type="button">Tutup</button>
+        </div>
+        <div class="guardian-modal__body">
+          <input id="guardianStudentSearch" placeholder="Cari nama atau NIS siswa" autocomplete="off">
+          <p id="guardianAssignmentCount" style="margin:14px 0 0;color:#64748b"></p>
+          <div class="guardian-student-list" id="guardianStudentList"></div>
+        </div>
+        <div class="guardian-modal__footer">
+          <button class="btn btn-secondary" id="btnClearGuardianAssignment" type="button">Kosongkan Pilihan</button>
+          <button class="btn btn-primary" id="btnSaveGuardianAssignment" type="button">Simpan Anak Asuh</button>
+        </div>
+      </div>
+    </div>
+
   </main>
 
 </div>
@@ -291,6 +350,7 @@ body.dark .users-card .table tbody tr:hover td{
 const token =
   localStorage.getItem("access_token");
 let currentUser = null;
+let guardianAssignment = { guardianId:null, students:[] };
 
 if(!token){
   window.location.href = "/login";
@@ -346,6 +406,15 @@ function getErrorMessage(payload){
   return payload.detail || payload.message || "Terjadi kesalahan";
 }
 
+function escapeHtml(value){
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 async function loadUsers(){
 
   const res = await fetch(
@@ -381,8 +450,8 @@ async function loadUsers(){
 
     tbody.innerHTML += `
       <tr>
-        <td>${user.username}</td>
-        <td>${user.full_name}</td>
+        <td>${escapeHtml(user.username)}</td>
+        <td>${escapeHtml(user.full_name)}</td>
         <td>${user.nip || "-"}</td>
         <td>${user.role}</td>
         <td>${user.is_active ? "Aktif" : "Nonaktif"}</td>
@@ -392,6 +461,7 @@ async function loadUsers(){
           <button class="btn btn-secondary" type="button" onclick="toggleUser(${user.id}, ${user.is_active})">
             ${user.is_active ? "Nonaktifkan" : "Aktifkan"}
           </button>
+          ${user.role === "wali_asuh" && currentUser?.role === "admin" ? `<button class="btn btn-primary" type="button" onclick="openGuardianAssignment(${user.id})">Atur Anak Asuh</button>` : ""}
         </td>
       </tr>
     `;
@@ -408,6 +478,7 @@ async function loadCurrentUserAndSchools(){
   if(currentUser.role !== "super_admin"){
     document.querySelector('#role option[value="super_admin"]')?.remove();
     schoolSelect.style.display = "none";
+    loadUsers();
     return;
   }
   schoolSelect.style.display = "block";
@@ -418,7 +489,80 @@ async function loadCurrentUserAndSchools(){
     .filter(school => school.is_active)
     .map(school => `<option value="${school.id}">${school.school_name} (${school.school_code})</option>`)
     .join("");
+  loadUsers();
 }
+
+function renderGuardianStudentList(){
+  const keyword = document.getElementById("guardianStudentSearch").value.trim().toLowerCase();
+  const list = document.getElementById("guardianStudentList");
+  const students = guardianAssignment.students.filter(student =>
+    !keyword || student.name.toLowerCase().includes(keyword) || student.id.toLowerCase().includes(keyword)
+  );
+  const selected = guardianAssignment.students.filter(student => student.assigned).length;
+  document.getElementById("guardianAssignmentCount").textContent = `${selected} siswa dipilih sebagai anak asuh.`;
+  list.innerHTML = students.map(student => `
+    <label class="guardian-student-item">
+      <input type="checkbox" data-patient-id="${escapeHtml(student.id)}" ${student.assigned ? "checked" : ""}>
+      <span class="guardian-student-meta"><strong>${escapeHtml(student.name)}</strong><small>${escapeHtml(student.id)}${student.class_name ? ` | Kelas ${escapeHtml(student.class_name)}` : ""}</small></span>
+    </label>
+  `).join("") || "<p>Tidak ada siswa yang sesuai.</p>";
+  list.querySelectorAll("input[type=checkbox]").forEach(input => {
+    input.addEventListener("change", () => {
+      const student = guardianAssignment.students.find(item => item.id === input.dataset.patientId);
+      if(student){ student.assigned = input.checked; }
+      document.getElementById("guardianAssignmentCount").textContent = `${guardianAssignment.students.filter(item => item.assigned).length} siswa dipilih sebagai anak asuh.`;
+    });
+  });
+}
+
+async function openGuardianAssignment(guardianId){
+  if(currentUser?.role !== "admin"){
+    appAlert("Akses Ditolak", "Pengaturan anak asuh hanya dapat dilakukan oleh admin sekolah.", "error");
+    return;
+  }
+  const res = await fetch(`/api/guardian-assignments/${guardianId}`, {headers:{Authorization:`Bearer ${token}`}});
+  const payload = await res.json().catch(() => ({}));
+  if(!res.ok){
+    appAlert("Gagal", getErrorMessage(payload), "error");
+    return;
+  }
+  guardianAssignment = {guardianId, students:payload.students || []};
+  document.getElementById("guardianAssignmentSubtitle").textContent = `${payload.guardian.full_name} (${payload.guardian.username})`;
+  document.getElementById("guardianStudentSearch").value = "";
+  document.getElementById("guardianAssignmentModal").hidden = false;
+  renderGuardianStudentList();
+}
+
+function closeGuardianAssignment(){
+  document.getElementById("guardianAssignmentModal").hidden = true;
+  guardianAssignment = {guardianId:null, students:[]};
+}
+
+document.getElementById("btnCloseGuardianAssignment").addEventListener("click", closeGuardianAssignment);
+document.getElementById("guardianAssignmentModal").addEventListener("click", event => {
+  if(event.target.id === "guardianAssignmentModal"){ closeGuardianAssignment(); }
+});
+document.getElementById("guardianStudentSearch").addEventListener("input", renderGuardianStudentList);
+document.getElementById("btnClearGuardianAssignment").addEventListener("click", () => {
+  guardianAssignment.students.forEach(student => { student.assigned = false; });
+  renderGuardianStudentList();
+});
+document.getElementById("btnSaveGuardianAssignment").addEventListener("click", async () => {
+  if(!guardianAssignment.guardianId){ return; }
+  const res = await fetch(`/api/guardian-assignments/${guardianAssignment.guardianId}`, {
+    method:"PUT",
+    headers:{"Content-Type":"application/json", Authorization:`Bearer ${token}`},
+    body:JSON.stringify({patient_ids:guardianAssignment.students.filter(student => student.assigned).map(student => student.id)})
+  });
+  const payload = await res.json().catch(() => ({}));
+  if(!res.ok){
+    appAlert("Gagal", getErrorMessage(payload), "error");
+    return;
+  }
+  appAlert("Berhasil", `${payload.assigned_count} anak asuh berhasil ditetapkan.`, "success");
+  closeGuardianAssignment();
+  loadUsers();
+});
 
 async function editUser(id){
   const users = await fetch("/api/users", {
@@ -639,6 +783,6 @@ async function saveUser(){
 
 loadCurrentUserAndSchools();
 </script>
-<script src="/ui/assets/rbac.js?v=8" defer></script>
+<script src="/ui/assets/rbac.js?v=11" defer></script>
 </body>
 </html>

@@ -16,6 +16,7 @@ from app.api.ckg import router as ckg_router
 from app.api.fitness import router as fitness_router
 from app.api.monthly_reports import router as monthly_reports_router
 from app.api.recommendations import router as recommendations_router
+from app.api.complaints import router as complaints_router
 from app.api.routes import router
 from app.auth.security import hash_password
 from app.auth.tenant import get_default_school
@@ -80,6 +81,7 @@ app.include_router(ckg_router)
 app.include_router(fitness_router)
 app.include_router(monthly_reports_router)
 app.include_router(recommendations_router)
+app.include_router(complaints_router)
 
 Base.metadata.create_all(bind=engine)
 
@@ -109,6 +111,7 @@ def ensure_database_columns() -> None:
         "medicine_inventory",
         "school_settings",
         "medicine_transactions",
+        "bpjs_referrals",
     ]
     if engine.dialect.name == "sqlite":
         with engine.begin() as conn:
@@ -130,6 +133,9 @@ def ensure_database_columns() -> None:
                 conn.execute(text("ALTER TABLE schools ADD COLUMN postal_code VARCHAR(20)"))
 
             patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
+            if "nik" not in patient_cols:
+                conn.execute(text("ALTER TABLE patients ADD COLUMN nik VARCHAR(16)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_patients_nik ON patients (nik)"))
             if "class_name" not in patient_cols:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN class_name VARCHAR(50)"))
             if "parent_name" not in patient_cols:
@@ -223,6 +229,8 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS signature_image TEXT"))
             conn.execute(text("ALTER TABLE schools ADD COLUMN IF NOT EXISTS postal_code VARCHAR(20)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS class_name VARCHAR(50)"))
+            conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS nik VARCHAR(16)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_patients_nik ON patients (nik)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_name VARCHAR(200)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
             conn.execute(text("ALTER TABLE uks_visits ADD COLUMN IF NOT EXISTS diagnosis VARCHAR(255)"))
@@ -290,6 +298,7 @@ def ensure_default_school_data() -> None:
             models.MedicineInventoryORM,
             models.SchoolSettingORM,
             models.MedicineTransactionORM,
+            models.BPJSReferralORM,
         ]
         for model in tenant_models:
             db.query(model).filter(model.school_id.is_(None)).update(
@@ -306,6 +315,7 @@ ensure_default_school_data()
 
 UI_INDEX_PATH = Path(__file__).resolve().parent / "ui" / "index.html"
 UI_LOGIN_PATH = Path(__file__).resolve().parent / "ui" / "login.html"
+UI_WELCOME_PATH = Path(__file__).resolve().parent / "ui" / "welcome.html"
 UI_STUDENTS_PATH = Path(__file__).resolve().parent / "ui" / "students.html"
 UI_STUDENT_DETAIL_PATH = Path(__file__).resolve().parent / "ui" / "student_detail.html"
 UI_SETTINGS_PATH = Path(__file__).resolve().parent / "ui" / "settings.html"
@@ -315,6 +325,8 @@ UI_AUDIT_LOGS_PATH = Path(__file__).resolve().parent / "ui" / "audit_logs.html"
 UI_CKG_PATH = Path(__file__).resolve().parent / "ui" / "ckg.html"
 UI_FITNESS_PATH = Path(__file__).resolve().parent / "ui" / "fitness.html"
 UI_SCHOOLS_PATH = Path(__file__).resolve().parent / "ui" / "schools.html"
+UI_COMPLAINTS_PATH = Path(__file__).resolve().parent / "ui" / "complaints.html"
+UI_PUBLIC_COMPLAINT_PATH = Path(__file__).resolve().parent / "ui" / "public_complaint.html"
 UI_ACCESS_DENIED_PATH = Path(__file__).resolve().parent / "ui" / "access_denied.html"
 UI_ASSETS_PATH = Path(__file__).resolve().parent / "ui" / "assets"
 
@@ -389,9 +401,7 @@ def import_students_once() -> None:
         if existing > 0:
             return
 
-        df = pd.read_excel(
-            "students_clean_import.xlsx"
-        )
+        df = pd.read_excel("data/imports/students_clean_import.xlsx")
 
         for _, row in df.iterrows():
 
@@ -429,15 +439,36 @@ def health() -> dict:
 
 @app.get("/dashboard", response_class=FileResponse)
 def dashboard(request: Request):
-    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
+    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh", "super_admin"})
 
 
 @app.get("/login", response_class=FileResponse)
 def login_page() -> FileResponse:
     return FileResponse(UI_LOGIN_PATH)
+
+
+@app.get("/welcome", response_class=FileResponse)
+def welcome_page(request: Request):
+    return protected_ui_page(
+        request,
+        UI_WELCOME_PATH,
+        {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh", "super_admin"},
+    )
+
+
 @app.get("/students", response_class=FileResponse)
 def students_page(request: Request):
     return protected_ui_page(request, UI_STUDENTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
+
+
+@app.get("/complaints", response_class=FileResponse)
+def complaints_page(request: Request):
+    return protected_ui_page(request, UI_COMPLAINTS_PATH, {"admin", "perawat", "tim_uksr", "super_admin"})
+
+
+@app.get("/keluhan", response_class=FileResponse)
+def public_complaint_page() -> FileResponse:
+    return FileResponse(UI_PUBLIC_COMPLAINT_PATH)
 @app.get("/student-detail", response_class=FileResponse)
 def student_detail_page(request: Request):
     return protected_ui_page(request, UI_STUDENT_DETAIL_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
@@ -469,7 +500,7 @@ def fitness_page(request: Request):
 
 @app.get("/ui", response_class=FileResponse)
 def ui_page(request: Request):
-    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "super_admin"})
+    return protected_ui_page(request, UI_INDEX_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh", "super_admin"})
 
 
 @app.get("/schools", response_class=FileResponse)

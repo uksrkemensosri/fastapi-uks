@@ -168,6 +168,14 @@ body[data-role="admin"] .admin-only{
     <button class="btn btn-secondary" id="btnPreviewImport" type="button">Preview Import</button>
     <button class="btn btn-primary" id="btnImportStudents" type="button">Import Siswa</button>
   </div>
+  <div style="margin-top:22px;padding-top:18px;border-top:1px solid #e2e8f0;">
+    <div style="font-weight:800;color:#334155;margin-bottom:6px;">QR Keluhan Siswa</div>
+    <p style="color:#64748b;font-size:13px;margin:0 0 12px;">Unduh satu QR universal untuk ditempel pada desain kartu berobat siswa.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <button class="btn btn-secondary" id="btnDownloadComplaintQrPng" type="button">Download QR PNG</button>
+      <button class="btn btn-secondary" id="btnDownloadComplaintQrSvg" type="button">Download QR SVG</button>
+    </div>
+  </div>
   <div id="adminToolResult" class="status"></div>
 
 </section>
@@ -366,6 +374,22 @@ btnDownloadStudentTemplate.addEventListener('click', async () => {
   appAlert('Berhasil', 'Template Excel import siswa berhasil diunduh.', 'success');
 });
 
+async function downloadComplaintQr(format){
+  const res = await fetch(`/api/complaints/qr.${format}`, {
+    headers:{Authorization:`Bearer ${token}`}
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({detail:'QR gagal dibuat.'}));
+    appAlert('Gagal', data.detail || 'QR gagal dibuat.', 'error');
+    return;
+  }
+  downloadBlob(await res.blob(), `qr_keluhan_siswa.${format}`);
+  appAlert('Berhasil', 'QR Keluhan Siswa berhasil diunduh.', 'success');
+}
+
+document.getElementById('btnDownloadComplaintQrPng').addEventListener('click', () => downloadComplaintQr('png'));
+document.getElementById('btnDownloadComplaintQrSvg').addEventListener('click', () => downloadComplaintQr('svg'));
+
 async function importStudents(preview){
   const file = studentExcelFile.files[0];
   if(!file){
@@ -508,6 +532,6 @@ document
 
 });
 </script>
-<script src="/ui/assets/rbac.js?v=8" defer></script>
+<script src="/ui/assets/rbac.js?v=11" defer></script>
 </body>
 </html>

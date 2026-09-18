@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keluhan Siswa | SEHATI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{font-family:Inter,Arial,sans-serif;color:#1e293b;background:#f4f6ff}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(145deg,#eef4ff 0%,#f8f1ff 52%,#eaf8ff 100%)}
+    .page{width:min(100%,520px);min-height:100vh;margin:auto;padding:24px 18px 38px}.brand{display:flex;align-items:center;justify-content:center;gap:10px;color:#213f94;font-weight:800}.brand img{width:40px;height:40px;object-fit:contain}.brand small{display:block;font-size:10px;color:#64748b;font-weight:600;margin-top:2px}
+    .hero{text-align:center;padding:34px 10px 24px}.hero h1{font-size:30px;line-height:1.18;margin:0 0 12px;color:#273b91;letter-spacing:0}.hero p{margin:0;color:#64748b;line-height:1.6;font-size:14px}.card{background:rgba(255,255,255,.94);border:1px solid rgba(255,255,255,.9);border-radius:24px;padding:22px;box-shadow:0 18px 45px rgba(80,86,180,.14)}label{display:block;font-size:13px;font-weight:700;color:#334155;margin-bottom:8px}.helper{font-size:12px;color:#64748b;line-height:1.45;margin:0 0 14px}.search-wrap{position:relative}.search{width:100%;border:1px solid #cfdaf3;background:#fff;border-radius:14px;padding:14px 15px;font:inherit;outline:none}.search:focus,.textarea:focus{border-color:#7799f6;box-shadow:0 0 0 4px rgba(116,141,246,.14)}.results{overflow:hidden;border:1px solid #e2e8f0;border-radius:14px;margin-top:8px;background:#fff}.result{width:100%;text-align:left;border:0;background:#fff;padding:13px 14px;font:inherit;cursor:pointer}.result+.result{border-top:1px solid #eef2f7}.result:hover{background:#f5f7ff}.result strong{display:block;color:#253a89;font-size:14px}.result span{font-size:12px;color:#64748b}.selected{display:none;margin-top:16px;padding:14px;border-radius:16px;background:#eef5ff;border:1px solid #cfe0ff}.selected strong{display:block;color:#1d4ed8}.selected span{font-size:13px;color:#64748b}.complaint-box{display:none;margin-top:20px}.textarea{width:100%;min-height:126px;resize:vertical;border:1px solid #cfdaf3;border-radius:14px;padding:14px 15px;font:inherit;line-height:1.5;outline:none}.counter{text-align:right;margin:6px 0 16px;font-size:12px;color:#64748b}.button{border:0;width:100%;border-radius:14px;padding:15px 18px;color:#fff;background:linear-gradient(135deg,#5a6ff1,#7b58e7);font:700 15px Inter,Arial,sans-serif;cursor:pointer;box-shadow:0 10px 22px rgba(100,94,226,.24)}.button:disabled{opacity:.6;cursor:not-allowed}.notice{display:none;margin-top:14px;padding:12px 14px;border-radius:14px;font-size:13px;line-height:1.45}.notice.error{display:block;background:#fff1f2;color:#b4233d}.notice.success{display:block;background:#ecfdf5;color:#057a55}.privacy{text-align:center;color:#7c8799;font-size:11px;line-height:1.5;padding:22px 14px 0}.empty{padding:13px 14px;color:#64748b;font-size:13px}.hidden{display:none!important}@media(max-width:390px){.page{padding-inline:14px}.hero h1{font-size:27px}.card{padding:18px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="brand"><img src="/ui/assets/logo-sekolah-rakyat.png" alt="Logo SEHATI"><div>SEHATI<small id="schoolName">Unit Kesehatan Sekolah</small></div></header>
+    <section class="hero"><h1>Halo! <span aria-hidden="true">&#128075;</span><br>Ada yang bisa kami bantu?</h1><p>Sampaikan keluhanmu kepada tim UKS. Kami akan menerima laporanmu dan membantu menindaklanjutinya.</p></section>
+    <section class="card" aria-live="polite">
+      <div id="formState">
+        <label for="studentSearch">Pilih nama kamu</label>
+        <p class="helper">Cari menggunakan nama atau NIS, lalu pilih namamu dari hasil yang muncul.</p>
+        <div class="search-wrap"><input id="studentSearch" class="search" type="search" autocomplete="off" placeholder="Cari nama atau NIS..."><div id="searchResults" class="results hidden"></div></div>
+        <div id="selectedStudent" class="selected"><strong id="selectedName"></strong><span id="selectedClass"></span></div>
+        <div id="complaintBox" class="complaint-box"><label for="complaintText">Apa keluhanmu hari ini?</label><textarea id="complaintText" class="textarea" maxlength="500" placeholder="Ceritakan keluhan yang kamu rasakan..."></textarea><div id="counter" class="counter">0/500</div><button id="submitComplaint" class="button" type="button">Kirim Keluhan</button></div>
+        <div id="notice" class="notice"></div>
+      </div>
+      <div id="successState" class="hidden" style="text-align:center;padding:16px 4px 8px"><div style="font-size:48px;margin-bottom:12px">&#10003;</div><h2 style="margin:0 0 10px;color:#166534;font-size:21px">Keluhan berhasil dikirim!</h2><p style="margin:0;color:#64748b;line-height:1.55;font-size:14px">Terima kasih. Tim UKS akan segera menindaklanjuti keluhanmu.</p><p id="reportNumber" style="margin:18px 0 0;color:#4658c7;font-weight:700;font-size:13px"></p></div>
+    </section>
+    <p class="privacy">Data yang kamu kirim digunakan hanya untuk pelayanan kesehatan UKS. Jangan memasukkan informasi pribadi lain yang tidak diperlukan.</p>
+  </main>
+  <script>
+    const schoolCode = new URLSearchParams(location.search).get('school') || '';
+    const searchInput = document.getElementById('studentSearch');
+    const results = document.getElementById('searchResults');
+    const notice = document.getElementById('notice');
+    const complaintBox = document.getElementById('complaintBox');
+    const selected = document.getElementById('selectedStudent');
+    const text = document.getElementById('complaintText');
+    const submit = document.getElementById('submitComplaint');
+    let selectedToken = '';
+    let searchTimer;
+    function showNotice(message, type='error'){notice.textContent=message;notice.className=`notice ${type}`}
+    function clearNotice(){notice.textContent='';notice.className='notice'}
+    async function loadSchool(){try{const res=await fetch(`/api/public/complaints/school?school=${encodeURIComponent(schoolCode)}`);if(res.ok){document.getElementById('schoolName').textContent=(await res.json()).school_name}}catch(_){}}
+    async function searchStudents(){const q=searchInput.value.trim();selectedToken='';selected.style.display='none';complaintBox.style.display='none';clearNotice();if(q.length<2){results.classList.add('hidden');return}try{const res=await fetch(`/api/public/complaints/students?school=${encodeURIComponent(schoolCode)}&q=${encodeURIComponent(q)}`);const data=await res.json();if(!res.ok)throw new Error(data.detail||'Pencarian belum berhasil.');results.innerHTML=data.length?data.map((item,index)=>`<button class="result" type="button" data-index="${index}"><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.class_name||'-')}</span></button>`).join(''):'<div class="empty">Siswa tidak ditemukan. Periksa nama atau NIS.</div>';results.classList.remove('hidden');results.querySelectorAll('.result').forEach(button=>button.addEventListener('click',()=>chooseStudent(data[Number(button.dataset.index)])));}catch(err){results.classList.add('hidden');showNotice(err.message)}}
+    function escapeHtml(value){const div=document.createElement('div');div.textContent=value||'';return div.innerHTML}
+    function chooseStudent(item){selectedToken=item.selection_token;document.getElementById('selectedName').textContent=item.name;document.getElementById('selectedClass').textContent=item.class_name||'-';selected.style.display='block';complaintBox.style.display='block';results.classList.add('hidden');searchInput.value=item.name;clearNotice();text.focus()}
+    searchInput.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchStudents,300)});
+    text.addEventListener('input',()=>{document.getElementById('counter').textContent=`${text.value.length}/500`;clearNotice()});
+    submit.addEventListener('click',async()=>{const complaint=text.value.trim();if(!selectedToken){showNotice('Pilih nama siswa terlebih dahulu.');return}if(!complaint){showNotice('Keluhan wajib diisi.');text.focus();return}submit.disabled=true;submit.textContent='Mengirim...';clearNotice();try{const res=await fetch('/api/public/complaints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selection_token:selectedToken,complaint})});const data=await res.json();if(!res.ok)throw new Error(data.detail||'Keluhan belum berhasil dikirim.');document.getElementById('formState').classList.add('hidden');document.getElementById('successState').classList.remove('hidden');document.getElementById('reportNumber').textContent=`Nomor laporan: KEL-${String(data.id).padStart(6,'0')}`;}catch(err){showNotice(err.message||'Keluhan belum berhasil dikirim. Silakan coba kembali.');submit.disabled=false;submit.textContent='Kirim Keluhan'}});
+    loadSchool();
+  </script>
+</body>
+</html>

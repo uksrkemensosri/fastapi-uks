@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEHATI - Selamat Datang</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px;
+      display: grid;
+      place-items: center;
+      color: #252b6d;
+      font-family: "Plus Jakarta Sans", sans-serif;
+      background: linear-gradient(135deg, #f8f5ff 0%, #eee7ff 48%, #dceeff 100%);
+    }
+    .welcome-card {
+      width: min(100%, 560px);
+      padding: clamp(32px, 7vw, 56px);
+      border: 1px solid rgba(255, 255, 255, .9);
+      border-radius: 24px;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 24px 64px rgba(91, 73, 156, .18);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 40px;
+      color: #59678a;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: #fff;
+      background: linear-gradient(135deg, #e863bd, #639df2);
+    }
+    h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.22; letter-spacing: 0; }
+    .subtitle { margin: 16px 0 6px; color: #60708e; font-size: 16px; line-height: 1.7; }
+    .role { margin: 0; color: #53617f; font-size: 16px; line-height: 1.7; }
+    .role strong { color: #373b8d; }
+    .actions { display: grid; gap: 14px; margin-top: 40px; }
+    button { width: 100%; min-height: 52px; border: 0; border-radius: 14px; font: inherit; font-weight: 700; cursor: pointer; }
+    .continue {
+      color: #fff;
+      background: linear-gradient(90deg, #e863bd, #9a75ef 48%, #639df2);
+      box-shadow: 0 12px 24px rgba(111, 107, 231, .25);
+    }
+    .logout { color: #6554cf; background: transparent; }
+    button:hover { filter: brightness(.98); }
+    button:focus-visible { outline: 3px solid #8cb9ff; outline-offset: 3px; }
+    .status { min-height: 22px; margin: 18px 0 0; color: #b42318; font-size: 14px; text-align: center; }
+    @media (max-width: 480px) { body { padding: 16px; } .welcome-card { border-radius: 20px; } }
+  </style>
+</head>
+<body>
+  <main class="welcome-card" aria-labelledby="welcomeTitle">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">S</span> SEHATI</div>
+    <h1 id="welcomeTitle">Memuat identitas...</h1>
+    <p class="subtitle">Selamat datang kembali di SEHATI.</p>
+    <p class="role" id="roleText"></p>
+    <div class="actions">
+      <button class="continue" id="continueButton" type="button" disabled>Lanjutkan ke SEHATI &rarr;</button>
+      <button class="logout" id="logoutButton" type="button" hidden></button>
+    </div>
+    <p class="status" id="statusText" role="alert"></p>
+  </main>
+  <script>
+    const token = localStorage.getItem("access_token") || "";
+    const title = document.getElementById("welcomeTitle");
+    const roleText = document.getElementById("roleText");
+    const continueButton = document.getElementById("continueButton");
+    const logoutButton = document.getElementById("logoutButton");
+    const statusText = document.getElementById("statusText");
+    let currentUser = null;
+
+    function roleLabel(role) {
+      const labels = {
+        super_admin: "Super Admin", admin: "Admin", perawat: "Perawat",
+        kepala_sekolah: "Kepala Sekolah", tim_uksr: "Tim UKSR", wali_asuh: "Wali Asuh"
+      };
+      return labels[role] || role;
+    }
+
+    function destinationFor(role) {
+      return role === "wali_asuh" ? "/students" : "/dashboard";
+    }
+
+    async function loadWelcome() {
+      try {
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const response = await fetch("/api/auth/me", { headers });
+        if (!response.ok) {
+          localStorage.removeItem("access_token");
+          window.location.replace("/login");
+          return;
+        }
+        currentUser = await response.json();
+        title.textContent = `Hai, ${currentUser.full_name}! \u{1F44B}`;
+        roleText.replaceChildren(
+          document.createTextNode("Kamu masuk sebagai "),
+          Object.assign(document.createElement("strong"), { textContent: `${roleLabel(currentUser.role)}.` })
+        );
+        logoutButton.textContent = `Bukan ${currentUser.full_name}? Keluar`;
+        logoutButton.hidden = false;
+        continueButton.disabled = false;
+      } catch (error) {
+        statusText.textContent = "Identitas tidak dapat dimuat. Silakan masuk kembali.";
+      }
+    }
+
+    continueButton.addEventListener("click", () => {
+      if (!currentUser) return;
+      const seenKey = `sehati_app_tour_seen_${currentUser.id}`;
+      if (!localStorage.getItem(seenKey)) {
+        localStorage.setItem(`sehati_app_tour_pending_${currentUser.id}`, "1");
+      }
+      window.location.href = destinationFor(currentUser.role);
+    });
+
+    logoutButton.addEventListener("click", async () => {
+      logoutButton.disabled = true;
+      try {
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        await fetch("/api/auth/logout", { method: "POST", headers });
+      } finally {
+        localStorage.removeItem("access_token");
+        window.location.replace("/login");
+      }
+    });
+
+    loadWelcome();
+  </script>
+</body>
+</html>

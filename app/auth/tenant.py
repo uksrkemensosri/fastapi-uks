@@ -3,7 +3,7 @@ from typing import TypeVar
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Query, Session
 
-from app.db.models import SchoolORM, UserORM
+from app.db.models import GuardianStudentAssignmentORM, PatientORM, SchoolORM, UserORM
 
 ROLE_SUPER_ADMIN = "super_admin"
 DEFAULT_SCHOOL_CODE = "SR-DEMO"
@@ -14,6 +14,10 @@ ModelT = TypeVar("ModelT")
 
 def is_super_admin(user: UserORM) -> bool:
     return user.role == ROLE_SUPER_ADMIN
+
+
+def is_wali_asuh(user: UserORM) -> bool:
+    return user.role == "wali_asuh"
 
 
 def get_default_school(db: Session) -> SchoolORM:
@@ -61,3 +65,33 @@ def assign_school(item: object, user: UserORM, explicit_school_id: int | None = 
     else:
         setattr(item, "school_id", require_user_school(user))
 
+
+def guardian_patient_ids(db: Session, user: UserORM) -> list[str]:
+    """Return only the students explicitly assigned to a wali asuh account."""
+    if not is_wali_asuh(user):
+        return []
+    return [
+        patient_id
+        for (patient_id,) in db.query(GuardianStudentAssignmentORM.patient_id)
+        .filter(
+            GuardianStudentAssignmentORM.guardian_id == user.id,
+            GuardianStudentAssignmentORM.school_id == require_user_school(user),
+        )
+        .all()
+    ]
+
+
+def guardian_patient_query(query: Query, user: UserORM, db: Session) -> Query:
+    """Apply wali asuh ownership to a PatientORM query without affecting staff roles."""
+    if not is_wali_asuh(user):
+        return query
+    return query.filter(PatientORM.id.in_(guardian_patient_ids(db, user)))
+
+
+def ensure_patient_access(db: Session, patient: PatientORM | None, user: UserORM) -> PatientORM | None:
+    """Return a tenant-owned patient only when a wali asuh is assigned to the student."""
+    if patient is None:
+        return None
+    if not is_wali_asuh(user):
+        return patient
+    return patient if patient.id in set(guardian_patient_ids(db, user)) else None

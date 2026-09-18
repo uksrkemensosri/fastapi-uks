@@ -16,7 +16,7 @@ from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Tabl
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, require_roles
-from app.auth.tenant import tenant_get, tenant_query
+from app.auth.tenant import ensure_patient_access, tenant_get, tenant_query
 from app.db.dependencies import get_db
 from app.db.models import (
     AuditLogORM,
@@ -94,7 +94,7 @@ def generate_letter_number(db: Session, current_user: UserORM) -> str:
 
 
 def get_patient_or_404(db: Session, patient_id: str, current_user: UserORM) -> PatientORM:
-    patient = tenant_get(db, PatientORM, patient_id, current_user)
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, patient_id, current_user), current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Student not found")
     return patient
@@ -196,6 +196,7 @@ def student_health_history(
     return HealthHistoryResponse(
         biodata={
             "nis": patient.id,
+            "nik": patient.nik,
             "nama_lengkap": patient.name,
             "jenis_kelamin": patient.gender,
             "tanggal_lahir": patient.birth_date,

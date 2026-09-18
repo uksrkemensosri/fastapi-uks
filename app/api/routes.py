@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from html import escape
 import base64
 import json
 import os
 from pathlib import Path
 import shutil
+import uuid
 import requests
 from dotenv import load_dotenv
 try:
@@ -26,7 +27,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy.orm import Session
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4, A5, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -37,13 +38,24 @@ from app.auth.security import (
     hash_password,
     verify_password,
 )
-from app.auth.tenant import assign_school, is_super_admin, tenant_get, tenant_query
+from app.auth.tenant import (
+    assign_school,
+    ensure_patient_access,
+    guardian_patient_ids,
+    guardian_patient_query,
+    is_super_admin,
+    is_wali_asuh,
+    tenant_get,
+    tenant_query,
+)
 from app.core.expert_system import NursingExpertSystem
 from app.db.dependencies import get_db
 from app.db.models import (
     AssessmentORM,
     AuditLogORM,
+    BPJSReferralORM,
     CKGStudentORM,
+    GuardianStudentAssignmentORM,
     MedicineInventoryORM,
     PatientORM,
     RecommendationORM,
@@ -65,6 +77,8 @@ from app.models.schemas import (
     MedicineInventoryCreate,
     AuditLogListResponse,
     AuditLogResponse,
+    BPJSReferralCreate,
+    BPJSReferralResponse,
     MedicineInventoryResponse,
     MedicineStockAdjustment,
     MedicineInventoryUpdate,
@@ -86,6 +100,7 @@ from app.models.schemas import (
     UKSVisitCreate,
     UKSVisitResponse,
     UserCreate,
+    GuardianAssignmentUpdate,
     UserProfileUpdate,
     UserUpdate,
     UserResponse,
@@ -111,6 +126,67 @@ ROLE_WALI_ASUH = "wali_asuh"
 ROLE_SUPER_ADMIN = "super_admin"
 ROLE_KEPALA_UKSR = "kepala_sekolah"
 ROLE_TIM_UKSR = "tim_uksr"
+
+BPJS_REFERRAL_ROLES = (ROLE_ADMIN, ROLE_PERAWAT, ROLE_TIM_UKSR, ROLE_WALI_ASUH)
+BPJS_REFERRAL_READ_ROLES = (*BPJS_REFERRAL_ROLES, ROLE_KEPALA_UKSR, ROLE_SUPER_ADMIN)
+BPJS_REFERRAL_UPLOAD_DIR = Path("uploads") / "bpjs_referrals"
+BPJS_REFERRAL_ALLOWED_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "application/pdf": ".pdf",
+}
+BPJS_REFERRAL_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _add_months(value: date, months: int) -> date:
+    """Add calendar months while keeping a valid day at month end."""
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    last_day = (date(year + (month == 12), (month % 12) + 1, 1) - timedelta(days=1)).day
+    return date(year, month, min(value.day, last_day))
+
+
+def _decode_bpjs_referral_document(document_base64: str, document_name: str) -> tuple[bytes, str, str]:
+    try:
+        header, encoded = document_base64.split(",", 1) if "," in document_base64 else ("", document_base64)
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="Dokumen rujukan tidak valid") from exc
+    if not content or len(content) > BPJS_REFERRAL_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Dokumen rujukan maksimal 8 MB")
+
+    content_type = ""
+    if content.startswith(b"%PDF-"):
+        content_type = "application/pdf"
+    elif content.startswith(b"\xff\xd8\xff"):
+        content_type = "image/jpeg"
+    elif content.startswith(b"\x89PNG\r\n\x1a\n"):
+        content_type = "image/png"
+    if content_type not in BPJS_REFERRAL_ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Format dokumen harus JPG, PNG, atau PDF")
+    safe_name = Path(document_name).name or f"rujukan{BPJS_REFERRAL_ALLOWED_TYPES[content_type]}"
+    return content, safe_name, content_type
+
+
+def _bpjs_referral_response(referral: BPJSReferralORM, patient: PatientORM | None, creator: UserORM | None) -> BPJSReferralResponse:
+    return BPJSReferralResponse(
+        id=referral.id,
+        patient_id=referral.patient_id,
+        patient_name=patient.name if patient else referral.patient_id,
+        referral_date=str(referral.referral_date),
+        valid_until_date=str(referral.valid_until_date),
+        control_date=str(referral.control_date) if referral.control_date else None,
+        referring_facility=referral.referring_facility,
+        destination_facility=referral.destination_facility,
+        referral_number=referral.referral_number,
+        complaint=referral.complaint,
+        notes=referral.notes,
+        status=referral.status,
+        document_name=referral.document_name,
+        created_by_name=creator.full_name if creator else None,
+        created_at=referral.created_at,
+    )
 
 
 def build_local_care_suggestion(complaint: str, examination: str) -> str:
@@ -364,6 +440,7 @@ def _build_patient_import_template_workbook() -> Workbook:
         "Kelas",
         "Nama Wali Asuh",
         "Nomor HP Wali Asuh",
+        "NIK",
     ]
     examples = [
         ["01010001", "Contoh Siswa Laki-Laki", "Laki-Laki", "2010-01-15", "1A", "Ibu Contoh", "081234567890"],
@@ -371,7 +448,9 @@ def _build_patient_import_template_workbook() -> Workbook:
     ]
     sheet.append(headers)
     for row in examples:
-        sheet.append(row)
+        sheet.append([*row, None])
+    for cell in sheet["H"]:
+        cell.number_format = "@"
 
     header_fill = PatternFill("solid", fgColor="8B5CF6")
     header_font = Font(bold=True, color="FFFFFF")
@@ -386,16 +465,17 @@ def _build_patient_import_template_workbook() -> Workbook:
         for cell in row:
             cell.border = border
             cell.alignment = Alignment(vertical="center")
-    widths = [18, 32, 18, 18, 12, 28, 24]
+    widths = [18, 32, 18, 18, 12, 28, 24, 24]
     for idx, width in enumerate(widths, start=1):
         sheet.column_dimensions[sheet.cell(row=1, column=idx).column_letter].width = width
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:G{sheet.max_row}"
+    sheet.auto_filter.ref = f"A1:H{sheet.max_row}"
 
     notes = workbook.create_sheet("Petunjuk")
     notes.append(["Kolom", "Keterangan"])
     notes_rows = [
         ["NIS", "Wajib. Nomor induk siswa atau ID siswa. Simpan sebagai teks agar angka 0 di depan tidak hilang."],
+        ["NIK", "Opsional. Teks 16 digit, jangan mengganti NIS. Kolom kosong tidak menghapus NIK yang sudah tersimpan."],
         ["Nama Lengkap", "Wajib. Nama lengkap siswa."],
         ["Jenis Kelamin", "Opsional. Contoh: Laki-Laki / Perempuan / L / P."],
         ["Tanggal Lahir", "Opsional. Gunakan format yyyy-mm-dd, contoh 2010-01-15."],
@@ -1041,6 +1121,7 @@ def create_patient(
         school_id=current_user.school_id,
         id=payload.id,
         name=payload.name,
+        nik=payload.nik,
         age=payload.age,
         gender=payload.gender,
         class_name=payload.class_name,
@@ -1054,6 +1135,7 @@ def create_patient(
     db.refresh(patient)
     return PatientSummary(
         id=patient.id,
+        nik=patient.nik,
         name=patient.name,
         age=patient.age,
         gender=patient.gender,
@@ -1071,7 +1153,9 @@ def get_patients(
 ) -> list[PatientSummary]:
 
     patients = (
-        tenant_query(db.query(PatientORM), PatientORM, current_user)
+        guardian_patient_query(
+            tenant_query(db.query(PatientORM), PatientORM, current_user), current_user, db
+        )
         .order_by(PatientORM.name.asc())
         .all()
     )
@@ -1080,6 +1164,7 @@ def get_patients(
 
         PatientSummary(
             id=p.id,
+            nik=p.nik,
             name=p.name,
             age=p.age,
             gender=p.gender,
@@ -1106,14 +1191,17 @@ def search_patients(
 
     like_expr = f"%{keyword}%"
     patients = (
-        tenant_query(db.query(PatientORM), PatientORM, current_user)
-        .filter((PatientORM.id.ilike(like_expr)) | (PatientORM.name.ilike(like_expr)))
+        guardian_patient_query(
+            tenant_query(db.query(PatientORM), PatientORM, current_user), current_user, db
+        )
+        .filter((PatientORM.id.ilike(like_expr)) | (PatientORM.name.ilike(like_expr)) | (PatientORM.nik.ilike(like_expr)))
         .order_by(PatientORM.name.asc())
         .all()
     )
     return [
         PatientSummary(
             id=p.id,
+            nik=p.nik,
             name=p.name,
             age=p.age,
             gender=p.gender,
@@ -1147,11 +1235,12 @@ def get_patient_detail(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> PatientSummary:
-    patient = tenant_get(db, PatientORM, patient_id, current_user)
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, patient_id, current_user), current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
     return PatientSummary(
         id=patient.id,
+        nik=patient.nik,
         name=patient.name,
         age=patient.age,
         gender=patient.gender,
@@ -1185,6 +1274,8 @@ def update_patient(
         )
 
     patient.name = payload.name
+    if "nik" in payload.model_fields_set:
+        patient.nik = payload.nik
     patient.age = payload.age
     patient.gender = payload.gender
     patient.class_name = payload.class_name
@@ -1239,6 +1330,98 @@ def delete_patient(
         "message": "Data siswa berhasil dihapus",
         "deleted_ckg_records": len(ckg_students),
     }
+
+
+@router.get("/patients/{patient_id}/bpjs-referrals", response_model=list[BPJSReferralResponse])
+def list_patient_bpjs_referrals(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*BPJS_REFERRAL_READ_ROLES)),
+) -> list[BPJSReferralResponse]:
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, patient_id, current_user), current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Data siswa tidak ditemukan")
+    referrals = (
+        tenant_query(db.query(BPJSReferralORM), BPJSReferralORM, current_user)
+        .filter(BPJSReferralORM.patient_id == patient.id)
+        .order_by(BPJSReferralORM.valid_until_date.asc(), BPJSReferralORM.id.desc())
+        .all()
+    )
+    creators = {
+        user.id: user
+        for user in db.query(UserORM).filter(UserORM.id.in_({item.created_by_user_id for item in referrals})).all()
+    } if referrals else {}
+    return [_bpjs_referral_response(item, patient, creators.get(item.created_by_user_id)) for item in referrals]
+
+
+@router.post("/bpjs-referrals", response_model=BPJSReferralResponse, status_code=status.HTTP_201_CREATED)
+def create_bpjs_referral(
+    payload: BPJSReferralCreate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*BPJS_REFERRAL_ROLES)),
+) -> BPJSReferralResponse:
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, payload.patient_id, current_user), current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Data siswa tidak ditemukan atau bukan anak asuh Anda")
+
+    content, document_name, content_type = _decode_bpjs_referral_document(payload.document_base64, payload.document_name)
+    valid_until = payload.valid_until_date or _add_months(payload.referral_date, 3)
+    if valid_until < payload.referral_date:
+        raise HTTPException(status_code=400, detail="Tanggal berlaku sampai tidak boleh sebelum tanggal rujukan")
+    if payload.control_date and payload.control_date < payload.referral_date:
+        raise HTTPException(status_code=400, detail="Jadwal kontrol tidak boleh sebelum tanggal rujukan")
+
+    BPJS_REFERRAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}{BPJS_REFERRAL_ALLOWED_TYPES[content_type]}"
+    stored_path = BPJS_REFERRAL_UPLOAD_DIR / stored_name
+    try:
+        stored_path.write_bytes(content)
+        referral = BPJSReferralORM(
+            school_id=patient.school_id,
+            patient_id=patient.id,
+            created_by_user_id=current_user.id,
+            referral_date=payload.referral_date.isoformat(),
+            valid_until_date=valid_until.isoformat(),
+            control_date=payload.control_date.isoformat() if payload.control_date else None,
+            referring_facility=payload.referring_facility.strip(),
+            destination_facility=payload.destination_facility.strip(),
+            referral_number=(payload.referral_number or "").strip() or None,
+            complaint=(payload.complaint or "").strip() or None,
+            notes=(payload.notes or "").strip() or None,
+            document_path=str(stored_path),
+            document_name=document_name,
+            document_content_type=content_type,
+            status="aktif",
+        )
+        db.add(referral)
+        db.flush()
+        write_audit_log(db, current_user, "create_bpjs_referral", "bpjs_referral", referral.id, f"Rujukan BPJS untuk {patient.id}")
+        db.commit()
+        db.refresh(referral)
+    except Exception:
+        if stored_path.exists():
+            stored_path.unlink()
+        db.rollback()
+        raise
+    return _bpjs_referral_response(referral, patient, current_user)
+
+
+@router.get("/bpjs-referrals/{referral_id}/document")
+def download_bpjs_referral_document(
+    referral_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*BPJS_REFERRAL_READ_ROLES)),
+) -> FileResponse:
+    referral = tenant_get(db, BPJSReferralORM, referral_id, current_user)
+    if referral is None:
+        raise HTTPException(status_code=404, detail="Rujukan tidak ditemukan")
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, referral.patient_id, current_user), current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Rujukan tidak ditemukan")
+    document_path = Path(referral.document_path)
+    if not document_path.is_file():
+        raise HTTPException(status_code=404, detail="Lampiran rujukan tidak ditemukan")
+    return FileResponse(document_path, media_type=referral.document_content_type, filename=referral.document_name)
 
 @router.post("/uks/visits", response_model=UKSVisitResponse, status_code=status.HTTP_201_CREATED)
 def create_uks_visit(
@@ -1308,6 +1491,9 @@ def get_patient_visits(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
 
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, patient_id, current_user), current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
     visits = (
         tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
         .filter(UKSVisitORM.patient_id == patient_id)
@@ -1324,6 +1510,8 @@ def get_all_uks_visits(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
     query = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
+    if is_wali_asuh(current_user):
+        query = query.filter(UKSVisitORM.patient_id.in_(guardian_patient_ids(db, current_user)))
     if month:
         month = _validate_month_yyyy_mm(month)
         query = query.filter(UKSVisitORM.visit_date.like(f"{month}%"))
@@ -1338,7 +1526,7 @@ def get_all_uks_visits(
 
     for visit in visits:
 
-        patient = tenant_get(db, PatientORM, visit.patient_id, current_user)
+        patient = ensure_patient_access(db, tenant_get(db, PatientORM, visit.patient_id, current_user), current_user)
 
         results.append({
             "id": visit.id,
@@ -1384,6 +1572,9 @@ def get_uks_visit_detail(
     visit = tenant_get(db, UKSVisitORM, visit_id, current_user)
     if visit is None:
         raise HTTPException(status_code=404, detail="UKS visit not found")
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, visit.patient_id, current_user), current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="UKS visit not found")
 
     return UKSVisitResponse(
         id=visit.id,
@@ -1405,7 +1596,7 @@ def list_patient_uks_visits(
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ) -> list[UKSVisitResponse]:
-    patient = tenant_get(db, PatientORM, patient_id, current_user)
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, patient_id, current_user), current_user)
     if patient is None:
         raise HTTPException(status_code=404, detail="Patient not found")
 
@@ -2556,6 +2747,7 @@ def get_patient_assessments(
     return PatientAssessmentsResponse(
         patient=PatientSummary(
             id=patient.id,
+            nik=patient.nik,
             name=patient.name,
             age=patient.age,
             gender=patient.gender,
@@ -2669,17 +2861,28 @@ def dashboard_stats(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
 
-    total_students = tenant_query(db.query(PatientORM), PatientORM, current_user).count()
+    total_students = guardian_patient_query(
+        tenant_query(db.query(PatientORM), PatientORM, current_user), current_user, db
+    ).count()
 
-    today_visits = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user).filter(
+    visit_query = tenant_query(db.query(UKSVisitORM), UKSVisitORM, current_user)
+    if is_wali_asuh(current_user):
+        visit_query = visit_query.filter(UKSVisitORM.patient_id.in_(guardian_patient_ids(db, current_user)))
+    today_visits = visit_query.filter(
         UKSVisitORM.visit_date == date.today().isoformat()
     ).count()
 
+    top_case_query = tenant_query(
+        db.query(UKSVisitORM.diagnosis, func.count(UKSVisitORM.diagnosis).label("total")),
+        UKSVisitORM,
+        current_user,
+    )
+    if is_wali_asuh(current_user):
+        top_case_query = top_case_query.filter(
+            UKSVisitORM.patient_id.in_(guardian_patient_ids(db, current_user))
+        )
     top_case = (
-        tenant_query(db.query(
-            UKSVisitORM.diagnosis,
-            func.count(UKSVisitORM.diagnosis).label("total")
-        ), UKSVisitORM, current_user)
+        top_case_query
         .group_by(UKSVisitORM.diagnosis)
         .order_by(func.count(UKSVisitORM.diagnosis).desc())
         .first()
@@ -2690,6 +2893,63 @@ def dashboard_stats(
         "today_visits": today_visits,
         "top_case": top_case[0] if top_case else "-",
         "active_reports": today_visits
+    }
+
+
+@router.get("/dashboard/bpjs-referrals")
+def dashboard_bpjs_referrals(
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*BPJS_REFERRAL_READ_ROLES)),
+) -> dict:
+    today = date.today()
+    query = tenant_query(db.query(BPJSReferralORM), BPJSReferralORM, current_user)
+    if is_wali_asuh(current_user):
+        query = query.filter(BPJSReferralORM.patient_id.in_(guardian_patient_ids(db, current_user)))
+    referrals = query.order_by(BPJSReferralORM.valid_until_date.asc()).all()
+    patients = {
+        patient.id: patient
+        for patient in tenant_query(db.query(PatientORM), PatientORM, current_user)
+        .filter(PatientORM.id.in_({item.patient_id for item in referrals}))
+        .all()
+    } if referrals else {}
+
+    active = 0
+    expiring = 0
+    expired = 0
+    priority = []
+    for referral in referrals:
+        try:
+            expiry = date.fromisoformat(str(referral.valid_until_date))
+        except ValueError:
+            continue
+        days_remaining = (expiry - today).days
+        if days_remaining < 0:
+            expired += 1
+            label = "Kedaluwarsa"
+        else:
+            active += 1
+            if days_remaining <= 30:
+                expiring += 1
+                label = f"H-{days_remaining}" if days_remaining else "Habis hari ini"
+            else:
+                label = f"{days_remaining} hari"
+        if days_remaining <= 30:
+            patient = patients.get(referral.patient_id)
+            priority.append({
+                "id": referral.id,
+                "patient_id": referral.patient_id,
+                "patient_name": patient.name if patient else referral.patient_id,
+                "class_name": patient.class_name if patient else None,
+                "destination_facility": referral.destination_facility,
+                "valid_until_date": referral.valid_until_date,
+                "days_remaining": days_remaining,
+                "label": label,
+            })
+    return {
+        "active": active,
+        "expiring": expiring,
+        "expired": expired,
+        "priority": sorted(priority, key=lambda item: item["days_remaining"])[:10],
     }
 @router.get("/users")
 def list_users(
@@ -2718,6 +2978,127 @@ def list_users(
         }
         for user in users
     ]
+
+
+@router.get("/guardian-assignments")
+def list_guardian_assignments(
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> list[dict]:
+    guardians = (
+        tenant_query(db.query(UserORM), UserORM, current_user)
+        .filter(UserORM.role == ROLE_WALI_ASUH)
+        .order_by(UserORM.full_name.asc())
+        .all()
+    )
+    return [
+        {
+            "id": guardian.id,
+            "username": guardian.username,
+            "full_name": guardian.full_name,
+            "is_active": guardian.is_active,
+            "assigned_count": db.query(GuardianStudentAssignmentORM)
+            .filter(
+                GuardianStudentAssignmentORM.guardian_id == guardian.id,
+                GuardianStudentAssignmentORM.school_id == guardian.school_id,
+            )
+            .count(),
+        }
+        for guardian in guardians
+    ]
+
+
+def _guardian_for_assignment_or_404(db: Session, guardian_id: int, current_user: UserORM) -> UserORM:
+    guardian = tenant_get(db, UserORM, guardian_id, current_user)
+    if guardian is None or guardian.role != ROLE_WALI_ASUH:
+        raise HTTPException(status_code=404, detail="Akun wali asuh tidak ditemukan")
+    if not is_super_admin(current_user) and guardian.school_id != current_user.school_id:
+        raise HTTPException(status_code=404, detail="Akun wali asuh tidak ditemukan")
+    return guardian
+
+
+@router.get("/guardian-assignments/{guardian_id}")
+def get_guardian_assignments(
+    guardian_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> dict:
+    guardian = _guardian_for_assignment_or_404(db, guardian_id, current_user)
+    students = (
+        tenant_query(db.query(PatientORM), PatientORM, current_user)
+        .filter(PatientORM.school_id == guardian.school_id)
+        .order_by(PatientORM.name.asc())
+        .all()
+    )
+    assigned_ids = {
+        assignment.patient_id
+        for assignment in db.query(GuardianStudentAssignmentORM)
+        .filter(
+            GuardianStudentAssignmentORM.guardian_id == guardian.id,
+            GuardianStudentAssignmentORM.school_id == guardian.school_id,
+        )
+        .all()
+    }
+    return {
+        "guardian": {"id": guardian.id, "full_name": guardian.full_name, "username": guardian.username},
+        "students": [
+            {
+                "id": student.id,
+                "name": student.name,
+                "class_name": student.class_name,
+                "assigned": student.id in assigned_ids,
+            }
+            for student in students
+        ],
+    }
+
+
+@router.put("/guardian-assignments/{guardian_id}")
+def replace_guardian_assignments(
+    guardian_id: int,
+    payload: GuardianAssignmentUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN)),
+) -> dict:
+    guardian = _guardian_for_assignment_or_404(db, guardian_id, current_user)
+    patient_ids = sorted({patient_id.strip() for patient_id in payload.patient_ids if patient_id.strip()})
+    if len(patient_ids) > 500:
+        raise HTTPException(status_code=400, detail="Terlalu banyak siswa dalam satu penugasan")
+
+    valid_ids = {
+        patient_id
+        for (patient_id,) in db.query(PatientORM.id)
+        .filter(PatientORM.school_id == guardian.school_id, PatientORM.id.in_(patient_ids))
+        .all()
+    }
+    missing_ids = sorted(set(patient_ids) - valid_ids)
+    if missing_ids:
+        raise HTTPException(status_code=400, detail="Ada siswa yang tidak ditemukan pada sekolah wali asuh")
+
+    db.query(GuardianStudentAssignmentORM).filter(
+        GuardianStudentAssignmentORM.guardian_id == guardian.id,
+        GuardianStudentAssignmentORM.school_id == guardian.school_id,
+    ).delete(synchronize_session=False)
+    db.add_all(
+        [
+            GuardianStudentAssignmentORM(
+                school_id=guardian.school_id,
+                guardian_id=guardian.id,
+                patient_id=patient_id,
+            )
+            for patient_id in patient_ids
+        ]
+    )
+    write_audit_log(
+        db,
+        current_user,
+        "assign_guardian_students",
+        "guardian_assignment",
+        guardian.id,
+        f"Assigned {len(patient_ids)} student(s) to wali asuh {guardian.username}",
+    )
+    db.commit()
+    return {"message": "Penugasan anak asuh berhasil disimpan", "assigned_count": len(patient_ids)}
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -3102,6 +3483,7 @@ def download_backup(
         "patients": [
             {
                 "id": p.id,
+                "nik": p.nik,
                 "name": p.name,
                 "age": p.age,
                 "gender": p.gender,
@@ -3160,6 +3542,8 @@ def restore_backup(
         patient.gender = item.get("gender") or patient.gender
         patient.class_name = item.get("class_name")
         patient.birth_date = item.get("birth_date")
+        if "nik" in item:
+            patient.nik = item.get("nik")
         patient.parent_name = item.get("parent_name")
         patient.parent_phone = item.get("parent_phone")
         restored["patients"] += 1
@@ -3224,6 +3608,7 @@ def import_patients_excel(
     headers = [str(cell.value or "").strip().lower() for cell in next(sheet.iter_rows(min_row=1, max_row=1))]
     aliases = {
         "id": ["id", "nis", "id / nis"],
+        "nik": ["nik"],
         "name": ["nama", "nama lengkap", "name", "full name"],
         "gender": ["gender", "jenis kelamin", "jk"],
         "birth_date": ["tanggal lahir", "birth date", "birth_date"],
@@ -3256,6 +3641,12 @@ def import_patients_excel(
             "parent_name": str(row[idx("parent_name")] or "").strip() if idx("parent_name") is not None else None,
             "parent_phone": str(row[idx("parent_phone")] or "").strip() if idx("parent_phone") is not None else None,
         }
+        nik_idx = idx("nik")
+        if nik_idx is not None and row[nik_idx] not in (None, ""):
+            value = row[nik_idx]
+            if not isinstance(value, str) or len(value.strip()) != 16 or not all(c in "0123456789" for c in value.strip()):
+                raise HTTPException(status_code=400, detail=f"NIK untuk NIS {item['id']} harus berupa teks 16 digit. Atur format kolom Excel menjadi Text.")
+            item["nik"] = value.strip()
         rows.append(item)
 
     if payload.get("preview", False):
@@ -3278,6 +3669,8 @@ def import_patients_excel(
         else:
             updated += 1
         patient.name = item["name"]
+        if "nik" in item:
+            patient.nik = item["nik"]
         patient.gender = item["gender"]
         patient.class_name = item["class_name"]
         patient.birth_date = item["birth_date"]
@@ -3352,33 +3745,97 @@ def uks_referral_letter_pdf(
 @router.get("/uks/visits/{visit_id}/rest-letter")
 def uks_rest_letter_pdf(
     visit_id: int,
-    reason: str = Query(default="Istirahat"),
+    reason: str = Query(default="Istirahat", min_length=2, max_length=300),
     days: int = Query(default=1, ge=1, le=30),
+    start_date: date | None = None,
+    notes: str | None = Query(default=None, max_length=1000),
     db: Session = Depends(get_db),
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     visit, patient = _visit_or_404(db, visit_id, current_user)
+    if start_date is None:
+        try:
+            start_date = date.fromisoformat(str(visit.visit_date)[:10])
+        except ValueError:
+            start_date = date.today()
+    end_date = start_date + timedelta(days=days - 1)
+    reason_text = " ".join(reason.split())
+    notes_text = " ".join(notes.split()) if notes else ""
+    if len(reason_text) > 180:
+        reason_text = f"{reason_text[:177].rsplit(' ', 1)[0]}..."
+    if len(notes_text) > 240:
+        notes_text = f"{notes_text[:237].rsplit(' ', 1)[0]}..."
+    school = pdf_school_for_user(db, current_user)
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=24, bottomMargin=28, leftMargin=42, rightMargin=42)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A5), topMargin=14, bottomMargin=14, leftMargin=24, rightMargin=24)
     styles = getSampleStyleSheet()
+    title_style = styles["Title"].clone("RestLetterTitle")
+    title_style.textColor = colors.HexColor("#1e3a8a")
+    title_style.fontSize = 13
+    title_style.leading = 15
+    title_style.alignment = 1
+    label_style = styles["Normal"].clone("RestLetterLabel")
+    label_style.textColor = colors.HexColor("#475569")
+    label_style.fontSize = 8
+    body_style = styles["Normal"].clone("RestLetterBody")
+    body_style.fontSize = 9
+    body_style.leading = 11
     elements = []
-    _append_pdf_letterhead(elements, doc, "SURAT IZIN ISTIRAHAT UKS", f"Tanggal: {visit.visit_date}", styles, pdf_school_for_user(db, current_user))
+    letterhead = letterhead_flowable(doc.width, school)
+    if letterhead:
+        elements.extend([letterhead, Spacer(1, 4)])
+    elements.append(Paragraph("SURAT IZIN ISTIRAHAT", title_style))
+    elements.append(Paragraph("UNIT KESEHATAN SEKOLAH", title_style))
+    elements.append(Spacer(1, 3))
+    elements.append(Paragraph("Berdasarkan pemeriksaan kesehatan di Unit Kesehatan Sekolah, siswa berikut disarankan untuk beristirahat.", body_style))
+    elements.append(Spacer(1, 6))
     rows = [
-        ["Nama", patient.name],
-        ["NIS", patient.id],
-        ["Kelas", patient.class_name or "-"],
-        ["Alasan Izin", reason],
-        ["Lama Istirahat", f"{days} hari"],
-        ["Diagnosa", visit.diagnosis or "-"],
-        ["Catatan", "Disarankan istirahat dan pemantauan kondisi oleh wali asuh/orang tua."],
+        [Paragraph("<b>Nama Siswa</b>", label_style), Paragraph(escape(patient.name), body_style)],
+        [Paragraph("<b>NIS</b>", label_style), Paragraph(escape(patient.id), body_style)],
+        [Paragraph("<b>Kelas</b>", label_style), Paragraph(escape(patient.class_name or "-"), body_style)],
+        [Paragraph("<b>Keluhan / Alasan</b>", label_style), Paragraph(escape(reason_text), body_style)],
+        [Paragraph("<b>Tanggal Izin</b>", label_style), Paragraph(f"{start_date.strftime('%d-%m-%Y')} s.d. {end_date.strftime('%d-%m-%Y')}", body_style)],
     ]
-    elements.append(Table(rows, colWidths=[130, doc.width - 130], style=TableStyle([
-        ("GRID", (0, 0), (-1, -1), .4, colors.lightgrey),
-        ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+    elements.append(Table(rows, colWidths=[125, doc.width - 125], style=TableStyle([
+        ("GRID", (0, 0), (-1, -1), .45, colors.HexColor("#bfdbfe")),
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eff6ff")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("PADDING", (0, 0), (-1, -1), 5),
+    ])))
+    elements.append(Spacer(1, 7))
+    rest_text = f"<b>Rekomendasi UKS</b><br/>Siswa disarankan beristirahat selama <b>{days} hari</b> dan dapat kembali mengikuti kegiatan setelah kondisi membaik."
+    if notes_text:
+        rest_text += f"<br/><b>Catatan:</b> {escape(notes_text)}"
+    elements.append(Table([[Paragraph(rest_text, body_style)]], colWidths=[doc.width], style=TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eef2ff")),
+        ("BOX", (0, 0), (-1, -1), .7, colors.HexColor("#818cf8")),
+        ("LINEBEFORE", (0, 0), (0, -1), 4, colors.HexColor("#4f46e5")),
         ("PADDING", (0, 0), (-1, -1), 7),
     ])))
-    _append_pdf_signature(elements, doc, current_user, styles, "Petugas UKS", pdf_school_for_user(db, current_user))
+    elements.append(Spacer(1, 7))
+    elements.append(Paragraph("Demikian surat izin ini dibuat untuk dipergunakan sebagaimana mestinya. Terima kasih atas perhatian dan kerja samanya.", body_style))
+    signature_style = styles["Normal"].clone("RestLetterSignature")
+    signature_style.fontSize = 8.5
+    signature_style.leading = 10
+    signature_city = school.city if school and school.city else "-"
+    signer_name = current_user.full_name or "-"
+    signer_nip = getattr(current_user, "nip", None) or "-"
+    signer_title = getattr(current_user, "jabatan", None) or "Petugas UKS"
+    elements.append(Spacer(1, 7))
+    elements.append(Table([["", [
+        Paragraph(f"{signature_city}, {datetime.now().strftime('%d/%m/%Y')}", signature_style),
+        Paragraph(signer_title, signature_style),
+        Spacer(1, 24),
+        Paragraph(f"<b>{escape(signer_name)}</b>", signature_style),
+        Paragraph(f"NIP. {escape(str(signer_nip))}", signature_style),
+    ]]], colWidths=[doc.width - 170, 170], style=TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ])))
     doc.build(elements)
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="surat_izin_{visit_id}.pdf"'})
