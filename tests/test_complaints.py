@@ -1,29 +1,4 @@
-import os
-from pathlib import Path
-
-import pytest
 from fastapi.testclient import TestClient
-
-
-TEST_DB_PATH = Path("test_complaints_feature.db")
-if TEST_DB_PATH.exists():
-    TEST_DB_PATH.unlink()
-
-os.environ["DATABASE_URL"] = "sqlite:///./test_complaints_feature.db"
-os.environ["SECRET_KEY"] = "complaint-test-secret-key-at-least-32-characters"
-os.environ["FONNTE_TOKEN"] = ""
-
-from app.main import app  # noqa: E402
-from app.db.database import engine  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as test_client:
-        yield test_client
-    engine.dispose()
-    if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
 
 
 def auth_headers(client: TestClient) -> dict:
@@ -42,7 +17,7 @@ def test_public_complaint_flow_and_staff_follow_up(client: TestClient):
     assert patient.status_code == 201
 
     assert client.get("/keluhan").status_code == 200
-    search = client.get("/api/public/complaints/students?school=SR-DEMO&q=Siswa")
+    search = client.get("/api/public/complaints/students?school=SR-DEMO&q=KELUHAN-001")
     assert search.status_code == 200
     result = search.json()[0]
     assert set(result) == {"selection_token", "name", "class_name"}

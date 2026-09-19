@@ -1,13 +1,25 @@
+import argparse
+from pathlib import Path
+
 from openpyxl import load_workbook
 
 from app.db.database import SessionLocal
 from app.db.models import PatientORM
 
 
+DEFAULT_IMPORT_FILE = Path(__file__).parent / "data" / "imports" / "students_clean_import.xlsx"
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Import or update SEHATI student data.")
+    parser.add_argument("file", nargs="?", type=Path, default=DEFAULT_IMPORT_FILE)
+    args = parser.parse_args()
+    if not args.file.is_file():
+        parser.error(f"File tidak ditemukan: {args.file}")
+
     db = SessionLocal()
     try:
-        wb = load_workbook("students_clean_import.xlsx", data_only=True)
+        wb = load_workbook(args.file, data_only=True)
         ws = wb.active
 
         rows = list(ws.iter_rows(values_only=True))

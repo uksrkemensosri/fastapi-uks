@@ -9,6 +9,7 @@
     const perawatLinks = new Set(["/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/settings"]);
     const superAdminLinks = new Set([...adminLinks, "/schools"]);
     const sidebar = document.querySelector(".sidebar");
+    const menu = sidebar?.querySelector(".menu") || sidebar;
     if (sidebar && !sidebar.querySelector('a[href="/fitness"]')) {
       const ckgLink = sidebar.querySelector('a[href="/ckg"]');
       const fitnessLink = document.createElement("a");
@@ -28,7 +29,7 @@
       if (studentsLink) {
         studentsLink.insertAdjacentElement("afterend", complaintLink);
       } else {
-        sidebar.appendChild(complaintLink);
+        menu?.appendChild(complaintLink);
       }
     }
     if (role === "super_admin" && sidebar && !sidebar.querySelector('a[href="/schools"]')) {
@@ -40,7 +41,7 @@
       if (usersLink) {
         usersLink.insertAdjacentElement("beforebegin", schoolLink);
       } else {
-        sidebar.appendChild(schoolLink);
+        menu?.appendChild(schoolLink);
       }
     }
     document.querySelectorAll(".menu-item").forEach((item) => {
@@ -73,6 +74,66 @@
         item.remove();
       }
     });
+  }
+
+  function setupMobileNavigation() {
+    if (document.querySelector(".sehati-mobile-header")) {
+      return;
+    }
+    const links = [...document.querySelectorAll(".sidebar .menu-item")];
+    if (!links.length) {
+      return;
+    }
+
+    const currentLabel = links.find((link) => link.getAttribute("href") === window.location.pathname)?.textContent.trim() || "SEHATI";
+    const header = document.createElement("header");
+    header.className = "sehati-mobile-header";
+    header.innerHTML = `
+      <button class="sehati-mobile-menu-button" type="button" aria-label="Buka menu" aria-expanded="false">&#9776;</button>
+      <div class="sehati-mobile-brand"><strong>SEHATI</strong><span>${currentLabel}</span></div>
+    `;
+
+    const overlay = document.createElement("button");
+    overlay.className = "sehati-mobile-overlay";
+    overlay.type = "button";
+    overlay.setAttribute("aria-label", "Tutup menu");
+
+    const drawer = document.createElement("aside");
+    drawer.className = "sehati-mobile-drawer";
+    drawer.setAttribute("aria-label", "Navigasi utama");
+    drawer.innerHTML = `
+      <div class="sehati-mobile-drawer-head">
+        <img src="/ui/assets/logo-sekolah-rakyat.png" alt="">
+        <div><strong>SEHATI</strong><span>EMR UKS Sekolah Rakyat</span></div>
+        <button type="button" class="sehati-mobile-close" aria-label="Tutup menu">&times;</button>
+      </div>
+      <nav class="sehati-mobile-links"></nav>
+    `;
+    const linkContainer = drawer.querySelector(".sehati-mobile-links");
+    links.forEach((link) => linkContainer.appendChild(link.cloneNode(true)));
+
+    const menuButton = header.querySelector(".sehati-mobile-menu-button");
+    const closeButton = drawer.querySelector(".sehati-mobile-close");
+    const close = () => {
+      document.body.classList.remove("sehati-mobile-nav-open");
+      menuButton.setAttribute("aria-expanded", "false");
+    };
+    const open = () => {
+      document.body.classList.add("sehati-mobile-nav-open");
+      menuButton.setAttribute("aria-expanded", "true");
+      closeButton.focus();
+    };
+    menuButton.addEventListener("click", open);
+    closeButton.addEventListener("click", close);
+    overlay.addEventListener("click", close);
+    drawer.querySelectorAll("a").forEach((link) => link.addEventListener("click", close));
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
+
+    document.body.classList.add("sehati-has-mobile-nav");
+    document.body.prepend(header);
+    document.body.append(overlay, drawer);
   }
 
   async function loadCurrentUser() {
@@ -229,6 +290,7 @@
     const user = await loadCurrentUser();
     if (user) {
       hideAdminLinks(user.role);
+      setupMobileNavigation();
       loadComplaintBadge(user.role);
       document.body.dataset.role = user.role;
       loadAppTour();
@@ -251,6 +313,6 @@
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initRbacUi);
   } else {
-    initRbacUi();
+    initRbacUi().catch((error) => console.warn("RBAC UI initialization failed", error));
   }
 })();

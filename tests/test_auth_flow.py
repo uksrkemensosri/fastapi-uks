@@ -1,35 +1,11 @@
-import os
 import re
 import base64
 from io import BytesIO
-from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
 
-# Pakai DB test terpisah agar tidak menyentuh database utama project.
-TEST_DB_PATH = Path("test_emr_keperawatan.db")
-if TEST_DB_PATH.exists():
-    TEST_DB_PATH.unlink()
-
-os.environ["DATABASE_URL"] = "sqlite:///./test_emr_keperawatan.db"
-os.environ["SECRET_KEY"] = "test-secret-key-min-32-chars-123456"
-os.environ["ACCESS_TOKEN_EXPIRE_SECONDS"] = "1800"
-os.environ["FONNTE_TOKEN"] = ""
-
-from app.main import app  # noqa: E402
-from app.db.database import engine  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def client():
-    with TestClient(app) as c:
-        yield c
-
-    engine.dispose()
-    if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
+from app.main import app
 
 
 def _auth_headers(client: TestClient) -> dict:
@@ -58,6 +34,40 @@ def test_protected_ui_redirects_without_login(client: TestClient):
     res = isolated.get("/dashboard", follow_redirects=False)
     assert res.status_code == 303
     assert res.headers["location"] == "/login"
+
+
+def test_admin_ui_pages_and_security_headers(client: TestClient):
+    _auth_headers(client)
+    for path in (
+        "/welcome",
+        "/dashboard",
+        "/students",
+        "/student-detail",
+        "/complaints",
+        "/reports",
+        "/ckg",
+        "/fitness",
+        "/users",
+        "/audit-logs",
+        "/settings",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["x-frame-options"] == "DENY"
+
+
+def test_application_has_no_duplicate_api_method_paths():
+    seen = set()
+    duplicates = set()
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        for method in getattr(route, "methods", set()):
+            key = (method, path)
+            if key in seen:
+                duplicates.add(key)
+            seen.add(key)
+    assert not duplicates
 
 
 def test_auth_me_and_refresh(client: TestClient):

@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -33,6 +34,12 @@ except ImportError:  # pragma: no cover
 
 SESSION_COOKIE_NAME = "emr_session"
 SESSION_SECRET = os.getenv("SECRET_KEY", "dev-secret-key-change-me").encode("utf-8")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT in {"production", "prod"}
+logger = logging.getLogger(__name__)
+
+if IS_PRODUCTION and SESSION_SECRET == b"dev-secret-key-change-me":
+    raise RuntimeError("SECRET_KEY wajib diatur pada environment production")
 
 
 def encode_session(data: dict) -> str:
@@ -68,11 +75,23 @@ async def signed_session_middleware(request: Request, call_next):
             encode_session(session_data),
             httponly=True,
             samesite="lax",
-            secure=os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true",
+            secure=os.getenv("SESSION_COOKIE_SECURE", "true" if IS_PRODUCTION else "false").lower() == "true",
             max_age=60 * 60 * 8,
         )
     else:
         response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if IS_PRODUCTION and request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
@@ -364,13 +383,19 @@ def seed_admin_user() -> None:
     if os.getenv("DISABLE_DEFAULT_ADMIN", "false").lower() == "true":
         return
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
     admin_full_name = os.getenv("ADMIN_FULL_NAME", "Administrator")
 
     db: Session = SessionLocal()
     try:
         default_school = get_default_school(db)
         admin = db.query(UserORM).filter(UserORM.username == admin_username).first()
+        if admin is not None:
+            return
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if not admin_password and IS_PRODUCTION:
+            logger.warning("Default admin creation skipped: ADMIN_PASSWORD is not configured")
+            return
+        admin_password = admin_password or "admin123"
         if admin is None:
             db.add(
                 UserORM(
@@ -401,7 +426,12 @@ def import_students_once() -> None:
         if existing > 0:
             return
 
-        df = pd.read_excel("data/imports/students_clean_import.xlsx")
+        import_file = Path("data/imports/students_clean_import.xlsx")
+        if not import_file.exists():
+            logger.info("Student import file is absent; automatic import skipped")
+            return
+
+        df = pd.read_excel(import_file)
 
         for _, row in df.iterrows():
 
@@ -419,7 +449,7 @@ def import_students_once() -> None:
 
         db.commit()
 
-        print("Students imported 😄🔥")
+        logger.info("Students imported from %s", import_file)
 
     finally:
 

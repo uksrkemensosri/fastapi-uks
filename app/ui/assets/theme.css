@@ -917,3 +917,219 @@ body.dark .student-search-item:hover,
 body.dark .student-search-item:focus{
   background:#f3e8ff;
 }
+
+.sehati-mobile-header,
+.sehati-mobile-drawer,
+.sehati-mobile-overlay{
+  display:none;
+}
+
+@media(max-width:900px){
+  body.sehati-has-mobile-nav{
+    padding-top:64px;
+  }
+
+  body.sehati-has-mobile-nav .layout{
+    display:block !important;
+    width:100% !important;
+    max-width:100vw !important;
+  }
+
+  body.sehati-has-mobile-nav .layout > .sidebar{
+    display:none !important;
+  }
+
+  body.sehati-has-mobile-nav .main{
+    width:100% !important;
+    max-width:100vw !important;
+    min-width:0 !important;
+    margin:0 !important;
+    padding:16px !important;
+  }
+
+  body.sehati-has-mobile-nav .topbar{
+    width:100% !important;
+    padding:18px !important;
+    border-radius:18px !important;
+  }
+
+  body.sehati-has-mobile-nav .card{
+    padding:18px;
+    border-radius:18px;
+  }
+
+  body.sehati-has-mobile-nav .table-wrap,
+  body.sehati-has-mobile-nav .users-card,
+  body.sehati-has-mobile-nav .audit-table{
+    max-width:100%;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .sehati-mobile-header{
+    position:fixed;
+    inset:0 0 auto 0;
+    z-index:1200;
+    height:64px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:10px 14px;
+    background:rgba(255,255,255,.94);
+    border-bottom:1px solid rgba(148,163,184,.22);
+    box-shadow:0 8px 24px rgba(49,46,129,.10);
+    backdrop-filter:blur(18px);
+  }
+
+  .sehati-mobile-menu-button,
+  .sehati-mobile-close{
+    width:42px;
+    height:42px;
+    flex:0 0 42px;
+    display:grid;
+    place-items:center;
+    border:0;
+    border-radius:12px;
+    background:#eef2ff;
+    color:#4338ca;
+    font-size:1.4rem;
+    cursor:pointer;
+  }
+
+  .sehati-mobile-brand{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    line-height:1.15;
+  }
+
+  .sehati-mobile-brand strong{
+    color:#312e81;
+    font-size:.95rem;
+  }
+
+  .sehati-mobile-brand span{
+    max-width:65vw;
+    overflow:hidden;
+    color:#64748b;
+    font-size:.76rem;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .sehati-mobile-overlay{
+    position:fixed;
+    inset:0;
+    z-index:1290;
+    width:100%;
+    height:100%;
+    border:0;
+    background:rgba(15,23,42,.48);
+    backdrop-filter:blur(3px);
+  }
+
+  .sehati-mobile-drawer{
+    position:fixed;
+    inset:0 auto 0 0;
+    z-index:1300;
+    width:min(340px,86vw);
+    display:flex;
+    flex-direction:column;
+    padding:18px;
+    overflow-y:auto;
+    background:linear-gradient(180deg,#f8f5ff,#eef6ff);
+    box-shadow:18px 0 50px rgba(15,23,42,.22);
+    transform:translateX(-105%);
+    transition:transform .2s ease;
+  }
+
+  .sehati-mobile-nav-open .sehati-mobile-overlay{
+    display:block;
+  }
+
+  .sehati-mobile-nav-open .sehati-mobile-drawer{
+    transform:translateX(0);
+  }
+
+  .sehati-mobile-nav-open{
+    overflow:hidden;
+  }
+
+  .sehati-mobile-drawer-head{
+    display:flex;
+    align-items:center;
+    gap:11px;
+    padding-bottom:18px;
+    border-bottom:1px solid rgba(99,102,241,.14);
+  }
+
+  .sehati-mobile-drawer-head img{
+    width:46px;
+    height:46px;
+    object-fit:contain;
+    padding:5px;
+    border-radius:12px;
+    background:#fff;
+  }
+
+  .sehati-mobile-drawer-head div{
+    min-width:0;
+    display:flex;
+    flex:1;
+    flex-direction:column;
+  }
+
+  .sehati-mobile-drawer-head strong{
+    color:#312e81;
+  }
+
+  .sehati-mobile-drawer-head span{
+    color:#64748b;
+    font-size:.72rem;
+  }
+
+  .sehati-mobile-close{
+    background:transparent;
+    font-size:1.8rem;
+  }
+
+  .sehati-mobile-links{
+    display:flex;
+    flex-direction:column;
+    gap:7px;
+    padding-top:18px;
+  }
+
+  .sehati-mobile-links .menu-item{
+    margin:0;
+    padding:14px 16px;
+    border-radius:12px;
+    font-size:.95rem;
+    letter-spacing:0;
+  }
+
+  body.dark .sehati-mobile-header{
+    background:rgba(30,41,59,.96);
+    border-bottom-color:rgba(255,255,255,.12);
+  }
+
+  body.dark .sehati-mobile-brand strong{
+    color:#f8fafc;
+  }
+
+  body.dark .sehati-mobile-brand span{
+    color:#cbd5e1;
+  }
+
+  body.dark .sehati-mobile-drawer{
+    background:linear-gradient(180deg,#334155,#0f172a);
+  }
+
+  body.dark .sehati-mobile-drawer-head strong{
+    color:#f8fafc;
+  }
+
+  body.dark .sehati-mobile-drawer-head span{
+    color:#cbd5e1;
+  }
+}

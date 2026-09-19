@@ -1,13 +1,22 @@
+import argparse
+from pathlib import Path
+
 from openpyxl import load_workbook
 
 from app.db.database import SessionLocal
 from app.db.models import PatientORM, UKSVisitORM
 
-EXCEL_FILE = r"C:\Users\indah\OneDrive\Dokumen\New project\laporan_kunjungan.xlsx"
+DEFAULT_IMPORT_FILE = Path(__file__).parents[1] / "data" / "imports" / "laporan_kunjungan.xlsx"
+
+parser = argparse.ArgumentParser(description="Import UKS visits from an Excel workbook.")
+parser.add_argument("file", nargs="?", type=Path, default=DEFAULT_IMPORT_FILE)
+args = parser.parse_args()
+if not args.file.is_file():
+    parser.error(f"File tidak ditemukan: {args.file}")
 
 db = SessionLocal()
 
-wb = load_workbook(EXCEL_FILE)
+wb = load_workbook(args.file)
 ws = wb.active
 
 patients = db.query(PatientORM).all()

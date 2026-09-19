@@ -3,7 +3,7 @@ from io import BytesIO
 
 from openpyxl import Workbook
 
-from test_auth_flow import client, _auth_headers
+from test_auth_flow import _auth_headers
 
 
 def test_nik_import_preserves_identity_and_legacy_import(client):

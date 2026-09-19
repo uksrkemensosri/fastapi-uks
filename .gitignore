@@ -34,3 +34,4 @@ tools/latsar/
 # Local OS/editor state
 .DS_Store
 Thumbs.db
+*.lnk

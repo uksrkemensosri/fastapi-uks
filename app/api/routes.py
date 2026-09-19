@@ -1,7 +1,8 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from html import escape
 import base64
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -111,6 +112,7 @@ from app.models.schemas import (
 )
 
 router = APIRouter(prefix="/api", tags=["EMR Keperawatan"])
+logger = logging.getLogger(__name__)
 expert_system = NursingExpertSystem()
 client = (
     OpenAI(
@@ -119,7 +121,7 @@ client = (
         timeout=float(os.getenv("OPENROUTER_TIMEOUT_SECONDS", "8")),
         max_retries=0,
     )
-    if OpenAI is not None
+    if OpenAI is not None and os.getenv("OPENROUTER_API_KEY")
     else None
 )
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
@@ -621,17 +623,15 @@ def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, 
     token = os.getenv("FONNTE_TOKEN")
 
     if not token:
-        print("❌ FONNTE_TOKEN belum diatur")
+        logger.warning("Fonnte notification skipped: token is not configured")
         return "skipped", "FONNTE_TOKEN belum diisi"
 
     target = normalize_whatsapp_number(target_phone)
     if not target:
-        print("⚠️ Nomor WhatsApp wali asuh tidak valid")
+        logger.warning("Fonnte notification skipped: guardian phone number is invalid")
         return "skipped", "Nomor wali asuh belum valid"
 
     try:
-        print(f"📲 Mengirim WhatsApp ke {target}")
-
         response = requests.post(
             os.getenv("FONNTE_API_URL", "https://api.fonnte.com/send"),
             headers={"Authorization": token},
@@ -642,9 +642,6 @@ def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, 
             timeout=10,
         )
 
-        print(f"Status : {response.status_code}")
-        print(f"Response : {response.text}")
-
         if response.ok:
             try:
                 payload = response.json()
@@ -653,19 +650,19 @@ def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, 
             process = str(payload.get("process") or "").lower()
             detail = str(payload.get("detail") or payload.get("message") or response.text)
             if process == "pending" or "message in queue" in detail.lower():
-                print("WhatsApp masuk antrean Fonnte")
+                logger.info("Fonnte notification queued")
                 return "queued", "WhatsApp masuk antrean"
             if payload and payload.get("status") is False:
-                print("WhatsApp ditolak provider")
+                logger.warning("Fonnte rejected a notification request")
                 return "failed", detail[:300]
-            print("✅ WhatsApp berhasil dikirim")
+            logger.info("Fonnte notification sent")
             return "sent", "WhatsApp sukses"
 
-        print("❌ WhatsApp gagal dikirim")
+        logger.warning("Fonnte notification failed with HTTP %s", response.status_code)
         return "failed", f"HTTP {response.status_code}: {response.text[:300]}"
 
     except Exception as exc:
-        print(f"🔥 Error WhatsApp: {exc}")
+        logger.exception("Fonnte notification request failed")
         return "failed", str(exc)
 
 
@@ -3610,7 +3607,7 @@ def download_backup(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
 ):
     payload = {
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "patients": [
             {
                 "id": p.id,

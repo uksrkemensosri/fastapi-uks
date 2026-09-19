@@ -4,15 +4,18 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from io import BytesIO
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, status
 import qrcode
+import requests
 from reportlab.graphics import renderSVG
 from reportlab.graphics.barcode.qr import QrCodeWidget
 from reportlab.graphics.shapes import Drawing
@@ -30,6 +33,7 @@ from app.models.schemas import (
 )
 
 router = APIRouter(tags=["Keluhan Siswa"])
+logger = logging.getLogger(__name__)
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
@@ -37,6 +41,45 @@ ROLE_TIM_UKSR = "tim_uksr"
 ROLE_STAFF = (ROLE_ADMIN, ROLE_PERAWAT, ROLE_TIM_UKSR)
 COMPLAINT_STATUSES = {"MENUNGGU", "DITINDAKLANJUTI", "SELESAI", "DIBATALKAN"}
 _RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _notify_complaint_group(
+    patient_name: str,
+    class_name: str | None,
+    complaint: str,
+    complaint_id: int,
+    submitted_at: datetime,
+) -> None:
+    """Send a best-effort WhatsApp notification without delaying intake."""
+    token = os.getenv("FONNTE_TOKEN", "").strip()
+    group_id = os.getenv("FONNTE_GROUP_ID", "").strip()
+    if not token or not group_id:
+        return
+
+    submitted = submitted_at
+    if submitted.tzinfo is None:
+        submitted = submitted.replace(tzinfo=ZoneInfo("UTC"))
+    local_time = submitted.astimezone(ZoneInfo("Asia/Jakarta"))
+    message = (
+        "KELUHAN SISWA BARU - SEHATI\n\n"
+        f"Nama: {patient_name}\n"
+        f"Kelas: {class_name or '-'}\n"
+        f"Keluhan: {complaint}\n"
+        f"Waktu: {local_time.strftime('%d-%m-%Y %H:%M')} WIB\n\n"
+        f"Nomor laporan: KEL-{complaint_id:06d}\n"
+        "Silakan buka SEHATI untuk menindaklanjuti."
+    )
+    try:
+        response = requests.post(
+            os.getenv("FONNTE_API_URL", "https://api.fonnte.com/send"),
+            headers={"Authorization": token},
+            data={"target": group_id, "message": message},
+            timeout=10,
+        )
+        if not response.ok:
+            logger.warning("Fonnte complaint notification failed with HTTP %s", response.status_code)
+    except requests.RequestException:
+        logger.exception("Fonnte complaint notification request failed")
 
 
 def _rate_limit(request: Request, bucket: str, limit: int, seconds: int) -> None:
@@ -173,6 +216,7 @@ def public_complaint_school(
 def create_public_complaint(
     payload: PublicComplaintCreate,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> PublicComplaintResponse:
     _rate_limit(request, "complaint-submit", limit=10, seconds=10 * 60)
@@ -201,6 +245,14 @@ def create_public_complaint(
     db.add(item)
     db.commit()
     db.refresh(item)
+    background_tasks.add_task(
+        _notify_complaint_group,
+        patient.name,
+        patient.class_name,
+        item.complaint,
+        item.id,
+        item.submitted_at,
+    )
     return PublicComplaintResponse(id=item.id, status=item.status, submitted_at=item.submitted_at)
 
 
