@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 # Pakai DB test terpisah agar tidak menyentuh database utama project.
 TEST_DB_PATH = Path("test_emr_keperawatan.db")
@@ -499,6 +499,74 @@ def test_user_crud_and_audit_log(client: TestClient):
     assert logs.status_code == 200
     actions = {item["action"] for item in logs.json()["items"]}
     assert {"create_user", "edit_user", "reset_password", "deactivate_user", "activate_user"} <= actions
+
+
+def test_super_admin_exports_temporary_credentials(client: TestClient):
+    from app.auth.security import hash_password
+    from app.db.database import SessionLocal
+    from app.db.models import SchoolORM, UserORM
+
+    db = SessionLocal()
+    try:
+        super_admin = db.query(UserORM).filter(UserORM.username == "credential_superadmin").first()
+        if super_admin is None:
+            super_admin = UserORM(
+                username="credential_superadmin",
+                full_name="Credential Super Admin",
+                role="super_admin",
+                password_hash=hash_password("superrahasia"),
+                is_active=True,
+            )
+            db.add(super_admin)
+            db.commit()
+        school = db.query(SchoolORM).filter(SchoolORM.school_code == "CREDENTIAL-TEST").first()
+        if school is None:
+            school = SchoolORM(
+                school_code="CREDENTIAL-TEST",
+                school_name="Sekolah Uji Kredensial",
+                is_active=True,
+            )
+            db.add(school)
+            db.flush()
+        target = db.query(UserORM).filter(UserORM.username == "credential_target").first()
+        if target is None:
+            target = UserORM(
+                school_id=school.id,
+                username="credential_target",
+                full_name="Pengguna Uji Kredensial",
+                role="tim_uksr",
+                password_hash=hash_password("passwordlama"),
+                is_active=True,
+            )
+            db.add(target)
+        db.commit()
+        school_id = school.id
+    finally:
+        db.close()
+
+    admin_headers = _auth_headers(client)
+    forbidden = client.post(
+        "/api/users/export-temporary-credentials",
+        headers=admin_headers,
+        json={"school_id": school_id, "roles": ["tim_uksr"]},
+    )
+    assert forbidden.status_code == 403
+
+    super_headers = _login_headers(client, "credential_superadmin", "superrahasia")
+    exported = client.post(
+        "/api/users/export-temporary-credentials",
+        headers=super_headers,
+        json={"school_id": school_id, "roles": ["tim_uksr"]},
+    )
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/vnd.openxmlformats")
+    workbook = load_workbook(BytesIO(exported.content), read_only=True)
+    rows = list(workbook["Kredensial Sementara"].iter_rows(values_only=True))
+    assert rows[0][:4] == ("Nama Lengkap", "Username", "Password Sementara", "Role")
+    target_row = next(row for row in rows[1:] if row[1] == "credential_target")
+    assert target_row[3] == "tim_uksr"
+    assert len(target_row[2]) == 12
+    assert _login_headers(client, "credential_target", target_row[2])
 
 
 def test_cannot_disable_self_or_last_active_admin(client: TestClient):

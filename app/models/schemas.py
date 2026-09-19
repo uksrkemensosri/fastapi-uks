@@ -347,6 +347,17 @@ class UserUpdate(BaseModel):
         return value
 
 
+class UserCredentialExportRequest(BaseModel):
+    school_id: int
+    roles: List[str] = Field(default_factory=list, max_length=6)
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def normalize_roles(cls, value):
+        if value is None:
+            return []
+        return [str(role).strip().lower().replace(" ", "_").replace("-", "_") for role in value]
+
 class PasswordResetRequest(BaseModel):
     new_password: str = Field(min_length=6)
 

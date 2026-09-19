@@ -5,7 +5,9 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
+import string
 import uuid
 import requests
 from dotenv import load_dotenv
@@ -101,6 +103,7 @@ from app.models.schemas import (
     UKSVisitCreate,
     UKSVisitResponse,
     UserCreate,
+    UserCredentialExportRequest,
     GuardianAssignmentUpdate,
     UserProfileUpdate,
     UserUpdate,
@@ -2993,6 +2996,119 @@ def list_users(
         }
         for user in users
     ]
+
+
+def _temporary_password(length: int = 12) -> str:
+    """Create a readable password containing all required character groups."""
+    alphabet = string.ascii_letters + string.digits
+    characters = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+    ]
+    characters.extend(secrets.choice(alphabet) for _ in range(length - len(characters)))
+    secrets.SystemRandom().shuffle(characters)
+    return "".join(characters)
+
+
+def _excel_text(value: object) -> str:
+    text = str(value or "")
+    return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+
+
+@router.post("/users/export-temporary-credentials")
+def export_temporary_user_credentials(
+    payload: UserCredentialExportRequest,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_SUPER_ADMIN)),
+) -> StreamingResponse:
+    school = db.get(SchoolORM, payload.school_id)
+    if school is None or not school.is_active:
+        raise HTTPException(status_code=404, detail="Sekolah aktif tidak ditemukan")
+
+    allowed_roles = {ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_WALI_ASUH, ROLE_TIM_UKSR}
+    selected_roles = set(payload.roles) if payload.roles else allowed_roles
+    if not selected_roles or not selected_roles.issubset(allowed_roles):
+        raise HTTPException(status_code=400, detail="Role yang dipilih tidak valid")
+
+    users = (
+        db.query(UserORM)
+        .filter(
+            UserORM.school_id == school.id,
+            UserORM.role.in_(selected_roles),
+            UserORM.is_active.is_(True),
+        )
+        .order_by(UserORM.role.asc(), UserORM.full_name.asc())
+        .all()
+    )
+    if not users:
+        raise HTTPException(status_code=404, detail="Tidak ada pengguna aktif untuk pilihan tersebut")
+
+    credentials: list[tuple[UserORM, str]] = []
+    for user in users:
+        temporary_password = _temporary_password()
+        user.password_hash = hash_password(temporary_password)
+        db.add(user)
+        credentials.append((user, temporary_password))
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Kredensial Sementara"
+    headers = ["Nama Lengkap", "Username", "Password Sementara", "Role", "Status", "Sekolah"]
+    sheet.append(headers)
+    for user, temporary_password in credentials:
+        sheet.append([
+            _excel_text(user.full_name),
+            _excel_text(user.username),
+            temporary_password,
+            user.role,
+            "Aktif",
+            _excel_text(school.school_name),
+        ])
+
+    header_fill = PatternFill("solid", fgColor="4F46E5")
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center")
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    for column, width in {"A": 30, "B": 24, "C": 24, "D": 20, "E": 12, "F": 34}.items():
+        sheet.column_dimensions[column].width = width
+
+    info = workbook.create_sheet("Petunjuk")
+    info.append(["PENTING"])
+    info.append(["Password dalam file ini adalah password sementara yang baru dibuat."])
+    info.append(["Bagikan setiap baris hanya kepada pemilik akun yang bersangkutan."])
+    info.append(["Simpan file di tempat aman dan hapus setelah kredensial dibagikan."])
+    info.column_dimensions["A"].width = 78
+    info["A1"].font = Font(color="B91C1C", bold=True, size=14)
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    write_audit_log(
+        db,
+        current_user,
+        "export_temporary_credentials",
+        "school",
+        school.id,
+        f"Reset and exported temporary credentials for {len(users)} active user(s); roles: {', '.join(sorted(selected_roles))}",
+    )
+    db.commit()
+
+    safe_code = re.sub(r"[^A-Za-z0-9_-]+", "_", school.school_code).strip("_") or str(school.id)
+    filename = f"kredensial_sehati_{safe_code}_{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @router.get("/guardian-assignments")
