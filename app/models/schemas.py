@@ -127,8 +127,8 @@ class StudentComplaintResponse(BaseModel):
 
 
 class AICareSuggestionRequest(BaseModel):
-    complaint: str = Field(min_length=2, max_length=255)
-    examination: str = Field(min_length=2, max_length=255)
+    complaint: str = Field(min_length=2, max_length=1000)
+    examination: str = Field(min_length=2, max_length=2000)
 
 
 class AICareSuggestionResponse(BaseModel):

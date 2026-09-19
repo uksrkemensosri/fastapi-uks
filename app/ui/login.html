@@ -14,14 +14,15 @@
     *{margin:0;padding:0;box-sizing:border-box}
     body{
 
-  min-height:100vh;
+  min-height:100dvh;
 
   font-family:'Plus Jakarta Sans',sans-serif;
 
   display:grid;
   place-items:center;
 
-  overflow:hidden;
+  overflow-x:hidden;
+  overflow-y:auto;
 
   padding:24px;
 
@@ -578,11 +579,37 @@ user-select:none;
     .pill-row{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:8px;color:#1d2c7d;font-weight:700;font-size:.95rem}
 
     @media(max-width:760px){
-      .panel{padding:22px 18px}
-      .brand-row{grid-template-columns:1fr}
-      .logo-wrap,.logo-wrap.right{justify-content:center}
-      .brand-center{font-size:1.5rem;text-align:center}
-      .desc{font-size:1rem}
+      body{padding:16px;place-items:start center}
+      .panel{width:100%;border-radius:28px;padding:24px 18px 22px;margin:auto}
+      .brand-row{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;margin-bottom:14px}
+      .logo-wrap{justify-content:flex-start}
+      .logo-wrap.right{justify-content:flex-end}
+      .logo-wrap img{width:52px;height:52px;border-radius:16px;padding:6px}
+      .brand-center{font-size:.95rem;line-height:1.25;text-align:center;white-space:normal}
+      .title{font-size:clamp(3.15rem,18vw,4.4rem);letter-spacing:3px;margin-top:4px}
+      .subtitle{font-size:.96rem;line-height:1.38;margin-top:10px}
+      .hero-divider{width:82px;margin:14px auto}
+      .desc{font-size:.9rem;line-height:1.45;margin:0 8px 18px}
+      .form{gap:10px}
+      .input{height:58px;border-radius:18px;padding:0 52px;font-size:16px}
+      .btn{height:56px;border-radius:17px;font-size:1rem}
+      .pill-row{gap:8px;font-size:.8rem}
+      .float-icon{display:none}
+    }
+
+    @media(max-width:380px){
+      body{padding:10px}
+      .panel{padding:20px 14px;border-radius:24px}
+      .logo-wrap img{width:44px;height:44px;border-radius:14px}
+      .brand-center{font-size:.82rem}
+      .title{font-size:3rem}
+      .subtitle{font-size:.88rem}
+    }
+
+    @media(max-height:760px) and (max-width:760px){
+      body{padding-block:10px}
+      .panel{margin:0 auto}
+      .desc{margin-bottom:14px}
     }
 .hero-divider{
 

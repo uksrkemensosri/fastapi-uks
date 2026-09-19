@@ -294,6 +294,22 @@ def test_ai_suggest_care(client: TestClient):
     assert payload["follow_up"]
 
 
+def test_ai_suggest_care_prioritizes_red_flags(client: TestClient):
+    headers = _auth_headers(client)
+    res = client.post(
+        "/api/ai/suggest-care",
+        headers=headers,
+        json={
+            "complaint": "sesak berat setelah olahraga",
+            "examination": "SpO2 91%, tampak sulit bernapas",
+        },
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert "Rujuk segera" in payload["follow_up"]
+    assert "Jangan meninggalkan siswa sendiri" in payload["implementation"]
+
+
 def test_health_and_ui_endpoint(client: TestClient):
     health = client.get("/health")
     assert health.status_code == 200

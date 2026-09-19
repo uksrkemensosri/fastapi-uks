@@ -4,6 +4,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import uuid
 import requests
@@ -193,6 +194,25 @@ def build_local_care_suggestion(complaint: str, examination: str) -> str:
     text = f"{complaint or ''} {examination or ''}".lower()
     findings: list[tuple[str, str, str, str]] = []
 
+    emergency_signs = (
+        "sesak berat", "sulit bernapas", "sulit bernafas", "napas cepat", "nafas cepat",
+        "pingsan", "tidak sadar", "kejang", "nyeri dada", "perdarahan hebat",
+        "muntah darah", "alergi berat", "bibir kebiruan", "saturasi 9", "spo2 9",
+    )
+    if any(sign in text for sign in emergency_signs):
+        return (
+            "Diagnosa Keperawatan:\n"
+            "Masalah keperawatan prioritas dengan tanda bahaya yang memerlukan penilaian segera.\n\n"
+            "Tindakan Keperawatan:\n"
+            "1. Hentikan aktivitas dan dampingi siswa.\n"
+            "2. Kaji kesadaran, jalan napas, pernapasan, sirkulasi, serta tanda vital bila aman dilakukan.\n"
+            "3. Hubungi petugas kesehatan/fasilitas rujukan sesuai prosedur sekolah.\n\n"
+            "Implementasi dan Pemantauan:\n"
+            "Jangan meninggalkan siswa sendiri. Catat waktu kejadian, keluhan, tanda vital, dan tindakan yang sudah dilakukan.\n\n"
+            "Tindak Lanjut:\n"
+            "Rujuk segera ke fasilitas kesehatan dan hubungi wali asuh/orang tua sesuai prosedur."
+        )
+
     if any(word in text for word in ("gigi", "gusi", "karies", "sariawan", "mulut")):
         findings.append(
             (
@@ -242,15 +262,37 @@ def build_local_care_suggestion(complaint: str, examination: str) -> str:
 
     diagnoses = " ".join(item[0] for item in findings[:2])
     interventions = " ".join(item[1] for item in findings[:2])
-    notes = " ".join(f"Implementasi: {item[2]} Tindak lanjut: {item[3]}" for item in findings[:2])
+    implementation = " ".join(item[2] for item in findings[:2])
+    follow_up = " ".join(item[3] for item in findings[:2])
     return (
         "Diagnosa Keperawatan:\n"
         f"{diagnoses}\n\n"
         "Tindakan Keperawatan:\n"
         f"{interventions}\n\n"
-        "Catatan:\n"
-        f"{notes}"
+        "Implementasi dan Pemantauan:\n"
+        f"{implementation}\n\n"
+        "Tindak Lanjut:\n"
+        f"{follow_up}"
     )
+
+
+def _parse_care_suggestion(result: str) -> tuple[str, str, str, str] | None:
+    """Accept only the documented UKS format so free-form AI text cannot fill clinical records."""
+    pattern = (
+        r"Diagnosa Keperawatan\s*:\s*(?P<diagnosis>.*?)"
+        r"(?:\n|\r)+\s*Tindakan Keperawatan\s*:\s*(?P<intervention>.*?)"
+        r"(?:\n|\r)+\s*Implementasi dan Pemantauan\s*:\s*(?P<implementation>.*?)"
+        r"(?:\n|\r)+\s*Tindak Lanjut\s*:\s*(?P<follow_up>.*)$"
+    )
+    match = re.search(pattern, result.replace("**", "").strip(), flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    values = tuple(re.sub(r"\s+", " ", match.group(name)).strip() for name in (
+        "diagnosis", "intervention", "implementation", "follow_up"
+    ))
+    if not all(values) or any(len(value) > 1200 for value in values):
+        return None
+    return values
 
 
 def get_openrouter_models() -> list[str]:
@@ -1009,11 +1051,12 @@ def suggest_care_with_ai(
 ) -> AICareSuggestionResponse:
 
     prompt = f"""
-Anda adalah perawat UKS sekolah di Indonesia.
+Anda membantu dokumentasi petugas UKS sekolah di Indonesia, bukan menggantikan dokter.
 
-Buat saran klinis UKS yang praktis, spesifik, dan tidak monoton.
-Gunakan istilah diagnosis keperawatan/SDKI bila sesuai, bukan diagnosis medis dokter.
-Sesuaikan dengan keluhan dan hasil pemeriksaan, jangan mengulang template yang sama untuk semua kasus.
+Gunakan hanya informasi yang tersedia. Jangan mengarang hasil pemeriksaan, obat, diagnosis medis, atau angka tanda vital.
+Gunakan masalah/diagnosa keperawatan yang paling sesuai; bila data kurang, tulis masalah keperawatan umum dan apa yang perlu dikaji ulang.
+Prioritaskan keselamatan: bila ada tanda bahaya seperti sesak, penurunan kesadaran, kejang, perdarahan aktif, nyeri dada, saturasi rendah, atau kondisi memburuk, tulis rujuk segera.
+Tindakan hanya yang dapat dilakukan dalam kewenangan dan protokol UKS. Obat hanya boleh disebut sebagai "sesuai protokol UKS" tanpa menentukan dosis baru.
 
 Keluhan siswa:
 {payload.complaint}
@@ -1021,21 +1064,24 @@ Keluhan siswa:
 Hasil pemeriksaan UKS:
 {payload.examination}
 
-Jawab dengan format persis:
+Jawab hanya dengan format persis berikut, tanpa pembuka/penutup lain:
 
 Diagnosa Keperawatan:
-1-2 diagnosis keperawatan yang paling relevan.
+Satu atau dua masalah/diagnosa keperawatan paling relevan.
 
 Tindakan Keperawatan:
-2-4 tindakan praktis yang bisa dilakukan petugas UKS.
+2-4 tindakan praktis, spesifik, dan aman untuk petugas UKS.
 
-Catatan:
-Implementasi singkat, hal yang perlu dipantau, dan kapan perlu hubungi wali/rujuk.
+Implementasi dan Pemantauan:
+Apa yang dilakukan sekarang dan parameter/kondisi yang perlu dipantau atau dievaluasi ulang.
 
-Tetap ringkas, aman, dan cocok untuk dokumentasi UKS.
+Tindak Lanjut:
+Kapan kembali aktivitas, kapan hubungi wali asuh, dan kapan rujuk bila diperlukan.
+
+Gunakan Bahasa Indonesia profesional, ringkas, dan cocok untuk dokumentasi UKS.
 """
 
-    result = ""
+    parsed: tuple[str, str, str, str] | None = None
     ai_source = "local_fallback"
     model_used = None
     if client is not None and os.getenv("OPENROUTER_API_KEY"):
@@ -1045,65 +1091,34 @@ Tetap ringkas, aman, dan cocok untuk dokumentasi UKS.
                     model=model_name,
                     messages=[
                         {
-                            "role": "user",
-                            "content": prompt,
-                        }
+                            "role": "system",
+                            "content": "Ikuti format dokumentasi UKS yang diminta secara persis dan utamakan keselamatan siswa.",
+                        },
+                        {"role": "user", "content": prompt},
                     ],
-                    temperature=0.55,
-                    max_tokens=320,
+                    temperature=0.2,
+                    max_tokens=420,
                 )
-                result = response.choices[0].message.content or ""
-                result = result.replace("**", "")
-                if result.strip():
+                parsed = _parse_care_suggestion(response.choices[0].message.content or "")
+                if parsed:
                     ai_source = "online"
                     model_used = model_name
                     break
             except Exception:
                 continue
 
-    if not result.strip():
-        result = build_local_care_suggestion(payload.complaint, payload.examination)
+    if not parsed:
+        parsed = _parse_care_suggestion(build_local_care_suggestion(payload.complaint, payload.examination))
 
-    diagnosis = ""
-    intervention = ""
-    implementation = ""
-
-    parts = result.split("Tindakan Keperawatan:")
-
-    if len(parts) > 1:
-
-        diagnosis = parts[0].replace(
-            "Diagnosa Keperawatan:",
-            ""
-        ).strip()
-
-        tindakan_parts = parts[1].split(
-            "Catatan:"
-        )
-
-        intervention = tindakan_parts[0].strip()
-
-        if len(tindakan_parts) > 1:
-
-            implementation = tindakan_parts[1].strip()
-
-    else:
-
-        diagnosis = result
-
-    if not diagnosis:
-        diagnosis = "Gangguan kenyamanan akut."
-    if not intervention:
-        intervention = "Observasi tanda vital, anjurkan istirahat, dan berikan cairan oral sesuai kondisi."
-    if not implementation:
-        implementation = "Pantau respons siswa 15-30 menit dan dokumentasikan perubahan kondisi."
+    assert parsed is not None
+    diagnosis, intervention, implementation, follow_up = parsed
 
     return AICareSuggestionResponse(
         diagnosis=diagnosis,
         intervention=intervention,
         implementation=implementation,
-        follow_up="Evaluasi ulang sesuai kondisi pasien.",
-        confidence=0.95 if ai_source == "online" else 0.75,
+        follow_up=follow_up,
+        confidence=0.9 if ai_source == "online" else 0.8,
         source=ai_source,
         model=model_used,
     )
