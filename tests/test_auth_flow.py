@@ -56,6 +56,20 @@ def test_admin_ui_pages_and_security_headers(client: TestClient):
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["x-frame-options"] == "DENY"
 
+    welcome = client.get("/welcome")
+    assert "Panduan Pengguna" in welcome.text
+    assert "Video Tutorial" in welcome.text
+    assert "Segera tersedia" not in welcome.text
+    assert 'href="/ui/assets/panduan-penggunaan-sehati.pdf"' in welcome.text
+    assert 'download="Panduan Penggunaan SEHATI.pdf"' in welcome.text
+    assert 'href="https://youtu.be/FCqyZqzzRTw"' in welcome.text
+    assert 'rel="noopener noreferrer"' in welcome.text
+
+    guide = client.get("/ui/assets/panduan-penggunaan-sehati.pdf")
+    assert guide.status_code == 200
+    assert guide.headers["content-type"] == "application/pdf"
+    assert guide.content.startswith(b"%PDF")
+
 
 def test_application_has_no_duplicate_api_method_paths():
     seen = set()
