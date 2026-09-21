@@ -23,7 +23,7 @@
         <p class="helper">Cari menggunakan nama atau NIS, lalu pilih namamu dari hasil yang muncul.</p>
         <div class="search-wrap"><input id="studentSearch" class="search" type="search" autocomplete="off" placeholder="Cari nama atau NIS..."><div id="searchResults" class="results hidden"></div></div>
         <div id="selectedStudent" class="selected"><strong id="selectedName"></strong><span id="selectedClass"></span></div>
-        <div id="complaintBox" class="complaint-box"><label for="complaintText">Apa keluhanmu hari ini?</label><textarea id="complaintText" class="textarea" maxlength="500" placeholder="Ceritakan keluhan yang kamu rasakan..."></textarea><div id="counter" class="counter">0/500</div><button id="submitComplaint" class="button" type="button">Kirim Keluhan</button></div>
+        <div id="complaintBox" class="complaint-box"><label for="reporterName">Nama pelapor</label><p class="helper">Isi nama wali asuh, wali asrama, atau guru yang membantu melaporkan.</p><input id="reporterName" class="search" type="text" maxlength="150" autocomplete="name" placeholder="Contoh: Ibu Siti Aminah"><label for="complaintText" style="margin-top:20px">Apa keluhan siswa hari ini?</label><textarea id="complaintText" class="textarea" maxlength="500" placeholder="Ceritakan keluhan yang dirasakan siswa..."></textarea><div id="counter" class="counter">0/500</div><button id="submitComplaint" class="button" type="button">Kirim Keluhan</button></div>
         <div id="notice" class="notice"></div>
       </div>
       <div id="successState" class="hidden" style="text-align:center;padding:16px 4px 8px"><div style="font-size:48px;margin-bottom:12px">&#10003;</div><h2 style="margin:0 0 10px;color:#166534;font-size:21px">Keluhan berhasil dikirim!</h2><p style="margin:0;color:#64748b;line-height:1.55;font-size:14px">Terima kasih. Tim UKS akan segera menindaklanjuti keluhanmu.</p><p id="reportNumber" style="margin:18px 0 0;color:#4658c7;font-weight:700;font-size:13px"></p></div>
@@ -37,6 +37,7 @@
     const notice = document.getElementById('notice');
     const complaintBox = document.getElementById('complaintBox');
     const selected = document.getElementById('selectedStudent');
+    const reporter = document.getElementById('reporterName');
     const text = document.getElementById('complaintText');
     const submit = document.getElementById('submitComplaint');
     let selectedToken = '';
@@ -49,7 +50,7 @@
     function chooseStudent(item){selectedToken=item.selection_token;document.getElementById('selectedName').textContent=item.name;document.getElementById('selectedClass').textContent=item.class_name||'-';selected.style.display='block';complaintBox.style.display='block';results.classList.add('hidden');searchInput.value=item.name;clearNotice();text.focus()}
     searchInput.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchStudents,300)});
     text.addEventListener('input',()=>{document.getElementById('counter').textContent=`${text.value.length}/500`;clearNotice()});
-    submit.addEventListener('click',async()=>{const complaint=text.value.trim();if(!selectedToken){showNotice('Pilih nama siswa terlebih dahulu.');return}if(!complaint){showNotice('Keluhan wajib diisi.');text.focus();return}submit.disabled=true;submit.textContent='Mengirim...';clearNotice();try{const res=await fetch('/api/public/complaints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selection_token:selectedToken,complaint})});const data=await res.json();if(!res.ok)throw new Error(data.detail||'Keluhan belum berhasil dikirim.');document.getElementById('formState').classList.add('hidden');document.getElementById('successState').classList.remove('hidden');document.getElementById('reportNumber').textContent=`Nomor laporan: KEL-${String(data.id).padStart(6,'0')}`;}catch(err){showNotice(err.message||'Keluhan belum berhasil dikirim. Silakan coba kembali.');submit.disabled=false;submit.textContent='Kirim Keluhan'}});
+    submit.addEventListener('click',async()=>{const reporterName=reporter.value.trim();const complaint=text.value.trim();if(!selectedToken){showNotice('Pilih nama siswa terlebih dahulu.');return}if(reporterName.length<2){showNotice('Nama pelapor wajib diisi.');reporter.focus();return}if(!complaint){showNotice('Keluhan wajib diisi.');text.focus();return}submit.disabled=true;submit.textContent='Mengirim...';clearNotice();try{const res=await fetch('/api/public/complaints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selection_token:selectedToken,reporter_name:reporterName,complaint})});const data=await res.json();if(!res.ok)throw new Error(data.detail||'Keluhan belum berhasil dikirim.');document.getElementById('formState').classList.add('hidden');document.getElementById('successState').classList.remove('hidden');document.getElementById('reportNumber').textContent=`Nomor laporan: KEL-${String(data.id).padStart(6,'0')}`;}catch(err){showNotice(err.message||'Keluhan belum berhasil dikirim. Silakan coba kembali.');submit.disabled=false;submit.textContent='Kirim Keluhan'}});
     loadSchool();
   </script>
 </body>

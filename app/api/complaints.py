@@ -46,6 +46,7 @@ _RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 def _notify_complaint_group(
     patient_name: str,
     class_name: str | None,
+    reporter_name: str,
     complaint: str,
     complaint_id: int,
     submitted_at: datetime,
@@ -64,6 +65,7 @@ def _notify_complaint_group(
         "KELUHAN SISWA BARU - SEHATI\n\n"
         f"Nama: {patient_name}\n"
         f"Kelas: {class_name or '-'}\n"
+        f"Dilaporkan oleh: {reporter_name}\n"
         f"Keluhan: {complaint}\n"
         f"Waktu: {local_time.strftime('%d-%m-%Y %H:%M')} WIB\n\n"
         f"Nomor laporan: KEL-{complaint_id:06d}\n"
@@ -141,6 +143,7 @@ def _complaint_response(item: StudentComplaintORM) -> StudentComplaintResponse:
         patient_id=item.patient_id,
         patient_name=patient.name if patient else "Siswa tidak ditemukan",
         class_name=patient.class_name if patient else None,
+        reporter_name=item.reporter_name,
         complaint=item.complaint,
         submitted_at=item.submitted_at,
         status=item.status,
@@ -241,7 +244,12 @@ def create_public_complaint(
     )
     if recent:
         return PublicComplaintResponse(id=recent.id, status=recent.status, submitted_at=recent.submitted_at, duplicate=True)
-    item = StudentComplaintORM(school_id=patient.school_id, patient_id=patient.id, complaint=payload.complaint)
+    item = StudentComplaintORM(
+        school_id=patient.school_id,
+        patient_id=patient.id,
+        reporter_name=payload.reporter_name,
+        complaint=payload.complaint,
+    )
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -249,6 +257,7 @@ def create_public_complaint(
         _notify_complaint_group,
         patient.name,
         patient.class_name,
+        item.reporter_name,
         item.complaint,
         item.id,
         item.submitted_at,

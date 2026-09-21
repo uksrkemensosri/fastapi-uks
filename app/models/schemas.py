@@ -94,14 +94,15 @@ class PublicComplaintStudent(BaseModel):
 
 class PublicComplaintCreate(BaseModel):
     selection_token: str = Field(min_length=20, max_length=1000)
+    reporter_name: str = Field(min_length=2, max_length=150)
     complaint: str = Field(min_length=2, max_length=500)
 
-    @field_validator("complaint")
+    @field_validator("reporter_name", "complaint")
     @classmethod
-    def complaint_must_not_be_blank(cls, value: str) -> str:
+    def public_complaint_text_must_not_be_blank(cls, value: str) -> str:
         cleaned = " ".join(value.split())
         if len(cleaned) < 2:
-            raise ValueError("Keluhan wajib diisi")
+            raise ValueError("Isian wajib diisi")
         return cleaned
 
 
@@ -117,6 +118,7 @@ class StudentComplaintResponse(BaseModel):
     patient_id: str
     patient_name: str
     class_name: Optional[str] = None
+    reporter_name: Optional[str] = None
     complaint: str
     submitted_at: datetime
     status: str
