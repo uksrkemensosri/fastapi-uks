@@ -352,6 +352,8 @@ class FitnessExaminationORM(Base):
 class PatientORM(Base):
     __tablename__ = "patients"
     nik: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    medical_record_number: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True, index=True)
+    profile_photo_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     id: Mapped[str] = mapped_column(
         String(50),
@@ -443,6 +445,7 @@ class BPJSReferralORM(Base):
     referral_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     valid_until_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     control_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    control_done: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     referring_facility: Mapped[str] = mapped_column(String(255), nullable=False)
     destination_facility: Mapped[str] = mapped_column(String(255), nullable=False)
     referral_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -528,6 +531,8 @@ class StudentComplaintORM(Base):
     patient_id: Mapped[str] = mapped_column(ForeignKey("patients.id"), nullable=False, index=True)
     reporter_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
     complaint: Mapped[str] = mapped_column(String(500), nullable=False)
+    tracking_code: Mapped[str | None] = mapped_column(String(40), nullable=True, unique=True, index=True)
+    public_status_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="MENUNGGU", index=True)
     handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)

@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
@@ -24,11 +25,13 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_roles
 from app.auth.tenant import get_default_school, tenant_get, tenant_query
 from app.db.dependencies import get_db
-from app.db.models import PatientORM, SchoolORM, StudentComplaintORM, UKSVisitORM, UserORM
+from app.db.models import AuditLogORM, PatientORM, SchoolORM, StudentComplaintORM, UKSVisitORM, UserORM
 from app.models.schemas import (
     PublicComplaintCreate,
     PublicComplaintResponse,
+    PublicComplaintStatusResponse,
     PublicComplaintStudent,
+    ComplaintPublicUpdate,
     StudentComplaintResponse,
 )
 
@@ -41,6 +44,27 @@ ROLE_TIM_UKSR = "tim_uksr"
 ROLE_STAFF = (ROLE_ADMIN, ROLE_PERAWAT, ROLE_TIM_UKSR)
 COMPLAINT_STATUSES = {"MENUNGGU", "DITINDAKLANJUTI", "SELESAI", "DIBATALKAN"}
 _RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+PUBLIC_STATUS_NOTES = {
+    "MENUNGGU": "Laporan sudah diterima dan menunggu ditinjau oleh tim UKS.",
+    "DITINDAKLANJUTI": "Laporan sedang ditindaklanjuti oleh tim UKS.",
+    "SELESAI": "Laporan telah selesai ditindaklanjuti oleh tim UKS.",
+    "DIBATALKAN": "Laporan tidak dapat diproses. Silakan hubungi tim UKS bila memerlukan bantuan.",
+}
+
+
+def _audit_complaint_action(db: Session, user: UserORM, action: str, complaint_id: int) -> None:
+    """Record staff workflow without copying student health details into the audit log."""
+    db.add(
+        AuditLogORM(
+            school_id=user.school_id,
+            user_id=user.id,
+            username=user.username,
+            action=action,
+            entity_type="student_complaint",
+            entity_id=str(complaint_id),
+            details=f"Keluhan siswa #{complaint_id}",
+        )
+    )
 
 
 def _notify_complaint_group(
@@ -147,10 +171,27 @@ def _complaint_response(item: StudentComplaintORM) -> StudentComplaintResponse:
         complaint=item.complaint,
         submitted_at=item.submitted_at,
         status=item.status,
+        tracking_code=item.tracking_code,
+        public_status_note=item.public_status_note,
         handled_by=item.handled_by,
         handled_by_name=item.handler.full_name if item.handler else None,
         handled_at=item.handled_at,
         visit_id=item.visit_id,
+    )
+
+
+def _tracking_code() -> str:
+    """Generate an opaque code so public status lookups never use sequential IDs."""
+    return f"KEL-{secrets.token_hex(6).upper()}"
+
+
+def _public_status_response(item: StudentComplaintORM) -> PublicComplaintStatusResponse:
+    return PublicComplaintStatusResponse(
+        tracking_code=item.tracking_code or f"KEL-{item.id:06d}",
+        status=item.status,
+        submitted_at=item.submitted_at,
+        updated_at=item.handled_at,
+        public_status_note=item.public_status_note or PUBLIC_STATUS_NOTES.get(item.status),
     )
 
 
@@ -243,12 +284,20 @@ def create_public_complaint(
         .first()
     )
     if recent:
-        return PublicComplaintResponse(id=recent.id, status=recent.status, submitted_at=recent.submitted_at, duplicate=True)
+        return PublicComplaintResponse(
+            id=recent.id,
+            status=recent.status,
+            submitted_at=recent.submitted_at,
+            tracking_code=recent.tracking_code,
+            duplicate=True,
+        )
     item = StudentComplaintORM(
         school_id=patient.school_id,
         patient_id=patient.id,
         reporter_name=payload.reporter_name,
         complaint=payload.complaint,
+        tracking_code=_tracking_code(),
+        public_status_note=PUBLIC_STATUS_NOTES["MENUNGGU"],
     )
     db.add(item)
     db.commit()
@@ -262,7 +311,26 @@ def create_public_complaint(
         item.id,
         item.submitted_at,
     )
-    return PublicComplaintResponse(id=item.id, status=item.status, submitted_at=item.submitted_at)
+    return PublicComplaintResponse(
+        id=item.id,
+        status=item.status,
+        submitted_at=item.submitted_at,
+        tracking_code=item.tracking_code,
+    )
+
+
+@router.get("/api/public/complaints/status/{tracking_code}", response_model=PublicComplaintStatusResponse)
+def public_complaint_status(
+    tracking_code: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PublicComplaintStatusResponse:
+    _rate_limit(request, "complaint-status", limit=30, seconds=60)
+    normalized = tracking_code.strip().upper()
+    item = db.query(StudentComplaintORM).filter(StudentComplaintORM.tracking_code == normalized).first()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Kode laporan tidak ditemukan")
+    return _public_status_response(item)
 
 
 @router.get("/api/complaints/qr.svg")
@@ -328,8 +396,10 @@ def follow_up_student_complaint(
     if item.status in {"SELESAI", "DIBATALKAN"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Keluhan ini sudah ditutup")
     item.status = "DITINDAKLANJUTI"
+    item.public_status_note = PUBLIC_STATUS_NOTES["DITINDAKLANJUTI"]
     item.handled_by = current_user.id
     item.handled_at = datetime.now()
+    _audit_complaint_action(db, current_user, "follow_up_student_complaint", item.id)
     db.commit()
     db.refresh(item)
     return _complaint_response(item)
@@ -348,8 +418,10 @@ def complaint_visit_prefill(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Keluhan ini sudah memiliki kunjungan UKS")
     if item.status == "MENUNGGU":
         item.status = "DITINDAKLANJUTI"
+        item.public_status_note = PUBLIC_STATUS_NOTES["DITINDAKLANJUTI"]
         item.handled_by = current_user.id
         item.handled_at = datetime.now()
+        _audit_complaint_action(db, current_user, "start_student_complaint_visit", item.id)
         db.commit()
     patient = item.patient
     return {"complaint_id": item.id, "patient_id": patient.id, "patient_name": patient.name, "class_name": patient.class_name, "complaint": item.complaint}
@@ -372,8 +444,10 @@ def attach_visit_to_complaint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kunjungan tidak sesuai dengan siswa keluhan")
     item.visit_id = visit.id
     item.status = "SELESAI"
+    item.public_status_note = PUBLIC_STATUS_NOTES["SELESAI"]
     item.handled_by = current_user.id
     item.handled_at = datetime.now()
+    _audit_complaint_action(db, current_user, "attach_visit_to_student_complaint", item.id)
     db.commit()
     db.refresh(item)
     return _complaint_response(item)
@@ -389,8 +463,29 @@ def complete_student_complaint(
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keluhan tidak ditemukan")
     item.status = "SELESAI"
+    item.public_status_note = PUBLIC_STATUS_NOTES["SELESAI"]
     item.handled_by = current_user.id
     item.handled_at = datetime.now()
+    _audit_complaint_action(db, current_user, "complete_student_complaint", item.id)
+    db.commit()
+    db.refresh(item)
+    return _complaint_response(item)
+
+
+@router.patch("/api/complaints/{complaint_id}/public-update", response_model=StudentComplaintResponse)
+def update_public_complaint_note(
+    complaint_id: int,
+    payload: ComplaintPublicUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*ROLE_STAFF)),
+) -> StudentComplaintResponse:
+    item = tenant_get(db, StudentComplaintORM, complaint_id, current_user)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Keluhan tidak ditemukan")
+    item.public_status_note = payload.public_status_note
+    item.handled_by = current_user.id
+    item.handled_at = datetime.now()
+    _audit_complaint_action(db, current_user, "update_student_complaint_public_note", item.id)
     db.commit()
     db.refresh(item)
     return _complaint_response(item)

@@ -11,7 +11,9 @@
   <link rel="stylesheet" href="/ui/assets/theme.css?v=126">
 <link rel="stylesheet" href="/ui/assets/students.css?v=3">
   <style>
-    body[data-role="wali_asuh"] #kunjungan { display: none !important; }
+    body[data-role="wali_asuh"] #kunjungan,
+    body[data-role="wali_asuh"] #btnExportCardData,
+    body[data-role="wali_asuh"] [data-medical-card] { display: none !important; }
     body[data-role="wali_asuh"] #siswa { grid-column: 1 / -1; }
   </style>
   
@@ -254,6 +256,7 @@
   ">
     Kelola identitas dan biodata siswa
   </p>
+  <button class="btn btn-secondary" id="btnExportCardData" type="button" style="margin-top:10px">Unduh Data Kartu Canva</button>
 
 </div>
         <div class="form-grid">
@@ -264,6 +267,16 @@
         <div class="form-group">
           <label>NIK</label>
           <input id="patientNik" type="text" inputmode="numeric" maxlength="16" pattern="[0-9]{16}" autocomplete="off" placeholder="16 digit NIK (opsional)">
+        </div>
+        <div class="form-group">
+          <label>No. RM</label>
+          <input id="patientMedicalRecordNumber" type="text" maxlength="30" autocomplete="off" placeholder="Nomor rekam medis yang sudah ada (opsional)">
+        </div>
+        <div class="form-group">
+          <label>Pas Foto Siswa</label>
+          <input id="patientPhoto" type="file" accept="image/jpeg,image/png,image/webp">
+          <small style="color:var(--muted);display:block;margin-top:6px">JPG, PNG, atau WebP. Maksimal 3 MB.</small>
+          <img id="patientPhotoPreview" alt="Preview pas foto siswa" style="display:none;width:88px;height:118px;object-fit:cover;border-radius:8px;margin-top:10px;border:1px solid #e2e8f0">
         </div>
 
 <div class="form-group">
@@ -1270,6 +1283,7 @@ document
       );
 
     box.innerHTML = "";
+    document.getElementById("visitPatientId").value = "";
 
     if (!keyword) return;
 
@@ -1277,7 +1291,8 @@ document
       patientsData.filter(patient =>
         patient.name
         .toLowerCase()
-        .includes(keyword)
+        .includes(keyword) ||
+        String(patient.id || "").toLowerCase().includes(keyword)
       );
 
     results.slice(0, 8).forEach(patient => {
@@ -1302,16 +1317,6 @@ document
           "visitPatientId"
         ).value =
           patient.id;
-
-        document.getElementById(
-          "patientName"
-        ).value =
-          patient.name;
-
-        document.getElementById(
-          "patientClass"
-        ).value =
-          patient.class_name;
 
         box.innerHTML = "";
 
@@ -1537,6 +1542,73 @@ document
 
 });
 
+let patientPhotoPreviewObjectUrl = null;
+
+function clearPatientPhotoPreview(){
+  const preview = document.getElementById("patientPhotoPreview");
+  if(patientPhotoPreviewObjectUrl){
+    URL.revokeObjectURL(patientPhotoPreviewObjectUrl);
+    patientPhotoPreviewObjectUrl = null;
+  }
+  preview.removeAttribute("src");
+  preview.style.display = "none";
+}
+
+async function setPatientPhotoPreview(photoUrl){
+  clearPatientPhotoPreview();
+  if(!photoUrl){ return; }
+  try{
+    const response = await fetch(photoUrl, {headers:{Authorization:`Bearer ${token}`}});
+    if(!response.ok){ return; }
+    patientPhotoPreviewObjectUrl = URL.createObjectURL(await response.blob());
+    const preview = document.getElementById("patientPhotoPreview");
+    preview.src = patientPhotoPreviewObjectUrl;
+    preview.style.display = "block";
+  }catch(err){
+    console.warn("Preview foto siswa tidak dapat dimuat.", err);
+  }
+}
+
+function readFileAsDataUrl(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Foto tidak dapat dibaca"));
+    reader.readAsDataURL(file);
+  });
+}
+
+document.getElementById("patientPhoto").addEventListener("change", async event => {
+  const file = event.target.files && event.target.files[0];
+  if(!file){
+    clearPatientPhotoPreview();
+    return;
+  }
+  if(!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 3 * 1024 * 1024){
+    event.target.value = "";
+    clearPatientPhotoPreview();
+    showAppAlert("Foto tidak valid", "Gunakan JPG, PNG, atau WebP dengan ukuran maksimal 3 MB.", "error");
+    return;
+  }
+  clearPatientPhotoPreview();
+  patientPhotoPreviewObjectUrl = URL.createObjectURL(file);
+  const preview = document.getElementById("patientPhotoPreview");
+  preview.src = patientPhotoPreviewObjectUrl;
+  preview.style.display = "block";
+});
+
+async function uploadPatientPhoto(patientId){
+  const input = document.getElementById("patientPhoto");
+  const file = input.files && input.files[0];
+  if(!file){ return null; }
+  const result = await api(`/api/patients/${encodeURIComponent(patientId)}/photo`, "POST", {
+    photo_base64: await readFileAsDataUrl(file)
+  }, true);
+  input.value = "";
+  await setPatientPhotoPreview(result.photo_url);
+  return result;
+}
+
 /* SIMPAN SISWA */
 
 document
@@ -1594,6 +1666,11 @@ const body = {
 
 };
 
+const medicalRecordNumber = document.getElementById("patientMedicalRecordNumber").value.trim();
+if (medicalRecordNumber || !editingPatientId) {
+  body.medical_record_number = medicalRecordNumber || null;
+}
+
 const isEdit =
   editingPatientId !== null;
 
@@ -1617,10 +1694,21 @@ if(isEdit){
 
 }
 
+let photoError = null;
+try{
+  await uploadPatientPhoto(body.id);
+}catch(err){
+  photoError = err;
+}
+
    showToast(
   "Data siswa tersimpan",
   data.name
 );
+
+if(photoError){
+  showStatus("patientStatus", `Data siswa tersimpan, tetapi foto gagal diunggah: ${photoError.message}`, false);
+}
 
 await loadPatients();
 
@@ -1629,6 +1717,9 @@ loadStats();
 
 editingPatientId = null;
 document.getElementById("patientNik").value = "";
+document.getElementById("patientMedicalRecordNumber").value = "";
+document.getElementById("patientPhoto").value = "";
+clearPatientPhotoPreview();
 document.getElementById(
   "btnCreatePatient"
 ).innerHTML =
@@ -1677,6 +1768,24 @@ document.getElementById(
 
 });
 
+document.getElementById("btnExportCardData").addEventListener("click", async () => {
+  try {
+    const response = await fetch("/api/patients/card-data-export", {headers:{Authorization:`Bearer ${token}`}});
+    if(!response.ok){
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "Data kartu tidak dapat dibuat");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "data_kartu_canva_sehati.xlsx";
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showAppAlert("Gagal", err.message, "error");
+  }
+});
+
 /* SIMPAN KUNJUNGAN */
 
 document
@@ -1690,16 +1799,19 @@ document
 
   try {
 
+    const selectedPatientId = document.getElementById("visitPatientId").value.trim();
+    const selectedPatient = patientsData.find(patient => String(patient.id) === selectedPatientId);
+    if (!selectedPatient) {
+      throw new Error("Pilih siswa dari daftar pencarian terlebih dahulu.");
+    }
+
     btn.disabled = true;
 
     btn.innerHTML = "Menyimpan...";
 
     const body = {
 
-      patient_id:
-        document
-        .getElementById("visitPatientId")
-        .value,
+      patient_id: selectedPatientId,
 
       visit_date:
         document
@@ -1854,40 +1966,6 @@ catch (err) {
 });
 /* AI */
 
-function localCareSuggestion(complaint, examination){
-  const text = `${complaint || ""} ${examination || ""}`.toLowerCase();
-  if(text.includes("gigi")){
-    return {
-      diagnosis: "Nyeri akut terkait gangguan pada area gigi dan mulut.",
-      intervention: "Kaji skala nyeri, anjurkan menjaga kebersihan mulut, dan berikan analgesik sesuai protokol UKS.",
-      implementation: "Pantau respons nyeri setiap 15-30 menit dan dokumentasikan perubahan kondisi.",
-      follow_up: "Sarankan pemeriksaan lanjutan bila nyeri menetap, bengkak, atau mengganggu makan."
-    };
-  }
-  if(text.includes("batuk") || text.includes("sesak") || text.includes("napas")){
-    return {
-      diagnosis: "Bersihan jalan napas tidak efektif terkait iritasi saluran napas.",
-      intervention: "Pantau pola napas, anjurkan minum air hangat, dan ajarkan teknik batuk efektif.",
-      implementation: "Observasi frekuensi napas, kenyamanan, dan respons setelah istirahat.",
-      follow_up: "Rujuk bila sesak, demam tinggi, atau keluhan tidak membaik."
-    };
-  }
-  if(text.includes("pusing") || text.includes("lemas") || text.includes("sakit kepala")){
-    return {
-      diagnosis: "Gangguan kenyamanan akut terkait keluhan pusing atau lemas.",
-      intervention: "Anjurkan istirahat di ruang UKS, pantau tanda vital, dan berikan cairan oral bila memungkinkan.",
-      implementation: "Evaluasi kondisi siswa setelah 15-30 menit dan batasi aktivitas sementara.",
-      follow_up: "Hubungi wali asuh atau rujuk bila keluhan memberat atau berulang."
-    };
-  }
-  return {
-    diagnosis: "Gangguan kenyamanan akut terkait keluhan fisik siswa.",
-    intervention: "Observasi tanda vital, anjurkan istirahat, dan berikan cairan oral sesuai kondisi.",
-    implementation: "Pantau respons siswa 15-30 menit dan dokumentasikan perubahan kondisi.",
-    follow_up: "Evaluasi ulang sesuai kondisi pasien."
-  };
-}
-
 document
 .getElementById("btnSuggestAI")
 .addEventListener("click", async () => {
@@ -1948,44 +2026,16 @@ ${data.follow_up}`;
     showStatus(
       "visitStatus",
       data.source === "online"
-        ? `Saran AI online berhasil dimuat${data.model ? ` (${data.model})` : ""}`
-        : "AI online sedang dibatasi, saran lokal otomatis dipakai.",
+        ? `Saran SDKI berhasil dimuat${data.model ? ` (${data.model})` : ""}. Validasi petugas tetap diperlukan sebelum disimpan.`
+        : "Saran SDKI lokal dimuat. Validasi petugas tetap diperlukan sebelum disimpan.",
       true
     );
 
   } catch (err) {
-
-    const data = localCareSuggestion(payload.complaint, payload.examination);
-
-    document
-      .getElementById(
-        "visitDiagnosis"
-      )
-      .value =
-        data.diagnosis;
-
-    document
-      .getElementById(
-        "visitTreatment"
-      )
-      .value =
-        data.intervention;
-
-    document
-      .getElementById(
-        "visitNotes"
-      )
-      .value =
-        `Implementasi:
-${data.implementation}
-
-Tindak lanjut:
-${data.follow_up}`;
-
     showStatus(
       "visitStatus",
-      "AI sedang dibatasi, saran lokal otomatis dipakai.",
-      true
+      "Saran AI tidak dapat dimuat. Lengkapi pengkajian dan isi dokumentasi secara manual.",
+      false
     );
 
   }
@@ -2983,6 +3033,13 @@ if(keyword.length < 2){
                 Detail
               </button>
               <button
+                class="action-btn referral-btn"
+                data-medical-card
+                onclick="downloadMedicalCard('${patient.id}')"
+              >
+                Kartu
+              </button>
+              <button
                 class="action-btn delete-btn"
                 onclick="deletePatient('${patient.id}')"
               >
@@ -3004,6 +3061,27 @@ if(keyword.length < 2){
   `;
 
 }
+
+async function downloadMedicalCard(patientId){
+  try{
+    const response = await fetch(`/api/patients/${encodeURIComponent(patientId)}/medical-card`, {
+      headers: {Authorization: `Bearer ${token}`}
+    });
+    if(!response.ok){
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || "Kartu tidak dapat dibuat");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `kartu_pelajar_${patientId}.pdf`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }catch(err){
+    showAppAlert("Gagal membuat kartu", err.message, "error");
+  }
+}
+
 async function deletePatient(id){
   const patient = patientsData.find(
     item => String(item.id) === String(id)
@@ -3045,6 +3123,9 @@ async function editPatient(id){
   if(!patient) return;
   editingPatientId = id;
   document.getElementById("patientNik").value = patient.nik || "";
+  document.getElementById("patientMedicalRecordNumber").value = patient.medical_record_number || "";
+  document.getElementById("patientPhoto").value = "";
+  setPatientPhotoPreview(patient.photo_url);
 
   document.getElementById(
     "patientId"

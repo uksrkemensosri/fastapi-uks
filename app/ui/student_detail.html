@@ -197,17 +197,36 @@ async function loadBpjsReferrals(){
       const expiry = new Date(`${item.valid_until_date}T00:00:00`);
       const dayDiff = Math.ceil((expiry - new Date()) / 86400000);
       const status = dayDiff < 0 ? "Kedaluwarsa" : dayDiff <= 30 ? `Segera habis (${dayDiff} hari)` : "Aktif";
+      const controlStatus = !item.control_date ? "-" : item.control_done ? "Selesai" : `Belum kontrol (${item.control_date})`;
+      const controlAction = item.control_date && !item.control_done
+        ? `<button class="btn btn-primary" type="button" onclick="setBpjsControlDone(${item.id}, true)">Tandai Kontrol Selesai</button>`
+        : "";
       return `<tr>
         <td>${escapeHtml(item.referral_date)}</td>
         <td><strong>${escapeHtml(item.destination_facility)}</strong><br><small>${escapeHtml(item.referring_facility)}</small></td>
         <td>${escapeHtml(item.valid_until_date)}</td>
-        <td>${escapeHtml(item.control_date)}</td>
+        <td>${escapeHtml(controlStatus)}</td>
         <td>${status}</td>
-        <td><button class="btn btn-secondary" type="button" onclick="downloadBpjsDocument(${item.id}, '${encodeURIComponent(item.document_name || 'rujukan-bpjs')}')">Buka Lampiran</button></td>
+        <td><div class="actions"><button class="btn btn-secondary" type="button" onclick="downloadBpjsDocument(${item.id}, '${encodeURIComponent(item.document_name || 'rujukan-bpjs')}')">Buka Lampiran</button>${controlAction}</div></td>
       </tr>`;
     }).join("") || `<tr><td colspan="6">Belum ada rujukan BPJS</td></tr>`;
   }catch(err){
     rows.innerHTML = `<tr><td colspan="6">${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function setBpjsControlDone(id, controlDone){
+  const confirmed = await appConfirm(
+    "Konfirmasi kontrol",
+    controlDone ? "Tandai jadwal kontrol rujukan ini sudah selesai?" : "Buka kembali jadwal kontrol rujukan ini?",
+    {confirmText:"Ya, lanjutkan", type:"info"}
+  );
+  if(!confirmed){ return; }
+  try{
+    await api(`/api/bpjs-referrals/${id}/control`, {method:"PATCH", body:JSON.stringify({control_done:controlDone})});
+    await loadBpjsReferrals();
+  }catch(err){
+    await appAlert("Gagal", err.message, "error");
   }
 }
 

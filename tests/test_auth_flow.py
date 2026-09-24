@@ -4,6 +4,7 @@ from io import BytesIO
 
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
+from PIL import Image
 
 from app.main import app
 
@@ -222,6 +223,120 @@ def test_create_and_search_patient(client: TestClient):
     assert "create_patient" in actions
 
 
+def test_card_data_export_preserves_existing_medical_record_number(client: TestClient):
+    headers = _auth_headers(client)
+    created = client.post(
+        "/api/patients",
+        headers=headers,
+        json={
+            "id": "KARTU-001",
+            "nik": "3275036802100001",
+            "medical_record_number": "SR13-0248",
+            "name": "Siswa Kartu",
+            "age": 14,
+            "gender": "P",
+            "class_name": "XI IPA A",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["medical_record_number"] == "SR13-0248"
+
+    exported = client.get("/api/patients/card-data-export", headers=headers)
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    workbook = load_workbook(BytesIO(exported.content), data_only=True)
+    rows = list(workbook["Data Kartu Canva"].iter_rows(values_only=True))
+    assert rows[0] == ("No RM", "Nama", "NIS", "NIK", "Kelas")
+    card_row = next(row for row in rows[1:] if row[2] == "KARTU-001")
+    assert card_row[0] == created.json()["medical_record_number"]
+    assert card_row[1:] == ("Siswa Kartu", "KARTU-001", "3275036802100001", "XI IPA A")
+
+    tiny_png_buffer = BytesIO()
+    Image.new("RGB", (8, 12), "#6d4aff").save(tiny_png_buffer, format="PNG")
+    tiny_png = "data:image/png;base64," + base64.b64encode(tiny_png_buffer.getvalue()).decode()
+    uploaded_photo = client.post(
+        "/api/patients/KARTU-001/photo",
+        headers=headers,
+        json={"photo_base64": tiny_png},
+    )
+    assert uploaded_photo.status_code == 200
+    assert uploaded_photo.json()["photo_url"] == "/api/patients/KARTU-001/photo"
+    fetched_photo = client.get(uploaded_photo.json()["photo_url"], headers=headers)
+    assert fetched_photo.status_code == 200
+    assert fetched_photo.headers["content-type"].startswith("image/png")
+
+    card = client.get("/api/patients/KARTU-001/medical-card", headers=headers)
+    assert card.status_code == 200
+    assert card.headers["content-type"].startswith("application/pdf")
+    assert card.content.startswith(b"%PDF")
+    assert card.headers["cache-control"] == "no-store"
+    assert card.headers["x-card-renderer-version"] == client.get("/health").json()["card_renderer_version"]
+
+    logs = client.get("/api/audit-logs?search=KARTU-001", headers=headers)
+    assert "generate_medical_card" in {item["action"] for item in logs.json()["items"]}
+
+
+def test_card_photo_fills_template_frame_without_stretching(tmp_path):
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from reportlab.lib.units import mm
+    from app.api.routes import _draw_student_photo
+
+    for size in [(400, 900), (900, 400)]:
+        photo_path = tmp_path / "portrait.jpg"
+        Image.new("RGB", size, "#6d4aff").save(photo_path)
+        pdf = MagicMock()
+        _draw_student_photo(pdf, SimpleNamespace(id="photo-test", profile_photo_path=str(photo_path)))
+        image = pdf.drawImage.call_args.args[0]
+        dimensions = pdf.drawImage.call_args.kwargs
+        width, height = dimensions["width"], dimensions["height"]
+        # Regression: the old 10.4 mm image left the right side of the frame exposed.
+        assert 18.1 < width / mm < 18.3
+        assert 23.8 < height / mm < 24.0
+        pixel_width, pixel_height = image.getSize()
+        assert abs(pixel_width / pixel_height - width / height) < 0.001
+
+
+def test_bpjs_referral_control_can_be_completed(client: TestClient):
+    headers = _auth_headers(client)
+    created = client.post(
+        "/api/patients",
+        headers=headers,
+        json={"id": "BPJS-KONTROL-001", "name": "Siswa Kontrol", "age": 14, "gender": "P", "class_name": "8A"},
+    )
+    assert created.status_code == 201
+
+    document = base64.b64encode(b"\xff\xd8\xff" + b"x" * 64).decode()
+    referral = client.post(
+        "/api/bpjs-referrals",
+        headers=headers,
+        json={
+            "patient_id": "BPJS-KONTROL-001",
+            "referral_date": "2026-09-24",
+            "valid_until_date": "2026-12-24",
+            "control_date": "2026-09-30",
+            "referring_facility": "Puskesmas Contoh",
+            "destination_facility": "RS Contoh",
+            "document_base64": f"data:image/jpeg;base64,{document}",
+            "document_name": "rujukan.jpg",
+        },
+    )
+    assert referral.status_code == 201
+    assert referral.json()["control_done"] is False
+
+    completed = client.patch(
+        f"/api/bpjs-referrals/{referral.json()['id']}/control",
+        headers=headers,
+        json={"control_done": True},
+    )
+    assert completed.status_code == 200
+    assert completed.json()["control_done"] is True
+
+    listed = client.get("/api/patients/BPJS-KONTROL-001/bpjs-referrals", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()[0]["control_done"] is True
+
+
 def test_admin_assigns_students_to_wali_asuh_and_scope_is_enforced(client: TestClient):
     admin_headers = _auth_headers(client)
     for patient_id, name in (("WALI-SISWA-001", "Anak Asuh Satu"), ("WALI-SISWA-002", "Bukan Anak Asuh")):
@@ -332,6 +447,34 @@ def test_ai_suggest_care_prioritizes_red_flags(client: TestClient):
     payload = res.json()
     assert "Rujuk segera" in payload["follow_up"]
     assert "Jangan meninggalkan siswa sendiri" in payload["implementation"]
+
+
+def test_ai_suggest_care_uses_sdki_label_when_supported_by_assessment(client: TestClient):
+    headers = _auth_headers(client)
+    res = client.post(
+        "/api/ai/suggest-care",
+        headers=headers,
+        json={
+            "complaint": "Sakit gigi dengan skala nyeri 6 dari 10",
+            "examination": "Siswa tampak meringis dan gelisah",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["diagnosis"] == "Nyeri Akut"
+
+
+def test_ai_suggest_care_requires_assessment_before_assigning_sdki_diagnosis(client: TestClient):
+    headers = _auth_headers(client)
+    res = client.post(
+        "/api/ai/suggest-care",
+        headers=headers,
+        json={
+            "complaint": "Pusing",
+            "examination": "Belum ada data pemeriksaan lain",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["diagnosis"] == "Perlu pengkajian lanjutan sebelum menetapkan diagnosis SDKI"
 
 
 def test_health_and_ui_endpoint(client: TestClient):
@@ -1003,8 +1146,8 @@ def test_admin_tools_dashboard_import_backup_and_exports(client: TestClient):
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["NIS", "Nama Lengkap", "Jenis Kelamin", "Tanggal Lahir", "Kelas", "Nama Wali Asuh", "Nomor HP Wali Asuh"])
-    ws.append(["IMPORT-001", "Siswa Import Satu", "Perempuan", "2012-01-01", "7C", "Wali Import", "081200000001"])
+    ws.append(["NIS", "Nama Lengkap", "Jenis Kelamin", "Tanggal Lahir", "Kelas", "Nama Wali Asuh", "Nomor HP Wali Asuh", "No"])
+    ws.append(["IMPORT-001", "Siswa Import Satu", "Perempuan", "2012-01-01", "7C", "Wali Import", "081200000001", "SR13-0999"])
     stream = BytesIO()
     wb.save(stream)
     content = base64.b64encode(stream.getvalue()).decode()
@@ -1024,6 +1167,23 @@ def test_admin_tools_dashboard_import_backup_and_exports(client: TestClient):
     )
     assert imported.status_code == 200
     assert imported.json()["created"] == 1
+
+    imported_patient = client.get("/api/patients/IMPORT-001", headers=headers)
+    assert imported_patient.status_code == 200
+    assert imported_patient.json()["medical_record_number"] == "SR13-0999"
+
+    ws.delete_rows(2)
+    ws.append(["IMPORT-001", "Siswa Import Diperbarui", "Perempuan", "2012-01-01", "7C", "Wali Import", "081200000001", None])
+    stream = BytesIO()
+    wb.save(stream)
+    preserved = client.post(
+        "/api/patients/import-excel",
+        headers=headers,
+        json={"filename": "siswa_tanpa_rm.xlsx", "content_base64": base64.b64encode(stream.getvalue()).decode()},
+    )
+    assert preserved.status_code == 200
+    kept_patient = client.get("/api/patients/IMPORT-001", headers=headers)
+    assert kept_patient.json()["medical_record_number"] == "SR13-0999"
 
     imported_patient = client.get("/api/patients/IMPORT-001", headers=headers)
     assert imported_patient.status_code == 200

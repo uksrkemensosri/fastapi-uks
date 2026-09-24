@@ -9,8 +9,12 @@ import re
 import secrets
 import shutil
 import string
+import unicodedata
 import uuid
 import requests
+from urllib.parse import quote, urlencode
+import qrcode
+from PIL import Image, ImageOps, UnidentifiedImageError
 from dotenv import load_dotenv
 try:
     from openai import OpenAI
@@ -34,6 +38,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, A5, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 
 from app.auth.dependencies import get_current_user, require_roles
 from app.auth.security import (
@@ -82,6 +90,7 @@ from app.models.schemas import (
     AuditLogListResponse,
     AuditLogResponse,
     BPJSReferralCreate,
+    BPJSReferralControlUpdate,
     BPJSReferralResponse,
     MedicineInventoryResponse,
     MedicineStockAdjustment,
@@ -125,6 +134,38 @@ client = (
     else None
 )
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-oss-120b:free")
+
+# This limited SDKI list is intentionally scoped to common UKS presentations.
+# It is a decision-support allowlist, not a substitute for a nurse assessment.
+SDKI_UKS_DIAGNOSES = (
+    "Nyeri Akut",
+    "Gangguan Rasa Nyaman",
+    "Nausea",
+    "Hipertermia",
+    "Bersihan Jalan Napas Tidak Efektif",
+    "Pola Napas Tidak Efektif",
+    "Gangguan Pertukaran Gas",
+    "Risiko Aspirasi",
+    "Hipovolemia",
+    "Risiko Hipovolemia",
+    "Diare",
+    "Konstipasi",
+    "Gangguan Integritas Kulit/Jaringan",
+    "Risiko Infeksi",
+    "Risiko Cedera",
+    "Risiko Jatuh",
+    "Risiko Alergi",
+    "Keletihan",
+    "Intoleransi Aktivitas",
+    "Ansietas",
+    "Koping Tidak Efektif",
+    "Defisit Pengetahuan",
+)
+SDKI_REVIEW_REQUIRED = "Perlu pengkajian lanjutan sebelum menetapkan diagnosis SDKI"
+SDKI_ALLOWED_DIAGNOSIS_KEYS = {
+    re.sub(r"[^a-z0-9]", "", diagnosis.lower())
+    for diagnosis in (*SDKI_UKS_DIAGNOSES, SDKI_REVIEW_REQUIRED)
+}
 
 ROLE_ADMIN = "admin"
 ROLE_PERAWAT = "perawat"
@@ -183,6 +224,7 @@ def _bpjs_referral_response(referral: BPJSReferralORM, patient: PatientORM | Non
         referral_date=str(referral.referral_date),
         valid_until_date=str(referral.valid_until_date),
         control_date=str(referral.control_date) if referral.control_date else None,
+        control_done=bool(referral.control_done),
         referring_facility=referral.referring_facility,
         destination_facility=referral.destination_facility,
         referral_number=referral.referral_number,
@@ -197,87 +239,112 @@ def _bpjs_referral_response(referral: BPJSReferralORM, patient: PatientORM | Non
 
 def build_local_care_suggestion(complaint: str, examination: str) -> str:
     text = f"{complaint or ''} {examination or ''}".lower()
-    findings: list[tuple[str, str, str, str]] = []
 
-    emergency_signs = (
-        "sesak berat", "sulit bernapas", "sulit bernafas", "napas cepat", "nafas cepat",
-        "pingsan", "tidak sadar", "kejang", "nyeri dada", "perdarahan hebat",
-        "muntah darah", "alergi berat", "bibir kebiruan", "saturasi 9", "spo2 9",
-    )
-    if any(sign in text for sign in emergency_signs):
+    def has_any(*terms: str) -> bool:
+        return any(term in text for term in terms)
+
+    def make_suggestion(diagnosis: str, intervention: str, implementation: str, follow_up: str) -> str:
         return (
             "Diagnosa Keperawatan:\n"
-            "Masalah keperawatan prioritas dengan tanda bahaya yang memerlukan penilaian segera.\n\n"
+            f"{diagnosis}\n\n"
             "Tindakan Keperawatan:\n"
-            "1. Hentikan aktivitas dan dampingi siswa.\n"
-            "2. Kaji kesadaran, jalan napas, pernapasan, sirkulasi, serta tanda vital bila aman dilakukan.\n"
-            "3. Hubungi petugas kesehatan/fasilitas rujukan sesuai prosedur sekolah.\n\n"
+            f"{intervention}\n\n"
             "Implementasi dan Pemantauan:\n"
-            "Jangan meninggalkan siswa sendiri. Catat waktu kejadian, keluhan, tanda vital, dan tindakan yang sudah dilakukan.\n\n"
+            f"{implementation}\n\n"
             "Tindak Lanjut:\n"
-            "Rujuk segera ke fasilitas kesehatan dan hubungi wali asuh/orang tua sesuai prosedur."
+            f"{follow_up}"
         )
 
-    if any(word in text for word in ("gigi", "gusi", "karies", "sariawan", "mulut")):
-        findings.append(
-            (
-                "Nyeri akut terkait gangguan pada area gigi dan mulut.",
-                "Kaji lokasi dan skala nyeri, periksa pembengkakan/kemerahan, anjurkan kebersihan mulut, dan berikan analgesik sesuai protokol UKS.",
-                "Pantau respons nyeri 15-30 menit, catat obat yang diberikan, serta edukasi siswa untuk menghindari makanan terlalu keras/manis sementara.",
-                "Rujuk ke fasilitas kesehatan bila nyeri menetap, ada bengkak, demam, perdarahan, atau siswa sulit makan.",
-            )
+    emergency_signs = (
+        "sesak berat", "sulit bernapas", "sulit bernafas", "pingsan", "tidak sadar",
+        "kejang", "nyeri dada", "perdarahan hebat", "muntah darah", "alergi berat",
+        "bibir kebiruan", "sianosis", "spo2 9", "saturasi 9",
+    )
+    if has_any(*emergency_signs):
+        respiratory_emergency = has_any(
+            "sesak berat", "sulit bernapas", "sulit bernafas", "bibir kebiruan",
+            "sianosis", "spo2 9", "saturasi 9",
         )
-    if any(word in text for word in ("batuk", "sesak", "napas", "pilek", "flu", "tenggorokan")):
-        findings.append(
-            (
-                "Bersihan jalan napas tidak efektif terkait iritasi saluran napas.",
-                "Pantau frekuensi napas dan suhu, anjurkan minum air hangat, posisikan nyaman, dan ajarkan teknik batuk efektif.",
-                "Observasi bunyi napas, kemampuan mengeluarkan dahak, dan respons setelah istirahat; gunakan masker bila batuk aktif.",
-                "Hubungi wali asuh atau rujuk bila sesak, demam tinggi, napas cepat, atau keluhan tidak membaik.",
-            )
-        )
-    if any(word in text for word in ("pusing", "sakit kepala", "lemas", "mual", "nyeri ulu hati", "perut")):
-        findings.append(
-            (
-                "Gangguan kenyamanan akut terkait keluhan pusing, lemas, atau nyeri abdomen.",
-                "Istirahatkan siswa di ruang UKS, pantau tanda vital, kaji pola makan/minum terakhir, dan berikan cairan oral bila tidak mual berat.",
-                "Evaluasi skala keluhan setelah 15-30 menit, batasi aktivitas fisik, dan dokumentasikan faktor pemicu yang ditemukan.",
-                "Rujuk atau hubungi wali asuh bila keluhan memberat, muntah berulang, nyeri perut hebat, atau pusing disertai tanda bahaya.",
-            )
-        )
-    if any(word in text for word in ("luka", "jatuh", "memar", "terkilir", "benturan", "berdarah")):
-        findings.append(
-            (
-                "Risiko infeksi atau nyeri akut terkait cedera jaringan.",
-                "Bersihkan luka sesuai prosedur, tekan perdarahan ringan, kompres area memar, dan imobilisasi sementara bila dicurigai terkilir.",
-                "Catat lokasi luka, ukuran, nyeri, dan kemampuan gerak; pantau tanda infeksi atau pembengkakan bertambah.",
-                "Rujuk bila luka dalam, perdarahan sulit berhenti, deformitas, nyeri berat, atau keterbatasan gerak signifikan.",
-            )
+        return make_suggestion(
+            "Gangguan Pertukaran Gas" if respiratory_emergency else SDKI_REVIEW_REQUIRED,
+            "Hentikan aktivitas, dampingi siswa, dan lakukan penilaian awal jalan napas, pernapasan, sirkulasi, kesadaran, serta tanda vital sesuai kewenangan UKS.",
+            "Jangan meninggalkan siswa sendiri. Catat waktu kejadian, keluhan, tanda vital, dan tindakan yang telah dilakukan.",
+            "Rujuk segera ke fasilitas kesehatan dan hubungi wali asuh/orang tua sesuai prosedur sekolah.",
         )
 
-    if not findings:
-        findings.append(
-            (
-                "Gangguan kenyamanan akut terkait keluhan fisik siswa.",
-                "Observasi keadaan umum dan tanda vital, anjurkan istirahat, berikan cairan oral sesuai kondisi, dan lakukan edukasi singkat sesuai keluhan.",
-                "Pantau respons siswa 15-30 menit, dokumentasikan perubahan kondisi, serta pastikan siswa tidak kembali beraktivitas berat terlalu cepat.",
-                "Evaluasi ulang sesuai kondisi; hubungi wali asuh bila keluhan berulang, menetap, atau muncul tanda bahaya.",
-            )
+    # Diagnosis aktual requires more than one vague symptom. This prevents the
+    # local fallback from treating a single keyword as a confirmed diagnosis.
+    if has_any("nyeri", "sakit gigi", "sakit kepala", "nyeri perut") and has_any(
+        "skala", "meringis", "gelisah", "nadi", "sulit tidur", "protektif"
+    ):
+        return make_suggestion(
+            "Nyeri Akut",
+            "Kaji lokasi, karakter, durasi, pemicu, dan skala nyeri; fasilitasi istirahat serta tindakan nonfarmakologis sesuai protokol UKS.",
+            "Evaluasi keluhan dan respons nonverbal setelah tindakan; dokumentasikan perubahan skala nyeri dan tanda vital yang tersedia.",
+            "Hubungi wali asuh atau rujuk bila nyeri memberat, menetap, disertai demam, bengkak, perdarahan, atau keterbatasan fungsi.",
+        )
+    if has_any("suhu 38", "suhu 39", "suhu 40", "demam") and has_any("hangat", "menggigil", "nadi", "suhu"):
+        return make_suggestion(
+            "Hipertermia",
+            "Ukur ulang suhu dan tanda vital, anjurkan istirahat serta cairan oral bila aman, dan lakukan tindakan penurunan suhu sesuai protokol UKS.",
+            "Pantau suhu, tingkat kesadaran, asupan cairan, dan respons setelah tindakan; dokumentasikan hasil pengukuran.",
+            "Rujuk atau hubungi wali asuh bila suhu tetap tinggi, kondisi memburuk, kejang, penurunan kesadaran, atau ada tanda dehidrasi.",
+        )
+    if has_any("mual", "nausea"):
+        return make_suggestion(
+            "Nausea",
+            "Kaji waktu mulai, pemicu, kemampuan minum, dan ada tidaknya muntah; posisikan nyaman serta anjurkan istirahat.",
+            "Pantau muntah, nyeri perut, asupan cairan, dan perubahan kondisi; catat faktor pemicu yang dilaporkan.",
+            "Hubungi wali asuh atau rujuk bila muntah berulang, nyeri perut hebat, tidak mampu minum, atau muncul tanda bahaya.",
+        )
+    if has_any("diare", "bab cair", "buang air besar cair"):
+        return make_suggestion(
+            "Diare",
+            "Kaji frekuensi dan karakter BAB, nyeri perut, muntah, asupan cairan, serta tanda dehidrasi; anjurkan istirahat dan cairan oral bila aman.",
+            "Pantau kondisi umum, frekuensi BAB, kemampuan minum, dan tanda dehidrasi; dokumentasikan hasil pengkajian.",
+            "Hubungi wali asuh atau rujuk bila diare berulang, ada darah, demam tinggi, muntah, lemas berat, atau tidak mampu minum.",
+        )
+    if has_any("luka", "lecet", "sayat", "abrasi"):
+        return make_suggestion(
+            "Gangguan Integritas Kulit/Jaringan",
+            "Kaji lokasi, ukuran, kedalaman, perdarahan, dan kebersihan luka; lakukan perawatan luka sesuai prosedur UKS.",
+            "Dokumentasikan kondisi luka dan respons setelah tindakan; pantau perdarahan, nyeri, pembengkakan, atau tanda infeksi.",
+            "Rujuk bila luka dalam, perdarahan sulit berhenti, ada benda asing, luka kotor, atau dicurigai cedera lebih berat.",
+        )
+    if has_any("jatuh", "terkilir", "benturan", "memar"):
+        return make_suggestion(
+            "Risiko Cedera",
+            "Kaji lokasi cedera, nyeri, bengkak, kemampuan gerak, dan mekanisme kejadian; hentikan aktivitas serta lindungi area yang cedera.",
+            "Pantau perubahan nyeri, bengkak, kemampuan gerak, dan kesadaran bila ada benturan; dokumentasikan kejadian.",
+            "Rujuk bila deformitas, nyeri berat, keterbatasan gerak bermakna, muntah setelah benturan kepala, atau kondisi memburuk.",
+        )
+    if has_any("cemas", "takut", "khawatir", "panik"):
+        return make_suggestion(
+            "Ansietas",
+            "Kaji pemicu dan tingkat kecemasan, berikan lingkungan tenang, dengarkan keluhan, dan gunakan komunikasi terapeutik.",
+            "Pantau perilaku, tanda fisik kecemasan, kemampuan mengikuti arahan, serta respons setelah diberikan dukungan.",
+            "Hubungi wali asuh atau rujuk sesuai prosedur bila ada risiko melukai diri, perilaku tidak terkendali, atau kondisi psikologis memburuk.",
+        )
+    if has_any("lemas", "capek", "kelelahan") and has_any("olahraga", "aktivitas", "kurang tidur", "setelah"):
+        return make_suggestion(
+            "Keletihan",
+            "Kaji pola istirahat, aktivitas sebelumnya, asupan makan/minum, dan tanda vital; fasilitasi istirahat serta cairan oral bila aman.",
+            "Pantau pemulihan energi, pusing, kemampuan berdiri/berjalan, dan respons setelah istirahat.",
+            "Evaluasi ulang sebelum siswa kembali beraktivitas; hubungi wali asuh atau rujuk bila lemas menetap, pingsan, atau muncul tanda bahaya.",
+        )
+    if has_any("batuk") and has_any("dahak", "sekret", "sulit mengeluarkan", "bunyi napas"):
+        return make_suggestion(
+            "Bersihan Jalan Napas Tidak Efektif",
+            "Kaji pola napas, kemampuan mengeluarkan sekret, dan suhu; posisikan nyaman, anjurkan minum bila aman, serta terapkan etika batuk.",
+            "Pantau frekuensi napas, usaha napas, kemampuan berbicara, dan respons setelah istirahat.",
+            "Rujuk segera bila sesak, napas cepat, bibir kebiruan, demam tinggi, atau kondisi memburuk.",
         )
 
-    diagnoses = " ".join(item[0] for item in findings[:2])
-    interventions = " ".join(item[1] for item in findings[:2])
-    implementation = " ".join(item[2] for item in findings[:2])
-    follow_up = " ".join(item[3] for item in findings[:2])
-    return (
-        "Diagnosa Keperawatan:\n"
-        f"{diagnoses}\n\n"
-        "Tindakan Keperawatan:\n"
-        f"{interventions}\n\n"
-        "Implementasi dan Pemantauan:\n"
-        f"{implementation}\n\n"
-        "Tindak Lanjut:\n"
-        f"{follow_up}"
+    return make_suggestion(
+        SDKI_REVIEW_REQUIRED,
+        "Lengkapi pengkajian fokus: tanda vital, keluhan utama beserta durasi/pemicu, tanda dan gejala pendukung, riwayat singkat, serta kondisi umum siswa.",
+        "Dampingi dan istirahatkan siswa sesuai kondisi; pantau perubahan keluhan dan dokumentasikan data pengkajian yang diperoleh.",
+        "Validasi diagnosis oleh perawat setelah data cukup. Rujuk atau hubungi wali asuh bila muncul tanda bahaya atau kondisi memburuk.",
     )
 
 
@@ -296,6 +363,9 @@ def _parse_care_suggestion(result: str) -> tuple[str, str, str, str] | None:
         "diagnosis", "intervention", "implementation", "follow_up"
     ))
     if not all(values) or any(len(value) > 1200 for value in values):
+        return None
+    diagnosis_key = re.sub(r"[^a-z0-9]", "", values[0].lower())
+    if diagnosis_key not in SDKI_ALLOWED_DIAGNOSIS_KEYS:
         return None
     return values
 
@@ -488,6 +558,7 @@ def _build_patient_import_template_workbook() -> Workbook:
         "Nama Wali Asuh",
         "Nomor HP Wali Asuh",
         "NIK",
+        "No RM",
     ]
     examples = [
         ["01010001", "Contoh Siswa Laki-Laki", "Laki-Laki", "2010-01-15", "1A", "Ibu Contoh", "081234567890"],
@@ -495,9 +566,10 @@ def _build_patient_import_template_workbook() -> Workbook:
     ]
     sheet.append(headers)
     for row in examples:
-        sheet.append([*row, None])
-    for cell in sheet["H"]:
-        cell.number_format = "@"
+        sheet.append([*row, None, None])
+    for column in ("H", "I"):
+        for cell in sheet[column]:
+            cell.number_format = "@"
 
     header_fill = PatternFill("solid", fgColor="8B5CF6")
     header_font = Font(bold=True, color="FFFFFF")
@@ -512,17 +584,18 @@ def _build_patient_import_template_workbook() -> Workbook:
         for cell in row:
             cell.border = border
             cell.alignment = Alignment(vertical="center")
-    widths = [18, 32, 18, 18, 12, 28, 24, 24]
+    widths = [18, 32, 18, 18, 12, 28, 24, 24, 18]
     for idx, width in enumerate(widths, start=1):
         sheet.column_dimensions[sheet.cell(row=1, column=idx).column_letter].width = width
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = f"A1:H{sheet.max_row}"
+    sheet.auto_filter.ref = f"A1:I{sheet.max_row}"
 
     notes = workbook.create_sheet("Petunjuk")
     notes.append(["Kolom", "Keterangan"])
     notes_rows = [
         ["NIS", "Wajib. Nomor induk siswa atau ID siswa. Simpan sebagai teks agar angka 0 di depan tidak hilang."],
         ["NIK", "Opsional. Teks 16 digit, jangan mengganti NIS. Kolom kosong tidak menghapus NIK yang sudah tersimpan."],
+        ["No RM", "Opsional. Nomor rekam medis yang sudah ditetapkan sekolah. Kolom kosong tidak menghapus No. RM yang sudah tersimpan."],
         ["Nama Lengkap", "Wajib. Nama lengkap siswa."],
         ["Jenis Kelamin", "Opsional. Contoh: Laki-Laki / Perempuan / L / P."],
         ["Tanggal Lahir", "Opsional. Gunakan format yyyy-mm-dd, contoh 2010-01-15."],
@@ -1050,13 +1123,20 @@ def suggest_care_with_ai(
     _: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
 ) -> AICareSuggestionResponse:
 
+    allowed_diagnoses = "\n".join(f"- {diagnosis}" for diagnosis in SDKI_UKS_DIAGNOSES)
+
     prompt = f"""
 Anda membantu dokumentasi petugas UKS sekolah di Indonesia, bukan menggantikan dokter.
 
 Gunakan hanya informasi yang tersedia. Jangan mengarang hasil pemeriksaan, obat, diagnosis medis, atau angka tanda vital.
-Gunakan masalah/diagnosa keperawatan yang paling sesuai; bila data kurang, tulis masalah keperawatan umum dan apa yang perlu dikaji ulang.
+Gunakan satu diagnosis keperawatan SDKI yang paling sesuai dari daftar yang diizinkan. Jangan gabungkan dua diagnosis.
+Diagnosis aktual hanya boleh dipilih bila keluhan dan tanda/gejala pendukungnya tertulis. Diagnosis risiko hanya boleh dipilih bila faktor risikonya tertulis.
+Bila data tidak cukup untuk menetapkan diagnosis SDKI, tulis persis: "{SDKI_REVIEW_REQUIRED}". Jangan memaksakan diagnosis umum.
 Prioritaskan keselamatan: bila ada tanda bahaya seperti sesak, penurunan kesadaran, kejang, perdarahan aktif, nyeri dada, saturasi rendah, atau kondisi memburuk, tulis rujuk segera.
 Tindakan hanya yang dapat dilakukan dalam kewenangan dan protokol UKS. Obat hanya boleh disebut sebagai "sesuai protokol UKS" tanpa menentukan dosis baru.
+
+Daftar diagnosis SDKI yang diizinkan untuk UKS:
+{allowed_diagnoses}
 
 Keluhan siswa:
 {payload.complaint}
@@ -1067,7 +1147,7 @@ Hasil pemeriksaan UKS:
 Jawab hanya dengan format persis berikut, tanpa pembuka/penutup lain:
 
 Diagnosa Keperawatan:
-Satu atau dua masalah/diagnosa keperawatan paling relevan.
+Tulis tepat satu label dari daftar di atas, tanpa kode, etiologi, atau penjelasan tambahan.
 
 Tindakan Keperawatan:
 2-4 tindakan praktis, spesifik, dan aman untuk petugas UKS.
@@ -1135,6 +1215,7 @@ def create_patient(
     patient = PatientORM(
         school_id=current_user.school_id,
         id=payload.id,
+        medical_record_number=payload.medical_record_number,
         name=payload.name,
         nik=payload.nik,
         age=payload.age,
@@ -1151,6 +1232,8 @@ def create_patient(
     return PatientSummary(
         id=patient.id,
         nik=patient.nik,
+        medical_record_number=patient.medical_record_number,
+        photo_url=_patient_photo_url(patient),
         name=patient.name,
         age=patient.age,
         gender=patient.gender,
@@ -1180,6 +1263,8 @@ def get_patients(
         PatientSummary(
             id=p.id,
             nik=p.nik,
+            medical_record_number=p.medical_record_number,
+            photo_url=_patient_photo_url(p),
             name=p.name,
             age=p.age,
             gender=p.gender,
@@ -1217,6 +1302,8 @@ def search_patients(
         PatientSummary(
             id=p.id,
             nik=p.nik,
+            medical_record_number=p.medical_record_number,
+            photo_url=_patient_photo_url(p),
             name=p.name,
             age=p.age,
             gender=p.gender,
@@ -1244,6 +1331,301 @@ def download_patients_import_template(
     )
 
 
+@router.get("/patients/card-data-export")
+def export_patient_card_data(
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT)),
+) -> StreamingResponse:
+    patients = (
+        tenant_query(db.query(PatientORM), PatientORM, current_user)
+        .order_by(PatientORM.class_name.asc(), PatientORM.name.asc())
+        .all()
+    )
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Data Kartu Canva"
+    headers = ["No RM", "Nama", "NIS", "NIK", "Kelas"]
+    sheet.append(headers)
+    for patient in patients:
+        sheet.append([
+            _excel_text(patient.medical_record_number),
+            _excel_text(patient.name),
+            _excel_text(patient.id),
+            _excel_text(patient.nik),
+            _excel_text(patient.class_name),
+        ])
+    header_fill = PatternFill("solid", fgColor="1D4ED8")
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+    for column in ("A", "B", "C", "D", "E"):
+        sheet.column_dimensions[column].width = {"A": 16, "B": 32, "C": 18, "D": 22, "E": 16}[column]
+    for row in sheet.iter_rows(min_row=2, max_row=sheet.max_row):
+        for cell in row:
+            cell.number_format = "@"
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:E{sheet.max_row}"
+
+    guide = workbook.create_sheet("Petunjuk Canva")
+    guide.append(["Field Canva", "Kolom Excel"])
+    for row in (("no_rm", "No RM"), ("nama", "Nama"), ("nis", "NIS"), ("nik", "NIK"), ("kelas", "Kelas")):
+        guide.append(row)
+    guide.column_dimensions["A"].width = 24
+    guide.column_dimensions["B"].width = 24
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    write_audit_log(db, current_user, "export_patient_card_data", "patient", None, f"total={len(patients)}")
+    db.commit()
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="data_kartu_canva_sehati.xlsx"'},
+    )
+
+
+CARD_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "ui" / "assets" / "card-templates"
+CARD_FRONT_TEMPLATE = CARD_TEMPLATE_DIR / "kartu-pelajar-depan.png"
+CARD_BACK_TEMPLATE = CARD_TEMPLATE_DIR / "kartu-pelajar-belakang.png"
+CARD_WIDTH = 85.6 * mm
+CARD_HEIGHT = 54 * mm
+CARD_TEMPLATE_WIDTH = 1579
+CARD_TEMPLATE_HEIGHT = 996
+CARD_RENDERER_VERSION = "2026-09-24-photo-frame-v2"
+STUDENT_PHOTO_DIR = Path("uploads") / "student_photos"
+STUDENT_PHOTO_MAX_BYTES = 3 * 1024 * 1024
+STUDENT_PHOTO_MAX_PIXELS = 20_000_000
+STUDENT_PHOTO_TYPES = {
+    "JPEG": (".jpg", "image/jpeg"),
+    "PNG": (".png", "image/png"),
+    "WEBP": (".webp", "image/webp"),
+}
+
+
+def _card_x(value: float) -> float:
+    return CARD_WIDTH * value / CARD_TEMPLATE_WIDTH
+
+
+def _card_y_from_top(value: float) -> float:
+    return CARD_HEIGHT - (CARD_HEIGHT * value / CARD_TEMPLATE_HEIGHT)
+
+
+def _card_height(value: float) -> float:
+    return CARD_HEIGHT * value / CARD_TEMPLATE_HEIGHT
+
+
+def _patient_photo_url(patient: PatientORM) -> str | None:
+    if not patient.profile_photo_path:
+        return None
+    return f"/api/patients/{quote(patient.id, safe='')}/photo"
+
+
+def _decode_student_photo(photo_base64: str) -> tuple[bytes, str, str]:
+    try:
+        _, encoded = photo_base64.split(",", 1) if "," in photo_base64 else ("", photo_base64)
+        content = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail="File foto tidak valid") from exc
+    if not content or len(content) > STUDENT_PHOTO_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Ukuran foto maksimal 3 MB")
+    try:
+        with Image.open(BytesIO(content)) as image:
+            image.verify()
+        with Image.open(BytesIO(content)) as image:
+            if image.width * image.height > STUDENT_PHOTO_MAX_PIXELS:
+                raise HTTPException(status_code=400, detail="Resolusi foto terlalu besar")
+            image_format = image.format or ""
+    except HTTPException:
+        raise
+    except (UnidentifiedImageError, OSError, SyntaxError) as exc:
+        raise HTTPException(status_code=400, detail="Format foto harus JPG, PNG, atau WebP") from exc
+    if image_format not in STUDENT_PHOTO_TYPES:
+        raise HTTPException(status_code=400, detail="Format foto harus JPG, PNG, atau WebP")
+    extension, media_type = STUDENT_PHOTO_TYPES[image_format]
+    return content, extension, media_type
+
+
+def _draw_student_photo(pdf: canvas.Canvas, patient: PatientORM) -> None:
+    if not patient.profile_photo_path:
+        return
+    photo_path = Path(patient.profile_photo_path)
+    if not photo_path.is_file():
+        return
+    # Cover the full placeholder (x=80..413, y=298..736), including edge pixels.
+    frame_x = _card_x(79)
+    frame_y = _card_y_from_top(737)
+    frame_width = _card_x(335)
+    frame_height = _card_height(440)
+    try:
+        with Image.open(photo_path) as image:
+            image = ImageOps.exif_transpose(image).convert("RGB")
+            # Use the physical frame ratio so the printed face is never stretched.
+            target_width = 1276
+            target_height = round(target_width * frame_height / frame_width)
+            fitted = ImageOps.fit(image, (target_width, target_height), method=Image.Resampling.LANCZOS)
+            buffer = BytesIO()
+            fitted.save(buffer, format="JPEG", quality=90, optimize=True)
+        buffer.seek(0)
+        clip = pdf.beginPath()
+        clip.roundRect(frame_x, frame_y, frame_width, frame_height, _card_x(19))
+        pdf.saveState()
+        pdf.clipPath(clip, stroke=0, fill=0)
+        pdf.drawImage(ImageReader(buffer), frame_x, frame_y, width=frame_width, height=frame_height, mask="auto")
+        pdf.restoreState()
+    except (OSError, UnidentifiedImageError):
+        logger.warning("Student photo could not be rendered for patient %s", patient.id)
+
+
+def _card_text(value: object | None) -> str:
+    text = str(value or "-").strip()
+    # The built-in PDF font is limited to WinAnsi; retain readable Indonesian text.
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii") or "-"
+
+
+def _draw_card_text(
+    pdf: canvas.Canvas,
+    value: object | None,
+    x: float,
+    y: float,
+    max_width: float,
+    font_size: float = 7,
+    minimum_font_size: float = 4.6,
+    font_name: str = "Helvetica-Bold",
+) -> None:
+    text = _card_text(value)
+    size = font_size
+    while size > minimum_font_size and stringWidth(text, font_name, size) > max_width:
+        size -= 0.2
+    if stringWidth(text, font_name, size) > max_width:
+        while text and stringWidth(f"{text}...", font_name, size) > max_width:
+            text = text[:-1]
+        text = f"{text}..." if text else "-"
+    pdf.setFont(font_name, size)
+    pdf.setFillColor(colors.HexColor("#08066e"))
+    pdf.drawString(x, y, text)
+
+
+def _medical_card_qr_url(request: Request, db: Session, current_user: UserORM) -> str:
+    school = db.get(SchoolORM, current_user.school_id) if current_user.school_id else None
+    school_code = school.school_code if school else ""
+    base_url = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/") or str(request.base_url).rstrip("/")
+    return f"{base_url}/keluhan?{urlencode({'school': school_code})}"
+
+
+def _draw_medical_card_front(pdf: canvas.Canvas, patient: PatientORM) -> None:
+    pdf.drawImage(str(CARD_FRONT_TEMPLATE), 0, 0, width=CARD_WIDTH, height=CARD_HEIGHT, mask="auto")
+    _draw_student_photo(pdf, patient)
+    value_x = _card_x(690)
+    value_width = _card_x(430)
+    _draw_card_text(pdf, patient.name, value_x, _card_y_from_top(463), value_width)
+    _draw_card_text(pdf, patient.class_name, value_x, _card_y_from_top(518), value_width)
+    _draw_card_text(pdf, patient.id, value_x, _card_y_from_top(573), value_width)
+    _draw_card_text(pdf, patient.nik, value_x, _card_y_from_top(627), value_width, font_size=6.2)
+
+
+def _draw_medical_card_back(pdf: canvas.Canvas, patient: PatientORM, qr_url: str) -> None:
+    pdf.drawImage(str(CARD_BACK_TEMPLATE), 0, 0, width=CARD_WIDTH, height=CARD_HEIGHT, mask="auto")
+
+    # Replace the sample RM printed in the Canva background with the student's actual RM.
+    pdf.setFillColor(colors.HexColor("#f2edff"))
+    pdf.roundRect(_card_x(65), _card_y_from_top(500), _card_x(770), _card_x(160), _card_x(20), fill=1, stroke=0)
+    pdf.setFillColor(colors.HexColor("#2014a8"))
+    pdf.setFont("Helvetica-Bold", 7)
+    pdf.drawString(_card_x(145), _card_y_from_top(390), "Nomor Rekam Medis (No. RM)")
+    _draw_card_text(pdf, patient.medical_record_number, _card_x(145), _card_y_from_top(470), _card_x(610), font_size=13, minimum_font_size=8)
+
+    generator = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    generator.add_data(qr_url)
+    generator.make(fit=True)
+    qr_stream = BytesIO()
+    generator.make_image(fill_color="black", back_color="white").save(qr_stream, format="PNG")
+    qr_stream.seek(0)
+    # The white square hides the example QR while retaining its purple frame.
+    pdf.setFillColor(colors.white)
+    pdf.rect(_card_x(127), _card_y_from_top(764), _card_x(258), _card_x(258), fill=1, stroke=0)
+    pdf.drawImage(ImageReader(qr_stream), _card_x(133), _card_y_from_top(758), width=_card_x(246), height=_card_x(246), mask="auto")
+
+
+@router.post("/patients/{patient_id}/photo")
+def upload_patient_photo(
+    patient_id: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
+) -> dict:
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan atau tidak dapat diakses")
+    photo_base64 = payload.get("photo_base64")
+    if not isinstance(photo_base64, str):
+        raise HTTPException(status_code=400, detail="Foto wajib dipilih")
+    content, extension, _ = _decode_student_photo(photo_base64)
+    STUDENT_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+    destination = STUDENT_PHOTO_DIR / f"{patient.school_id or 'default'}_{uuid.uuid4().hex}{extension}"
+    destination.write_bytes(content)
+    old_photo = Path(patient.profile_photo_path) if patient.profile_photo_path else None
+    patient.profile_photo_path = str(destination)
+    write_audit_log(db, current_user, "upload_patient_photo", "patient", patient.id, "Uploaded student profile photo")
+    db.commit()
+    if old_photo and old_photo.is_file() and old_photo != destination:
+        old_photo.unlink(missing_ok=True)
+    return {"photo_url": _patient_photo_url(patient)}
+
+
+@router.get("/patients/{patient_id}/photo")
+def download_patient_photo(
+    patient_id: str,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
+) -> FileResponse:
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, patient_id, current_user), current_user)
+    if patient is None or not patient.profile_photo_path:
+        raise HTTPException(status_code=404, detail="Foto siswa belum tersedia")
+    photo_path = Path(patient.profile_photo_path)
+    if not photo_path.is_file():
+        raise HTTPException(status_code=404, detail="Foto siswa belum tersedia")
+    media_type = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(photo_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(photo_path, media_type=media_type)
+
+
+@router.get("/patients/{patient_id}/medical-card")
+def download_patient_medical_card(
+    patient_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR)),
+) -> StreamingResponse:
+    patient = tenant_get(db, PatientORM, patient_id, current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan atau tidak dapat diakses")
+    if not CARD_FRONT_TEMPLATE.exists() or not CARD_BACK_TEMPLATE.exists():
+        raise HTTPException(status_code=503, detail="Template kartu belum tersedia")
+
+    output = BytesIO()
+    pdf = canvas.Canvas(output, pagesize=(CARD_WIDTH, CARD_HEIGHT), pageCompression=1)
+    pdf.setTitle(f"Kartu Pelajar {patient.name}")
+    _draw_medical_card_front(pdf, patient)
+    pdf.showPage()
+    _draw_medical_card_back(pdf, patient, _medical_card_qr_url(request, db, current_user))
+    pdf.save()
+    output.seek(0)
+
+    write_audit_log(db, current_user, "generate_medical_card", "patient", patient.id, "Generated student medical card PDF")
+    db.commit()
+    filename_id = re.sub(r"[^A-Za-z0-9_-]+", "_", patient.id) or "siswa"
+    return StreamingResponse(
+        output,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="kartu_pelajar_{filename_id}.pdf"',
+            "Cache-Control": "no-store",
+            "X-Card-Renderer-Version": CARD_RENDERER_VERSION,
+        },
+    )
+
+
 @router.get("/patients/{patient_id}", response_model=PatientSummary)
 def get_patient_detail(
     patient_id: str,
@@ -1256,6 +1638,8 @@ def get_patient_detail(
     return PatientSummary(
         id=patient.id,
         nik=patient.nik,
+        medical_record_number=patient.medical_record_number,
+        photo_url=_patient_photo_url(patient),
         name=patient.name,
         age=patient.age,
         gender=patient.gender,
@@ -1291,6 +1675,8 @@ def update_patient(
     patient.name = payload.name
     if "nik" in payload.model_fields_set:
         patient.nik = payload.nik
+    if "medical_record_number" in payload.model_fields_set:
+        patient.medical_record_number = payload.medical_record_number
     patient.age = payload.age
     patient.gender = payload.gender
     patient.class_name = payload.class_name
@@ -1438,6 +1824,31 @@ def download_bpjs_referral_document(
         raise HTTPException(status_code=404, detail="Lampiran rujukan tidak ditemukan")
     return FileResponse(document_path, media_type=referral.document_content_type, filename=referral.document_name)
 
+
+@router.patch("/bpjs-referrals/{referral_id}/control", response_model=BPJSReferralResponse)
+def update_bpjs_referral_control(
+    referral_id: int,
+    payload: BPJSReferralControlUpdate,
+    db: Session = Depends(get_db),
+    current_user: UserORM = Depends(require_roles(*BPJS_REFERRAL_ROLES)),
+) -> BPJSReferralResponse:
+    referral = tenant_get(db, BPJSReferralORM, referral_id, current_user)
+    if referral is None:
+        raise HTTPException(status_code=404, detail="Rujukan tidak ditemukan")
+    patient = ensure_patient_access(db, tenant_get(db, PatientORM, referral.patient_id, current_user), current_user)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Rujukan tidak ditemukan")
+    if not referral.control_date:
+        raise HTTPException(status_code=400, detail="Rujukan ini belum memiliki jadwal kontrol")
+
+    referral.control_done = payload.control_done
+    action = "complete_bpjs_referral_control" if payload.control_done else "reopen_bpjs_referral_control"
+    description = f"Kontrol rujukan BPJS {'diselesaikan' if payload.control_done else 'dibuka kembali'} untuk {patient.id}"
+    write_audit_log(db, current_user, action, "bpjs_referral", referral.id, description)
+    db.commit()
+    db.refresh(referral)
+    return _bpjs_referral_response(referral, patient, current_user)
+
 @router.post("/uks/visits", response_model=UKSVisitResponse, status_code=status.HTTP_201_CREATED)
 def create_uks_visit(
     payload: UKSVisitCreate,
@@ -1446,7 +1857,7 @@ def create_uks_visit(
 ) -> UKSVisitResponse:
     patient = tenant_get(db, PatientORM, payload.patient_id, current_user)
     if patient is None:
-        raise HTTPException(status_code=404, detail="Patient not found")
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan atau tidak dapat diakses")
 
     visit = UKSVisitORM(
         school_id=patient.school_id,
@@ -2932,6 +3343,9 @@ def dashboard_bpjs_referrals(
     expiring = 0
     expired = 0
     priority = []
+    control_due = 0
+    control_overdue = 0
+    control_priority = []
     for referral in referrals:
         try:
             expiry = date.fromisoformat(str(referral.valid_until_date))
@@ -2960,11 +3374,39 @@ def dashboard_bpjs_referrals(
                 "days_remaining": days_remaining,
                 "label": label,
             })
+        if referral.control_date and not referral.control_done:
+            try:
+                control_day = date.fromisoformat(str(referral.control_date))
+            except ValueError:
+                continue
+            control_remaining = (control_day - today).days
+            patient = patients.get(referral.patient_id)
+            if control_remaining < 0:
+                control_overdue += 1
+                control_label = "Terlambat kontrol"
+            elif control_remaining <= 7:
+                control_due += 1
+                control_label = "Kontrol hari ini" if control_remaining == 0 else f"Kontrol H-{control_remaining}"
+            else:
+                continue
+            control_priority.append({
+                "id": referral.id,
+                "patient_id": referral.patient_id,
+                "patient_name": patient.name if patient else referral.patient_id,
+                "class_name": patient.class_name if patient else None,
+                "destination_facility": referral.destination_facility,
+                "control_date": referral.control_date,
+                "days_remaining": control_remaining,
+                "label": control_label,
+            })
     return {
         "active": active,
         "expiring": expiring,
         "expired": expired,
         "priority": sorted(priority, key=lambda item: item["days_remaining"])[:10],
+        "control_due": control_due,
+        "control_overdue": control_overdue,
+        "control_priority": sorted(control_priority, key=lambda item: item["days_remaining"])[:10],
     }
 @router.get("/users")
 def list_users(
@@ -3612,6 +4054,7 @@ def download_backup(
             {
                 "id": p.id,
                 "nik": p.nik,
+                "medical_record_number": p.medical_record_number,
                 "name": p.name,
                 "age": p.age,
                 "gender": p.gender,
@@ -3672,6 +4115,8 @@ def restore_backup(
         patient.birth_date = item.get("birth_date")
         if "nik" in item:
             patient.nik = item.get("nik")
+        if "medical_record_number" in item:
+            patient.medical_record_number = item.get("medical_record_number")
         patient.parent_name = item.get("parent_name")
         patient.parent_phone = item.get("parent_phone")
         restored["patients"] += 1
@@ -3737,6 +4182,7 @@ def import_patients_excel(
     aliases = {
         "id": ["id", "nis", "id / nis"],
         "nik": ["nik"],
+        "medical_record_number": ["no", "no rm", "nomor rm", "no. rm", "medical_record_number"],
         "name": ["nama", "nama lengkap", "name", "full name"],
         "gender": ["gender", "jenis kelamin", "jk"],
         "birth_date": ["tanggal lahir", "birth date", "birth_date"],
@@ -3775,6 +4221,9 @@ def import_patients_excel(
             if not isinstance(value, str) or len(value.strip()) != 16 or not all(c in "0123456789" for c in value.strip()):
                 raise HTTPException(status_code=400, detail=f"NIK untuk NIS {item['id']} harus berupa teks 16 digit. Atur format kolom Excel menjadi Text.")
             item["nik"] = value.strip()
+        medical_record_number_idx = idx("medical_record_number")
+        if medical_record_number_idx is not None and row[medical_record_number_idx] not in (None, ""):
+            item["medical_record_number"] = str(row[medical_record_number_idx]).strip()
         rows.append(item)
 
     if payload.get("preview", False):
@@ -3799,6 +4248,8 @@ def import_patients_excel(
         patient.name = item["name"]
         if "nik" in item:
             patient.nik = item["nik"]
+        if "medical_record_number" in item:
+            patient.medical_record_number = item["medical_record_number"]
         patient.gender = item["gender"]
         patient.class_name = item["class_name"]
         patient.birth_date = item["birth_date"]

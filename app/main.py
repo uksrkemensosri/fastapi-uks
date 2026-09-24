@@ -18,7 +18,7 @@ from app.api.fitness import router as fitness_router
 from app.api.monthly_reports import router as monthly_reports_router
 from app.api.recommendations import router as recommendations_router
 from app.api.complaints import router as complaints_router
-from app.api.routes import router
+from app.api.routes import CARD_RENDERER_VERSION, router
 from app.auth.security import hash_password
 from app.auth.tenant import get_default_school
 from app.db import models  # noqa: F401
@@ -61,7 +61,14 @@ def decode_session(value: str | None) -> dict:
         return {}
 
 
-app = FastAPI(title="EMR Keperawatan + Expert System NANDA-NIC-NOC")
+app = FastAPI(
+    title="SEHATI API",
+    description=(
+        "API Sistem Pelayanan Kesehatan Digital Terintegrasi untuk UKS. "
+        "Saran diagnosis keperawatan menggunakan daftar SDKI yang dibatasi untuk konteks UKS "
+        "dan tetap memerlukan validasi petugas."
+    ),
+)
 
 
 @app.middleware("http")
@@ -154,6 +161,8 @@ def ensure_database_columns() -> None:
             patient_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(patients)")).fetchall()}
             if "nik" not in patient_cols:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN nik VARCHAR(16)"))
+            if "profile_photo_path" not in patient_cols:
+                conn.execute(text("ALTER TABLE patients ADD COLUMN profile_photo_path VARCHAR(500)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_patients_nik ON patients (nik)"))
             if "class_name" not in patient_cols:
                 conn.execute(text("ALTER TABLE patients ADD COLUMN class_name VARCHAR(50)"))
@@ -249,6 +258,7 @@ def ensure_database_columns() -> None:
             conn.execute(text("ALTER TABLE schools ADD COLUMN IF NOT EXISTS postal_code VARCHAR(20)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS class_name VARCHAR(50)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS nik VARCHAR(16)"))
+            conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS profile_photo_path VARCHAR(500)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_patients_nik ON patients (nik)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_name VARCHAR(200)"))
             conn.execute(text("ALTER TABLE patients ADD COLUMN IF NOT EXISTS parent_phone VARCHAR(30)"))
@@ -465,7 +475,7 @@ def root() -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "card_renderer_version": CARD_RENDERER_VERSION}
 
 @app.get("/dashboard", response_class=FileResponse)
 def dashboard(request: Request):

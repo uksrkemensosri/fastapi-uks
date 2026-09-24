@@ -100,6 +100,9 @@
 
     const drawer = document.createElement("aside");
     drawer.className = "sehati-mobile-drawer";
+    drawer.id = "sehati-mobile-navigation";
+    drawer.inert = true;
+    drawer.setAttribute("aria-hidden", "true");
     drawer.setAttribute("aria-label", "Navigasi utama");
     drawer.innerHTML = `
       <div class="sehati-mobile-drawer-head">
@@ -114,11 +117,20 @@
 
     const menuButton = header.querySelector(".sehati-mobile-menu-button");
     const closeButton = drawer.querySelector(".sehati-mobile-close");
+    menuButton.setAttribute("aria-controls", drawer.id);
+    const mobileViewport = window.matchMedia("(max-width: 900px)");
     const close = () => {
+      const wasOpen = document.body.classList.contains("sehati-mobile-nav-open");
       document.body.classList.remove("sehati-mobile-nav-open");
       menuButton.setAttribute("aria-expanded", "false");
+      if (wasOpen && mobileViewport.matches) menuButton.focus();
+      drawer.inert = true;
+      drawer.setAttribute("aria-hidden", "true");
     };
     const open = () => {
+      if (!mobileViewport.matches) return;
+      drawer.inert = false;
+      drawer.setAttribute("aria-hidden", "false");
       document.body.classList.add("sehati-mobile-nav-open");
       menuButton.setAttribute("aria-expanded", "true");
       closeButton.focus();
@@ -128,7 +140,23 @@
     overlay.addEventListener("click", close);
     drawer.querySelectorAll("a").forEach((link) => link.addEventListener("click", close));
     document.addEventListener("keydown", (event) => {
+      if (!document.body.classList.contains("sehati-mobile-nav-open")) return;
       if (event.key === "Escape") close();
+      if (event.key === "Tab") {
+        const focusable = [...drawer.querySelectorAll('button, a[href]')];
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    });
+    mobileViewport.addEventListener("change", () => {
+      if (!mobileViewport.matches) close();
     });
 
     document.body.classList.add("sehati-has-mobile-nav");
@@ -266,8 +294,8 @@
     if (!["admin", "perawat", "tim_uksr", "super_admin"].includes(role)) {
       return;
     }
-    const link = document.querySelector('a[href="/complaints"]');
-    if (!link) {
+    const links = document.querySelectorAll('a[href="/complaints"]');
+    if (!links.length) {
       return;
     }
     try {
@@ -278,7 +306,9 @@
         return;
       }
       const { count } = await response.json();
-      link.textContent = count > 0 ? `Keluhan Masuk (${count})` : "Keluhan Masuk";
+      links.forEach((link) => {
+        link.textContent = count > 0 ? `Keluhan Masuk (${count})` : "Keluhan Masuk";
+      });
     } catch (err) {
       console.warn("Complaint badge unavailable", err);
     }

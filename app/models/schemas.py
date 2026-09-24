@@ -33,6 +33,8 @@ class AssessmentResponse(BaseModel):
 class PatientSummary(BaseModel):
     id: str
     nik: Optional[str] = None
+    medical_record_number: Optional[str] = None
+    photo_url: Optional[str] = None
     name: str
     age: int
     gender: str
@@ -45,6 +47,7 @@ class PatientSummary(BaseModel):
 class PatientCreate(BaseModel):
     id: str = Field(min_length=1, max_length=50)
     nik: Optional[str] = Field(default=None, pattern=r"^[0-9]{16}$")
+    medical_record_number: Optional[str] = Field(default=None, max_length=30)
     name: str = Field(min_length=2, max_length=200)
     age: int = Field(ge=0, le=120)
     gender: str = Field(min_length=1, max_length=30)
@@ -110,7 +113,28 @@ class PublicComplaintResponse(BaseModel):
     id: int
     status: str
     submitted_at: datetime
+    tracking_code: Optional[str] = None
     duplicate: bool = False
+
+
+class PublicComplaintStatusResponse(BaseModel):
+    tracking_code: str
+    status: str
+    submitted_at: datetime
+    updated_at: Optional[datetime] = None
+    public_status_note: Optional[str] = None
+
+
+class ComplaintPublicUpdate(BaseModel):
+    public_status_note: str = Field(min_length=2, max_length=500)
+
+    @field_validator("public_status_note")
+    @classmethod
+    def public_status_note_must_not_be_blank(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 2:
+            raise ValueError("Catatan tindak lanjut wajib diisi")
+        return cleaned
 
 
 class StudentComplaintResponse(BaseModel):
@@ -122,6 +146,8 @@ class StudentComplaintResponse(BaseModel):
     complaint: str
     submitted_at: datetime
     status: str
+    tracking_code: Optional[str] = None
+    public_status_note: Optional[str] = None
     handled_by: Optional[int] = None
     handled_by_name: Optional[str] = None
     handled_at: Optional[datetime] = None
@@ -214,6 +240,7 @@ class BPJSReferralResponse(BaseModel):
     referral_date: str
     valid_until_date: str
     control_date: Optional[str] = None
+    control_done: bool = False
     referring_facility: str
     destination_facility: str
     referral_number: Optional[str] = None
@@ -223,6 +250,10 @@ class BPJSReferralResponse(BaseModel):
     document_name: str
     created_by_name: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class BPJSReferralControlUpdate(BaseModel):
+    control_done: bool
 
 
 class ComplaintStat(BaseModel):

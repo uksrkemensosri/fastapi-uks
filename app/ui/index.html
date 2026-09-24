@@ -1425,6 +1425,7 @@ body.dark .activity-item{
     ">
 
       <a
+        id="dashboardAddStudentLink"
         href="/students"
         class="btn btn-primary"
         style="
@@ -1732,6 +1733,7 @@ window.addEventListener("load", async () => {
     if (dashboardRole === "wali_asuh") {
       document.getElementById("lowStockList").closest("section").remove();
       document.getElementById("whatsappStatusList").closest("section").remove();
+      document.getElementById("dashboardAddStudentLink")?.remove();
     }
   } catch (err) {
     console.error("Identitas dashboard gagal dimuat:", err);
@@ -2369,12 +2371,21 @@ async function loadBpjsReferralReminders(){
       <div class="top-student-item"><div><strong>Aktif</strong><div style="color:#64748b;">Masih berlaku</div></div><div class="visit-badge">${data.active || 0}</div></div>
       <div class="top-student-item"><div><strong>Segera habis</strong><div style="color:#64748b;">Dalam 30 hari</div></div><div class="visit-badge">${data.expiring || 0}</div></div>
       <div class="top-student-item"><div><strong>Kedaluwarsa</strong><div style="color:#64748b;">Perlu diperbarui</div></div><div class="visit-badge">${data.expired || 0}</div></div>`;
+    const controlSummary = `
+      <div class="top-student-item"><div><strong>Kontrol mendekat</strong><div style="color:#64748b;">Dalam 7 hari</div></div><div class="visit-badge">${data.control_due || 0}</div></div>
+      <div class="top-student-item"><div><strong>Kontrol terlewat</strong><div style="color:#64748b;">Perlu ditindaklanjuti</div></div><div class="visit-badge">${data.control_overdue || 0}</div></div>`;
     const priority = (data.priority || []).map(item => `
       <a class="top-student-item" style="text-decoration:none;color:inherit;" href="/student-detail?id=${encodeURIComponent(item.patient_id)}">
         <div><strong>${item.patient_name}</strong><div style="color:#64748b;">${item.destination_facility || "-"} · ${item.valid_until_date}</div></div>
         <div class="visit-badge">${item.label}</div>
       </a>`).join("");
-    container.innerHTML = summary + (priority || `<div class="empty-state">Tidak ada rujukan yang segera habis</div>`);
+    const controlPriority = (data.control_priority || []).map(item => `
+      <a class="top-student-item" style="text-decoration:none;color:inherit;" href="/student-detail?id=${encodeURIComponent(item.patient_id)}">
+        <div><strong>${item.patient_name}</strong><div style="color:#64748b;">Kontrol ${item.control_date} · ${item.destination_facility || "-"}</div></div>
+        <div class="visit-badge">${item.label}</div>
+      </a>`).join("");
+    const detail = priority + controlPriority;
+    container.innerHTML = summary + controlSummary + (detail || `<div class="empty-state">Tidak ada rujukan yang perlu ditindaklanjuti</div>`);
   }catch(err){
     console.error("BPJS referral dashboard error:", err);
     container.innerHTML = `<div class="empty-state">Pengingat rujukan belum dapat dimuat</div>`;
