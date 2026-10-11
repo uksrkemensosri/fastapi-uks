@@ -7,6 +7,7 @@ from app.db.dependencies import get_db
 from app.db.models import UserORM
 
 ROLE_SUPER_ADMIN = "super_admin"
+ROLE_DOKTER_KECIL = "dokter_kecil"
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -35,6 +36,10 @@ def get_current_user(
     user = db.get(UserORM, int(user_id)) if user_id else None
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+
+    # Retired accounts must not inherit access to general authenticated APIs.
+    if user.role == ROLE_DOKTER_KECIL:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Role no longer supported")
 
     return user
 

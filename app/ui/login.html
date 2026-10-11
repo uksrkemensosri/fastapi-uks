@@ -744,7 +744,7 @@ user-select:none;
         if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
 
         localStorage.setItem('access_token', data.access_token);
-        window.location.href = '/welcome';
+        window.location.href = data.next_path || '/welcome';
       } catch (err) {
         statusEl.textContent = `Login gagal: ${err.message}`;
         btnLogin.disabled = false;

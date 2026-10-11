@@ -381,6 +381,9 @@ def protected_ui_page(request: Request, path: Path, allowed_roles: set[str] | No
             "school_id": user.school_id,
         }
 
+        if user.role == "dokter_kecil":
+            return FileResponse(UI_ACCESS_DENIED_PATH, status_code=403)
+
         if allowed_roles is not None and user.role != "super_admin" and user.role not in allowed_roles:
             return FileResponse(UI_ACCESS_DENIED_PATH, status_code=403)
 

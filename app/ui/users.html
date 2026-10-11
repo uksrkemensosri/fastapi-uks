@@ -713,6 +713,7 @@ async function editUser(id){
   );
   if(role === null){ return; }
 
+
   const res = await fetch(`/api/users/${id}`, {
     method:"PATCH",
     headers:{

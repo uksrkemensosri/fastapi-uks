@@ -401,6 +401,7 @@ class TokenResponse(BaseModel):
     expires_in: int
     role: Optional[str] = None
     school_id: Optional[int] = None
+    next_path: Optional[str] = None
 
 
 class UserResponse(BaseModel):

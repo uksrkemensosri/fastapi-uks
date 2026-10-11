@@ -963,6 +963,9 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
 
+    if user.role == "dokter_kecil":
+        raise HTTPException(status_code=403, detail="Role no longer supported")
+
     token = create_access_token(subject=str(user.id), role=user.role, school_id=user.school_id)
     request.session["user"] = {
         "id": user.id,
@@ -981,11 +984,13 @@ def login(payload: LoginRequest, request: Request, response: Response, db: Sessi
     )
     write_audit_log(db, user, "login", "session", user.id, "User logged in")
     db.commit()
+    next_path = "/welcome"
     return TokenResponse(
         access_token=token,
         expires_in=get_access_token_expire_seconds(),
         role=user.role,
         school_id=user.school_id,
+        next_path=next_path,
     )
 
 
