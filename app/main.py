@@ -18,6 +18,7 @@ from app.api.fitness import router as fitness_router
 from app.api.monthly_reports import router as monthly_reports_router
 from app.api.recommendations import router as recommendations_router
 from app.api.complaints import router as complaints_router
+from app.api.fasyankes import router as fasyankes_router
 from app.api.routes import CARD_RENDERER_VERSION, router
 from app.auth.security import hash_password
 from app.auth.tenant import get_default_school
@@ -108,6 +109,7 @@ app.include_router(fitness_router)
 app.include_router(monthly_reports_router)
 app.include_router(recommendations_router)
 app.include_router(complaints_router)
+app.include_router(fasyankes_router)
 
 Base.metadata.create_all(bind=engine)
 
@@ -502,6 +504,11 @@ def welcome_page(request: Request):
 @app.get("/students", response_class=FileResponse)
 def students_page(request: Request):
     return protected_ui_page(request, UI_STUDENTS_PATH, {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
+
+
+@app.get("/kolaborasi-fasyankes", response_class=FileResponse)
+def fasyankes_page(request: Request):
+    return protected_ui_page(request, UI_LOGIN_PATH.parent / "fasyankes.html", {"admin", "perawat", "kepala_sekolah", "tim_uksr", "wali_asuh"})
 
 
 @app.get("/complaints", response_class=FileResponse)

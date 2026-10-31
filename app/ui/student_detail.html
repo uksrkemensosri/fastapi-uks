@@ -109,7 +109,7 @@
           <div class="full"><button class="btn btn-primary" type="submit">Simpan Rujukan BPJS</button></div>
         </form>
       </div>
-      <h2>Riwayat Rujukan BPJS</h2>
+      <h2>Riwayat Rujukan BPJS</h2><a id="newFasyankes" class="btn btn-secondary">Catat kunjungan puskesmas / fasyankes</a>
       <table class="table">
         <thead><tr><th>Tanggal</th><th>Faskes Tujuan</th><th>Berlaku Sampai</th><th>Kontrol</th><th>Status</th><th>Lampiran</th></tr></thead>
         <tbody id="bpjsReferralRows"></tbody>
@@ -190,6 +190,7 @@ function addMonths(value, months){
 }
 
 async function loadBpjsReferrals(){
+  document.getElementById("newFasyankes").href="/kolaborasi-fasyankes?patient_id="+encodeURIComponent(studentId);
   const rows = document.getElementById("bpjsReferralRows");
   try{
     const referrals = await api(`/api/patients/${encodeURIComponent(studentId)}/bpjs-referrals`);
@@ -207,7 +208,7 @@ async function loadBpjsReferrals(){
         <td>${escapeHtml(item.valid_until_date)}</td>
         <td>${escapeHtml(controlStatus)}</td>
         <td>${status}</td>
-        <td><div class="actions"><button class="btn btn-secondary" type="button" onclick="downloadBpjsDocument(${item.id}, '${encodeURIComponent(item.document_name || 'rujukan-bpjs')}')">Buka Lampiran</button>${controlAction}</div></td>
+        <td><div class="actions"><button class="btn btn-secondary" type="button" onclick="downloadBpjsDocument(${item.id}, '${encodeURIComponent(item.document_name || 'rujukan-bpjs')}')">Buka Lampiran</button>${controlAction}<a class="btn btn-secondary" href="/kolaborasi-fasyankes?referral=${item.id}">Kolaborasi Fasyankes</a></div></td>
       </tr>`;
     }).join("") || `<tr><td colspan="6">Belum ada rujukan BPJS</td></tr>`;
   }catch(err){
@@ -266,7 +267,7 @@ async function loadHistory(){
         <td>${item.status || "-"}</td>
         <td><div class="actions">
           <button class="btn btn-secondary" type="button" onclick="showUksDetail('${encodeURIComponent(item.keluhan || "-")}', '${encodeURIComponent(item.tindakan || "-")}', '${encodeURIComponent(item.obat || "-")}')">Lihat Detail</button>
-          <button class="btn btn-primary" type="button" onclick="generateUksRecommendation(${item.id})">Cetak Rekomendasi</button>
+          <button class="btn btn-primary" type="button" onclick="generateUksRecommendation(${item.id})">Cetak Rekomendasi</button><a class="btn btn-secondary" href="/kolaborasi-fasyankes?patient_id=${encodeURIComponent(studentId)}&uks_visit_id=${item.id}">Lanjutkan ke Fasyankes</a>
         </div></td>
       </tr>
     `).join("") || `<tr><td colspan="7">Belum ada riwayat UKS</td></tr>`;
@@ -384,6 +385,6 @@ function showUksDetail(keluhan, tindakan, obat){
 loadHistory();
 configureBpjsReferralPermissions();
 </script>
-<script src="/ui/assets/rbac.js?v=12" defer></script>
+<script src="/ui/assets/rbac.js?v=14" defer></script>
 </body>
 </html>

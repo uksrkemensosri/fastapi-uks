@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
+from app.db.fasyankes import FasyankesCaseORM, FasyankesRevisionORM, FasyankesNotificationORM  # noqa: F401
 
 
 class UserORM(Base):

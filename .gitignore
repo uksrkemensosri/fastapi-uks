@@ -37,3 +37,7 @@ tools/latsar/
 .DS_Store
 Thumbs.db
 *.lnk
+
+# Isolated local testing environment
+.venv-test/
+.venv-local/

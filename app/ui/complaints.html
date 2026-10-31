@@ -27,6 +27,6 @@
     async function createVisit(id){try{const prefill=await api(`/api/complaints/${id}/visit-prefill`);sessionStorage.setItem('sehati_complaint_visit_prefill',JSON.stringify(prefill));location.href='/students'}catch(err){appAlert('Gagal',err.message,'error')}}
     document.querySelectorAll('.filter').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('.filter').forEach(item=>item.classList.remove('active'));button.classList.add('active');activeStatus=button.dataset.status;loadComplaints()}));
     (async()=>{if(!token){location.href='/login';return}try{role=(await api('/api/auth/me')).role;if(!['admin','perawat','tim_uksr','super_admin'].includes(role)){location.href='/dashboard';return}loadComplaints()}catch(_){location.href='/login'}})();
-  </script><script src="/ui/assets/dialogs.js?v=1"></script><script src="/ui/assets/rbac.js?v=12" defer></script>
+  </script><script src="/ui/assets/dialogs.js?v=1"></script><script src="/ui/assets/rbac.js?v=14" defer></script>
 </body>
 </html>

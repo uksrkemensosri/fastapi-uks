@@ -1202,6 +1202,7 @@ body.dark .activity-item{
         </div>
       </section>
 
+      <section class="card" id="fasyankesDashboard"><h2>Tindak Lanjut Fasyankes</h2><div id="fasyankesDashboardContent">Memuat...</div><p><a href="/kolaborasi-fasyankes?tab=leadership">Lihat panel penanganan</a> · <a href="/kolaborasi-fasyankes?tab=schedule">Jadwal kontrol</a></p></section>
       <section class="card" id="bpjsReferralReminder">
         <h2>Rujukan BPJS</h2>
         <div id="bpjsReferralSummary" class="top-students-list">
@@ -2633,7 +2634,8 @@ let historyHtml = `
 
           <\/script>
 
-        </body>
+        <script src="/ui/assets/fasyankes-dashboard.js?v=1"></script>
+</body>
 
       </html>
     `);
@@ -2788,7 +2790,8 @@ async function createReferral(id){
           window.print();
         <\/script>
 
-      </body>
+      <script src="/ui/assets/fasyankes-dashboard.js?v=1"></script>
+</body>
 
       </html>
     `;
@@ -3034,6 +3037,7 @@ body{
 window.print();
 <\/script>
 
+<script src="/ui/assets/fasyankes-dashboard.js?v=1"></script>
 </body>
 
 </html>
@@ -3445,6 +3449,7 @@ async function loadTopStudents(){
 
 }
 </script>
-<script src="/ui/assets/rbac.js?v=13" defer></script>
+<script src="/ui/assets/rbac.js?v=14" defer></script>
+<script src="/ui/assets/fasyankes-dashboard.js?v=1"></script>
 </body>
 </html>

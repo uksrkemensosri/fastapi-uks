@@ -1801,6 +1801,8 @@ def create_bpjs_referral(
         )
         db.add(referral)
         db.flush()
+        from app.api.fasyankes import create_from_referral
+        create_from_referral(db, referral, current_user)
         write_audit_log(db, current_user, "create_bpjs_referral", "bpjs_referral", referral.id, f"Rujukan BPJS untuk {patient.id}")
         db.commit()
         db.refresh(referral)

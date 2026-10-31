@@ -2,11 +2,11 @@
   const token = localStorage.getItem("access_token") || "";
 
   function hideAdminLinks(role) {
-    const waliAsuhLinks = new Set(["/dashboard", "/students", "/settings"]);
-    const timLinks = new Set(["/dashboard", "/students", "/complaints", "/ckg", "/fitness", "/settings"]);
-    const kepalaLinks = new Set(["/dashboard", "/students", "/reports", "/ckg", "/fitness", "/settings"]);
-    const adminLinks = new Set(["/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/audit-logs", "/settings"]);
-    const perawatLinks = new Set(["/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/settings"]);
+    const waliAsuhLinks = new Set(["/kolaborasi-fasyankes", "/dashboard", "/students", "/settings"]);
+    const timLinks = new Set(["/kolaborasi-fasyankes", "/dashboard", "/students", "/complaints", "/ckg", "/fitness", "/settings"]);
+    const kepalaLinks = new Set(["/kolaborasi-fasyankes", "/dashboard", "/students", "/reports", "/ckg", "/fitness", "/settings"]);
+    const adminLinks = new Set(["/kolaborasi-fasyankes", "/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/audit-logs", "/settings"]);
+    const perawatLinks = new Set(["/kolaborasi-fasyankes", "/dashboard", "/students", "/complaints", "/reports", "/ckg", "/fitness", "/users", "/settings"]);
     const superAdminLinks = new Set([...adminLinks, "/schools"]);
     const sidebar = document.querySelector(".sidebar");
     const menu = sidebar?.querySelector(".menu") || sidebar;
@@ -43,6 +43,15 @@
       } else {
         menu?.appendChild(schoolLink);
       }
+    }
+    if (menu && !menu.querySelector('a[href="/kolaborasi-fasyankes"]')) {
+      const link = document.createElement('a');
+      link.href = '/kolaborasi-fasyankes';
+      link.className = 'menu-item' + (location.pathname === link.pathname ? ' active' : '');
+      link.textContent = 'Kolaborasi Fasyankes';
+      menu.appendChild(link);
+      fetch('/api/fasyankes/notices/inbox', {headers:{Authorization:`Bearer ${token}`}})
+        .then(r=>r.ok?r.json():[]).then(items=>{const n=items.filter(x=>!x.read_at).length;if(n)link.textContent += ` (${n} baru)`;}).catch(()=>{});
     }
     document.querySelectorAll(".menu-item").forEach((item) => {
       const href = item.getAttribute("href") || "";
