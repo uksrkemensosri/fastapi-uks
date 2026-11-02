@@ -692,14 +692,14 @@ def normalize_whatsapp_number(phone: str | None) -> str | None:
     return digits
 
 
-def send_whatsapp_message(target_phone: str | None, message: str) -> tuple[str, str]:
+def send_whatsapp_message(target_phone: str | None, message: str, *, group: bool = False) -> tuple[str, str]:
     token = os.getenv("FONNTE_TOKEN")
 
     if not token:
         logger.warning("Fonnte notification skipped: token is not configured")
         return "skipped", "FONNTE_TOKEN belum diisi"
 
-    target = normalize_whatsapp_number(target_phone)
+    target = os.getenv("FONNTE_GROUP_ID", "").strip() if group else normalize_whatsapp_number(target_phone)
     if not target:
         logger.warning("Fonnte notification skipped: guardian phone number is invalid")
         return "skipped", "Nomor wali asuh belum valid"

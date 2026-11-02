@@ -1,4 +1,5 @@
-"""School-scoped collaboration. Notifications are in-app only; no messaging provider."""
+"""School-scoped collaboration with explicit Fonnte notification delivery."""
+import os
 from copy import deepcopy
 from datetime import date, datetime, UTC
 from typing import Literal
@@ -267,7 +268,41 @@ def preview(cid:int,db:Session=Depends(get_db),user:UserORM=Depends(require_role
     status=v['status'].replace('_',' ').lower()
     group=f"SEHATI: status penanganan 1 siswa: {status}. " + ('Kunjungan fasyankes telah terlaksana. ' if v['actual_date'] and v['status']!='DIBATALKAN' else '') + 'Riwayat tindakan tersedia di SEHATI.'
     notices=db.query(Notice).filter(Notice.case_id==cid,Notice.version==c.version).all()
-    return {'whatsapp_enabled':False,'group':group,'guardian':f"{p.name}: {status}. Tujuan: {v['facility']}. {v['guardian_instruction']}",'recipients':[{'name':db.get(UserORM,n.recipient_id).full_name,'read_at':n.read_at} for n in notices]}
+    deliveries=db.query(AuditLogORM).filter(AuditLogORM.school_id==c.school_id,AuditLogORM.entity_id==str(cid),AuditLogORM.action.in_(['fasyankes_wa_guardian','fasyankes_wa_group'])).order_by(AuditLogORM.id.desc()).limit(10).all()
+    return {'deliveries':[{'target':x.action.removeprefix('fasyankes_wa_'),'status':x.details} for x in deliveries], 'whatsapp_enabled':bool(os.getenv('FONNTE_TOKEN')), 'version':c.version, 'guardian_phone_available':bool(p.parent_phone), 'group_available':bool(os.getenv('FONNTE_GROUP_ID')), 'group':group,'guardian':f"{p.name}: {status}. Tujuan: {v['facility']}. Rencana: {v['planned_date'] or 'Belum ditentukan'}. Aktual: {v['actual_date'] or 'Belum tercatat'}. Kontrol: {v['next_date'] or 'Belum dijadwalkan' if v['needs_control'] else 'Tidak dijadwalkan'}. {v['guardian_instruction']}",'recipients':[{'name':db.get(UserORM,n.recipient_id).full_name,'read_at':n.read_at} for n in notices]}
+
+
+class SendNotification(BaseModel):
+    version: int = Field(ge=1)
+    target: Literal['guardian', 'group']
+
+
+@router.post('/{cid}/whatsapp')
+def send_notification(cid:int, payload:SendNotification, db:Session=Depends(get_db), user:UserORM=Depends(require_roles(*WRITE))):
+    from app.api.routes import send_whatsapp_message, normalize_whatsapp_number
+    c=case_query(db,user).filter(Case.id==cid).with_for_update().first()
+    if not c:raise HTTPException(404,'Kolaborasi tidak ditemukan')
+    if c.version!=payload.version:raise HTTPException(409,'Catatan berubah. Buka ulang preview sebelum mengirim.')
+    p=db.get(PatientORM,c.patient_id)
+    if not os.getenv('FONNTE_TOKEN'):raise HTTPException(422,'Integrasi Fonnte belum dikonfigurasi')
+    if payload.target=='group' and not os.getenv('FONNTE_GROUP_ID'):raise HTTPException(422,'Grup WhatsApp belum dikonfigurasi')
+    if payload.target=='guardian' and not normalize_whatsapp_number(p.parent_phone):raise HTTPException(422,'Nomor WhatsApp wali asuh pada data siswa belum valid')
+    action='fasyankes_wa_'+payload.target
+    prefix=f'{c.version}:'
+    logs=db.query(AuditLogORM).filter(AuditLogORM.school_id==c.school_id,AuditLogORM.action==action,AuditLogORM.entity_id==str(cid)).all()
+    if any((log.details or '').startswith(prefix) for log in logs):
+        raise HTTPException(409,'Versi ini sudah diajukan ke WhatsApp. Periksa status pengiriman sebelum mengirim lagi.')
+    contents=preview(cid,db,user)
+    log=AuditLogORM(school_id=c.school_id,user_id=user.id,username=user.username,action=action,entity_type='fasyankes_case',entity_id=str(cid),details=prefix+'requested')
+    db.add(log);db.commit()  # Reserve before network I/O; uncertain deliveries must not be duplicated.
+    try:
+        status,_=send_whatsapp_message(p.parent_phone,contents[payload.target],group=payload.target=='group')
+    except Exception:
+        status='unknown'
+    # Provider/network failures can have an uncertain outcome: require checking provider before retry.
+    log.details=prefix+status;db.commit()
+    labels={'sent':'Pesan diterima layanan WhatsApp; belum berarti sudah dibaca.', 'queued':'Pesan masuk antrean WhatsApp.', 'failed':'Pengiriman gagal. Periksa log Fonnte sebelum mencoba lagi.', 'skipped':'Pesan belum dikirim. Periksa konfigurasi dan nomor tujuan.', 'unknown':'Status belum dapat dipastikan. Periksa Fonnte sebelum mengirim lagi.'}
+    return {'status':status,'message':labels.get(status,labels['unknown'])}
 
 
 def pdf_response(content,filename):

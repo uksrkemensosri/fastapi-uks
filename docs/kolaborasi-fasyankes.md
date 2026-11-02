@@ -28,3 +28,10 @@ Rollback kode meninggalkan tabel dan riwayat baru. Downgrade penghapusan data se
 ## Batas tahap ini
 
 Belum ada integrasi sistem RS/BPJS eksternal, pengiriman grup/WhatsApp, atau upload dokumen konsultasi baru. Surat rujukan tetap tersedia lewat halaman Rujukan BPJS. Preview grup hanya bahan tinjauan. Uji PostgreSQL concurrency perlu dilakukan sebelum rilis produksi.
+
+
+## WhatsApp melalui Fonnte
+
+Preview notifikasi menyediakan tombol kirim ke nomor wali asuh (`parent_phone` pada data siswa) atau grup `FONNTE_GROUP_ID`, menggunakan `FONNTE_TOKEN` yang sudah ada. Hanya perawat/admin dengan akses sekolah yang dapat mengirim. Penyimpanan, edit, integrasi BPJS, dan undo tidak otomatis mengirim WA; notifikasi dalam aplikasi tetap otomatis.
+
+Pesan grup tidak memuat nama, diagnosis, obat, atau hasil konsultasi. Status accepted/sent dari provider tidak membuktikan pesan dibaca. Audit menyimpan target jenis, versi catatan, dan status, bukan token atau isi pesan. Satu pengajuan per versi dan jenis tujuan mencegah duplikasi; kegagalan/timeout harus diperiksa di Fonnte sebelum tindakan lanjutan. Undo catatan tidak menarik kembali pesan yang sudah terkirim. Tidak ada migrasi database.

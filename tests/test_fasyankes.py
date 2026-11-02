@@ -101,7 +101,7 @@ def test_page_available(client):
     login(client)
     r=client.get('/kolaborasi-fasyankes')
     assert r.status_code==200
-    assert 'WhatsApp dan pengiriman grup belum diaktifkan' in r.text
+    assert 'WhatsApp dapat dikirim melalui preview notifikasi' in r.text
 
 
 def test_additive_migration_preserves_existing_tables():
@@ -169,3 +169,29 @@ def test_pdf_long_text_escapes_markup_and_paginates():
     v=Visit(id='long',facility='Puskesmas <Contoh> & Klinik',status='SELESAI',actual_date='2026-01-01',result=('Hasil <b>bukan markup</b> & penjelasan. '*110),obstacle='Koordinasi pendamping. '*40).model_dump(mode='json')
     pdf=build_report(school_name='Sekolah & Contoh',school_address='',author='Perawat <Demo>',rows=[{'case_id':1,'version':1,'visit':v}],patient={'id':'DEMO','name':'Data Fiktif','class_name':'X'})
     assert pdf.startswith(b'%PDF-')
+
+
+def test_whatsapp_explicit_delivery_permissions_and_dedup(client,monkeypatch):
+    from app.api import routes
+    from app.db.models import PatientORM
+    calls=[]
+    monkeypatch.setenv('FONNTE_TOKEN','test-only')
+    monkeypatch.setenv('FONNTE_GROUP_ID','test-group@g.us')
+    monkeypatch.setattr(routes,'send_whatsapp_message',lambda phone,message,**kw:(calls.append((phone,message,kw)) or ('queued','ok')))
+    admin=login(client)
+    with SessionLocal() as db:
+        db.get(PatientORM,'FASY-01').parent_phone='081234567890';db.commit()
+    c=client.post('/api/fasyankes',headers=admin,json={'patient_id':'FASY-01','visit':{'id':'wa','facility':'Puskesmas A','diagnosis':'PRIVATE'}}).json()
+    url=f"/api/fasyankes/{c['id']}/whatsapp"
+    assert not calls  # Saving a record does not silently send messages.
+    for username,expected in [('fasy_guardian',403),('fasy_head',403),('fasy_other',404)]:
+        assert client.post(url,headers=login(client,username),json={'version':1,'target':'guardian'}).status_code==expected
+    assert client.post(url,headers=admin,json={'version':2,'target':'guardian'}).status_code==409
+    for target in ['guardian','group']:
+        response=client.post(url,headers=admin,json={'version':1,'target':target})
+        assert response.status_code==200,response.text
+        assert response.json()['status']=='queued'
+        assert client.post(url,headers=admin,json={'version':1,'target':target}).status_code==409
+    assert len(calls)==2
+    assert calls[1][2]['group'] is True
+    assert 'PRIVATE' not in calls[1][1] and 'Siswa Kolaborasi' not in calls[1][1]
