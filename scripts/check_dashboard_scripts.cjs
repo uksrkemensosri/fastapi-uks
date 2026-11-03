@@ -10,5 +10,5 @@ for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
   checked++;
 }
 assert.ok(checked > 0);
-assert.equal((html.match(/<script src="\/ui\/assets\/fasyankes-dashboard\.js\?v=1"><\/script>/g)||[]).length, 1);
+assert.equal((html.match(/<script src="\/ui\/assets\/fasyankes-dashboard\.js\?v=2"><\/script>/g)||[]).length, 1);
 console.log(`Dashboard: ${checked} inline scripts parsed successfully`);

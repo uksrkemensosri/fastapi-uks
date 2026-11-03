@@ -955,6 +955,7 @@ body.dark .activity-item{
 
 }
   </style>
+<link rel="stylesheet" href="/ui/assets/fasyankes-dashboard.css?v=1">
 </head>
 
 <body>
@@ -1202,7 +1203,11 @@ body.dark .activity-item{
         </div>
       </section>
 
-      <section class="card" id="fasyankesDashboard"><h2>Tindak Lanjut Fasyankes</h2><div id="fasyankesDashboardContent">Memuat...</div><p><a href="/kolaborasi-fasyankes?tab=leadership">Lihat panel penanganan</a> · <a href="/kolaborasi-fasyankes?tab=schedule">Jadwal kontrol</a></p></section>
+      <section class="card" id="fasyankesDashboard" aria-labelledby="fasyankesDashboardTitle">
+        <div class="faskes-heading"><span class="faskes-icon" aria-hidden="true">&#10010;</span><div><h2 id="fasyankesDashboardTitle">Tindak Lanjut Fasyankes</h2><p>Pantau kunjungan dan jadwal kontrol siswa</p></div></div>
+        <div id="fasyankesDashboardContent" aria-live="polite">Memuat ringkasan...</div>
+        <div class="faskes-actions"><a class="faskes-primary" href="/kolaborasi-fasyankes?tab=schedule">Lihat semua jadwal <span aria-hidden="true">&#8594;</span></a><a href="/kolaborasi-fasyankes?tab=leadership">Panel penanganan</a></div>
+      </section>
       <section class="card" id="bpjsReferralReminder">
         <h2>Rujukan BPJS</h2>
         <div id="bpjsReferralSummary" class="top-students-list">
@@ -3451,6 +3456,6 @@ async function loadTopStudents(){
 </script>
 <script src="/ui/assets/rbac.js?v=14" defer></script>
 
-<script src="/ui/assets/fasyankes-dashboard.js?v=1"></script>
+<script src="/ui/assets/fasyankes-dashboard.js?v=2"></script>
 </body>
 </html>
