@@ -35,6 +35,24 @@ class VisitInput(BaseModel):
     medications: list[UKSMedicationCreate] = Field(default_factory=list,max_length=50)
 
 
+def staff_visit_message(name: str, visit: VisitInput) -> str:
+    months = 'Januari Februari Maret April Mei Juni Juli Agustus September Oktober November Desember'.split()
+    day = visit.visit_date
+    sections = [
+        '🏥 *EMR UKS – Sekolah Rakyat*',
+        f'Hai {name}, terima kasih sudah berkunjung ke UKS. Berikut ringkasan pemeriksaanmu.',
+        f'📅 *Tanggal kunjungan*\n{day.day} {months[day.month-1]} {day.year}',
+    ]
+    meds = '\n'.join(f'• {m.medicine_name} — {m.dosage}' for m in visit.medications)
+    for label, value in [('💬 Keluhan', visit.complaint), ('🩺 Hasil pemeriksaan', visit.examination),
+                         ('🩹 Tindakan', visit.treatment), ('💊 Obat', meds), ('📌 Anjuran', visit.advice)]:
+        if value:
+            icon, title = label.split(' ', 1)
+            sections.append(f'{icon} *{title}*\n{value}')
+    sections.extend(['Semoga lekas membaik, ' + name + '.', '━━━━━━━━━━━━━━━━━━\n*Tim UKS Sekolah Rakyat*\nKementerian Sosial RI'])
+    return '\n\n'.join(sections)
+
+
 def identity(s):
     return dict(id=s.id,name=s.name,position=s.position,school_id=s.school_id,phone=s.phone)
 
@@ -92,10 +110,6 @@ def visit(staff_id:int,payload:VisitInput,db:Session=Depends(get_db),user=clinic
     db.commit()
     status='skipped'
     if s.phone:
-        lines=[f'Hai {s.name}, terima kasih telah berkunjung ke UKS.',f'Berikut hasil pemeriksaanmu pada {payload.visit_date:%d-%m-%Y}:']
-        for label,value in [('Hasil pemeriksaan',payload.examination),('Tindakan',payload.treatment),('Obat',', '.join(f'{m.medicine_name} ({m.dosage})' for m in payload.medications)),('Anjuran',payload.advice)]:
-            if value:lines.append(f'{label}: {value}')
-        lines.append('Semoga lekas membaik.\nUKS Sekolah Rakyat')
-        status,_=send_whatsapp_message(s.phone,'\n'.join(lines))
+        status,_=send_whatsapp_message(s.phone,staff_visit_message(s.name,payload))
         v.whatsapp_status=status;db.commit()
     return {'id':v.id,'whatsapp_status':status}
