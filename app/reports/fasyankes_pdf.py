@@ -114,3 +114,23 @@ def build_report(*, school_name, school_address, author, rows, start=None, end=N
         canvas.drawRightString(document.pagesize[0]-14*mm,9*mm,f'Halaman {document.page}');canvas.restoreState()
     doc.build(story,onFirstPage=footer,onLaterPages=footer)
     return stream.getvalue()
+
+
+def guardian_report(data):
+    stream=BytesIO()
+    doc=SimpleDocTemplate(stream,pagesize=A4,title='Ringkasan kunjungan fasyankes',author='SEHATI')
+    styles=getSampleStyleSheet()
+    def para(value,style='BodyText'):
+        return Paragraph(escape(str(value)).replace('\n','<br/>'),styles[style])
+    story=[para('SEHATI | Informasi wali asuh','Heading3'),para('Ringkasan kunjungan fasyankes','Heading1'),
+           para(data['student'],'Heading2'),para(data['facility']),para('Status: '+STATUS.get(data['status'],data['status']))]
+    for label,value in [('Rencana kunjungan',data['planned']),('Kunjungan terlaksana',data['actual'])]:
+        if value:story.append(para(label+': '+display_date(value)+((' · '+data['time']+' WIB') if label=='Rencana kunjungan' and data['time'] else '')))
+    if data['controls']:
+        story.extend([para('Kontrol berikutnya','Heading2'),para(display_date(data['next_date'])+' · '+(data['next_facility'] or data['facility']))])
+    if data['instruction']:
+        story.extend([para('Arahan untuk wali asuh','Heading2'),para(data['instruction'])])
+    if data['result_url']:
+        story.extend([para('Pemeriksaan penunjang','Heading2'),Paragraph('<link href='+quoteattr(data['result_url'])+' color="#503793"><u>Lihat hasil pemeriksaan</u></link>',styles['BodyText'])])
+    doc.build(story)
+    return stream.getvalue()

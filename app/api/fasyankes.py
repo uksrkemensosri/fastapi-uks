@@ -117,6 +117,41 @@ def result_link(c,v):
     return f'{base}/api/fasyankes/{c.id}/shared-result?'+urlencode({'visit_id':v['id'],'key':result_signature(c,v)})
 
 
+def guardian_pdf_data(c,v,p):
+    return dict(student=p.name, facility=v['facility'], status=v['status'],
+                planned=v.get('planned_date'), time=v.get('planned_time'), actual=v.get('actual_date'),
+                controls=v.get('needs_control'), next_date=v.get('next_date'), next_facility=v.get('next_facility'),
+                instruction=v.get('guardian_instruction'), result_url=result_link(c,v))
+
+
+def guardian_pdf_key(c,v,data):
+    secret=os.getenv('SECRET_KEY','')
+    if len(secret)<32:raise HTTPException(503,'Konfigurasi tautan PDF belum tersedia')
+    payload=['sehati:guardian-pdf:v1',c.school_id,c.patient_id,c.id,v['id'],data]
+    return hmac.new(secret.encode(),json.dumps(payload,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
+
+
+def guardian_pdf_link(c,v,p):
+    base=(os.getenv('PUBLIC_BASE_URL') or 'https://emruks.my.id').rstrip('/')
+    return f'{base}/api/fasyankes/{c.id}/wali-asuh.pdf?'+urlencode({'visit_id':v['id'],'key':guardian_pdf_key(c,v,guardian_pdf_data(c,v,p))})
+
+
+@router.get('/{cid}/wali-asuh.pdf')
+def guardian_pdf(cid:int,visit_id:str,key:str='',db:Session=Depends(get_db)):
+    from app.reports.fasyankes_pdf import guardian_report
+    missing=HTTPException(404,'Tautan PDF tidak berlaku')
+    if len(key)!=64 or any(ch not in '0123456789abcdef' for ch in key):raise missing
+    c=db.get(Case,cid)
+    v=next((x for x in c.data['visits'] if x['id']==visit_id),None) if c else None
+    if not v:raise missing
+    data=guardian_pdf_data(c,v,db.get(PatientORM,c.patient_id))
+    if not hmac.compare_digest(key,guardian_pdf_key(c,v,data)):raise missing
+    response=pdf_response(guardian_report(data),'ringkasan-kunjungan-fasyankes.pdf')
+    response.headers['Referrer-Policy']='no-referrer'
+    response.headers['X-Robots-Tag']='noindex, nofollow, noarchive'
+    return response
+
+
 class Create(BaseModel):
     model_config = ConfigDict(extra='forbid')
     patient_id: str
@@ -325,7 +360,7 @@ def preview(cid:int,db:Session=Depends(get_db),user:UserORM=Depends(require_role
     group=f"SEHATI: status penanganan 1 siswa: {status}. " + ('Kunjungan fasyankes telah terlaksana. ' if v['actual_date'] and v['status']!='DIBATALKAN' else '') + 'Riwayat tindakan tersedia di SEHATI.'
     notices=db.query(Notice).filter(Notice.case_id==cid,Notice.version==c.version).all()
     deliveries=db.query(AuditLogORM).filter(AuditLogORM.school_id==c.school_id,AuditLogORM.entity_id==str(cid),AuditLogORM.action.in_(['fasyankes_wa_guardian','fasyankes_wa_group'])).order_by(AuditLogORM.id.desc()).limit(10).all()
-    return {'deliveries':[{'target':x.action.removeprefix('fasyankes_wa_'),'status':x.details} for x in deliveries], 'whatsapp_enabled':bool(os.getenv('FONNTE_TOKEN')), 'version':c.version, 'guardian_phone_available':bool(p.parent_phone), 'group_available':bool(os.getenv('FONNTE_GROUP_ID')), 'group':group,'guardian':f"{p.name}: {status}. Tujuan: {v['facility']}. Rencana: {v['planned_date'] or 'Belum ditentukan'}. Aktual: {v['actual_date'] or 'Belum tercatat'}. Kontrol: {v['next_date'] or 'Belum dijadwalkan' if v['needs_control'] else 'Tidak dijadwalkan'}. {v['guardian_instruction']}",'recipients':[{'name':db.get(UserORM,n.recipient_id).full_name,'read_at':n.read_at} for n in notices]}
+    return {'deliveries':[{'target':x.action.removeprefix('fasyankes_wa_'),'status':x.details} for x in deliveries], 'whatsapp_enabled':bool(os.getenv('FONNTE_TOKEN')), 'version':c.version, 'guardian_phone_available':bool(p.parent_phone), 'group_available':bool(os.getenv('FONNTE_GROUP_ID')), 'group':group,'guardian':f"{p.name}: {status}. Tujuan: {v['facility']}. Rencana: {v['planned_date'] or 'Belum ditentukan'}. Aktual: {v['actual_date'] or 'Belum tercatat'}. Kontrol: {v['next_date'] or 'Belum dijadwalkan' if v['needs_control'] else 'Tidak dijadwalkan'}. {v['guardian_instruction']}\n\nUnduh PDF kunjungan (tanpa login):\n{guardian_pdf_link(c,v,p)}",'recipients':[{'name':db.get(UserORM,n.recipient_id).full_name,'read_at':n.read_at} for n in notices]}
 
 
 class SendNotification(BaseModel):

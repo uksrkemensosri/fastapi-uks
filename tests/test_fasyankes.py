@@ -193,6 +193,13 @@ def test_whatsapp_explicit_delivery_permissions_and_dedup(client,monkeypatch):
         assert response.json()['status']=='queued'
         assert client.post(url,headers=admin,json={'version':1,'target':target}).status_code==409
     assert len(calls)==2
+    from urllib.parse import urlsplit
+    link=urlsplit(calls[0][1].splitlines()[-1]);path=link.path+'?'+link.query
+    assert link.path.endswith('/wali-asuh.pdf') and '/wali-asuh.pdf' not in calls[1][1]
+    public=client.get(path,headers={'Cookie':''});assert public.status_code==200 and public.content.startswith(b'%PDF-')
+    assert public.headers['content-disposition'].startswith('attachment;')
+    for bad in [path[:-1],path.replace('visit_id=wa','visit_id=another')]:
+        assert client.get(bad,headers={'Cookie':''}).status_code==404
     assert calls[1][2]['group'] is True
     assert 'PRIVATE' not in calls[1][1] and 'Siswa Kolaborasi' not in calls[1][1]
 
