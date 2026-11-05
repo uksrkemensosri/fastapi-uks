@@ -195,3 +195,31 @@ def test_whatsapp_explicit_delivery_permissions_and_dedup(client,monkeypatch):
     assert len(calls)==2
     assert calls[1][2]['group'] is True
     assert 'PRIVATE' not in calls[1][1] and 'Siswa Kolaborasi' not in calls[1][1]
+
+
+def test_optional_supporting_results_and_pdf_access(client, tmp_path, monkeypatch):
+    from app.api import fasyankes
+    monkeypatch.setattr(fasyankes, 'RESULT_DIR', tmp_path)
+    admin = login(client)
+    visit = {'id':'lab-01','facility':'Klinik Demo','planned_date':'2026-01-02'}
+    case = client.post('/api/fasyankes', headers=admin, json={'patient_id':'FASY-01','visit':visit}).json()
+    base = '/api/fasyankes/'+str(case['id'])
+    path = base+'/supporting-result?visit_id=lab-01'
+    assert client.get(path, headers=admin).status_code == 404
+    visit['lab_result'] = 'Hasil privat <contoh>'
+    doc = b'%PDF-1.4\nexample'
+    upload = {'name':'hasil.pdf','data':base64.b64encode(doc).decode()}
+    saved = client.put(base+'/visit', headers=admin, json={'version':1,'visit':visit,'result_upload':upload})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()['visits'][0]['result_file_name']=='hasil.pdf'
+    assert 'Hasil privat &lt;contoh&gt;' in client.get(path,headers=admin).text
+    assert client.get(path+'&attachment=true',headers=admin).content == doc
+    for name,code in [('fasy_head',403),('fasy_guardian',403),('fasy_other',404)]:
+        h=login(client,name)
+        assert client.get(path+'&attachment=true',headers=h).status_code==code
+        assert 'Hasil privat' not in client.get('/api/fasyankes',headers=h).text
+    for route in ['/api/fasyankes/reports/summary.pdf?start=2026-01-02&end=2026-01-02','/api/fasyankes/reports/student/FASY-01.pdf']:
+        pdf=client.get(route,headers=admin)
+        assert pdf.status_code==200 and path.encode() in pdf.content and b'/URI' in pdf.content
+    assert client.put(base+'/visit',headers=admin,json={'version':2,'visit':visit}).json()['visits'][0]['result_file_name']=='hasil.pdf'
+    assert client.post(base+'/undo',headers=admin,json={'version':3}).status_code==200

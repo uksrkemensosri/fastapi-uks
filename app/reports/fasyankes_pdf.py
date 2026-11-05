@@ -1,7 +1,7 @@
 """Printable collaboration reports. Input rows are explicitly projected per audience."""
 from io import BytesIO
 from datetime import datetime
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 from zoneinfo import ZoneInfo
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
@@ -36,6 +36,8 @@ def build_report(*, school_name, school_address, author, rows, start=None, end=N
     styles['Heading4'].spaceBefore=7;styles['Heading4'].spaceAfter=3
     def p(text, style='BodyText'):
         return Paragraph(escape(str(text or '-')).replace('\n','<br/>'), styles[style])
+    def result_anchor(url):
+        return Paragraph('<link href='+quoteattr(url)+' color="#503793"><u>Lihat hasil pemeriksaan</u></link>',styles['Cell'])
     doc = SimpleDocTemplate(stream, pagesize=A4 if clinical else landscape(A4),
                             rightMargin=14*mm, leftMargin=14*mm, topMargin=15*mm, bottomMargin=17*mm,
                             title=title, author=author)
@@ -65,6 +67,7 @@ def build_report(*, school_name, school_address, author, rows, start=None, end=N
                     story += [p(label,'Heading4'),p(value)]
             if v.get('needs_control'):
                 story += [p('Kontrol berikutnya','Heading4'),p(f"{display_date(v.get('next_date'))} - {v.get('next_facility') or v['facility']}")]
+            if row.get('result_url'):story.append(result_anchor(row['result_url']))
             story.append(Spacer(1,14))
     else:
         done=sum(bool(r['actual_date']) and r['status']!='DIBATALKAN' for r in rows)
@@ -88,6 +91,7 @@ def build_report(*, school_name, school_address, author, rows, start=None, end=N
                 cells.append([p(x,'Cell') for x in [i,f"{r['patient_name']}\n{r['class_name'] or '-'}",r['facility'],
                     f"Rencana: {display_date(r['planned_date'])}\nAktual: {display_date(r['actual_date'])}",STATUS[r['status']],
                     f"Pendamping: {r['companion'] or '-'}\nPJ: {r['responsible'] or '-'}",follow]])
+                if r.get('result_url'):cells[-1][-1]=[cells[-1][-1],result_anchor(r['result_url'])]
             widths=[8,39,39,34,32,52,65]
             table=Table(cells,colWidths=[w*mm for w in widths],repeatRows=1,splitByRow=1,hAlign='LEFT')
             table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#ede9f7')),

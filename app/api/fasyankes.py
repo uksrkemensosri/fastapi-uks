@@ -1,11 +1,15 @@
 """School-scoped collaboration with explicit Fonnte notification delivery."""
 import os
+from pathlib import Path
+from uuid import uuid4
+from urllib.parse import urlencode
+from html import escape
 from copy import deepcopy
 from datetime import date, datetime, UTC
 from typing import Literal
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, HTMLResponse, FileResponse
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -37,6 +41,9 @@ class Visit(BaseModel):
     doctor: str = Field(default='', max_length=150)
     companion: str = Field(default='', max_length=150)
     reason: str = Field(default='', max_length=2000)
+    lab_result: str = Field(default='', max_length=5000)
+    imaging_result: str = Field(default='', max_length=5000)
+    other_result: str = Field(default='', max_length=5000)
     diagnosis: str = Field(default='', max_length=2000)
     result: str = Field(default='', max_length=5000)
     therapy: str = Field(default='', max_length=3000)
@@ -70,18 +77,43 @@ class Visit(BaseModel):
         return self
 
 
+RESULT_DIR = Path('uploads') / 'fasyankes_results'
+RESULT_FIELDS = [('lab_result','Laboratorium'),('imaging_result','Radiologi / rontgen'),('other_result','Pemeriksaan lain')]
+
+class ResultUpload(BaseModel):
+    name: str = Field(min_length=1,max_length=255)
+    data: str = Field(min_length=1,max_length=11200000)
+
+
+def store_result(upload):
+    from app.api.routes import _decode_bpjs_referral_document
+    content,name,mime=_decode_bpjs_referral_document(upload.data,upload.name)
+    RESULT_DIR.mkdir(parents=True,exist_ok=True)
+    key=uuid4().hex
+    (RESULT_DIR/key).write_bytes(content)
+    return {'key':key,'name':name,'mime':mime}
+
+
+def result_link(c,v):
+    if not any(v.get(k) for k,_ in RESULT_FIELDS) and not v.get('result_file'):return None
+    base=(os.getenv('PUBLIC_BASE_URL') or 'https://emruks.my.id').rstrip('/')
+    return f'{base}/api/fasyankes/{c.id}/supporting-result?'+urlencode({'visit_id':v['id']})
+
+
 class Create(BaseModel):
     model_config = ConfigDict(extra='forbid')
     patient_id: str
     referral_id: int | None = None
     uks_visit_id: int | None = None
     visit: Visit
+    result_upload: ResultUpload | None = None
 
 
 class Change(BaseModel):
     model_config = ConfigDict(extra='forbid')
     version: int = Field(ge=1)
     visit: Visit
+    result_upload: ResultUpload | None = None
 
 
 class Undo(BaseModel):
@@ -128,7 +160,10 @@ def serialize(db, c, user):
     data = deepcopy(c.data)
     clinical = user.role in ('admin', 'perawat', 'super_admin')
     for v in data['visits']:
+        file=v.pop('result_file',None)
+        if clinical and file:v['result_file_name']=file['name']
         if not clinical:
+            for key,_ in RESULT_FIELDS:v.pop(key,None)
             for field in ('reason', 'diagnosis', 'result', 'therapy', 'follow_up'):
                 v.pop(field, None)
             if user.role != 'wali_asuh':
@@ -191,6 +226,7 @@ def create(payload:Create,db:Session=Depends(get_db),user:UserORM=Depends(requir
         if not v or v.patient_id!=p.id:raise HTTPException(404,'Kunjungan UKS tidak sesuai siswa')
     if payload.visit.parent_visit_id:raise HTTPException(422,'Kontrol harus ditambahkan pada kasus asal')
     c=Case(school_id=p.school_id,patient_id=p.id,uks_visit_id=payload.uks_visit_id,version=1,data={'visits':[payload.visit.model_dump(mode='json')]})
+    if payload.result_upload:c.data['visits'][0]['result_file']=store_result(payload.result_upload)
     db.add(c);db.flush();record(db,c,user,'dibuat');db.commit()
     return serialize(db,c,user)
 
@@ -229,6 +265,9 @@ def save_visit(cid:int,payload:Change,db:Session=Depends(get_db),user:UserORM=De
         if not parent or parent['id']==v['id'] or not parent['needs_control'] or parent['status']=='DIBATALKAN':raise HTTPException(422,'Kunjungan asal kontrol tidak valid')
         if any(x['id']!=v['id'] and x.get('parent_visit_id')==parent['id'] and x['status']!='DIBATALKAN' for x in data['visits']):raise HTTPException(409,'Kontrol ini sudah memiliki kunjungan lanjutan')
     if v['status']=='DIBATALKAN' and any(x.get('parent_visit_id')==v['id'] and x['status']!='DIBATALKAN' for x in data['visits']):raise HTTPException(409,'Batalkan kunjungan kontrol turunannya terlebih dahulu')
+    if c.version!=payload.version:raise HTTPException(409,'Catatan sudah berubah')
+    if payload.result_upload:v['result_file']=store_result(payload.result_upload)
+    elif old and old.get('result_file'):v['result_file']=old['result_file']
     data['visits']=[v if x['id']==v['id'] else x for x in data['visits']] if old else [*data['visits'],v]
     save_version(db,c,user,data,payload.version,'kunjungan_diperbarui' if old else 'kunjungan_ditambah')
     return serialize(db,c,user)
@@ -305,6 +344,25 @@ def send_notification(cid:int, payload:SendNotification, db:Session=Depends(get_
     return {'status':status,'message':labels.get(status,labels['unknown'])}
 
 
+@router.get('/{cid}/supporting-result')
+def supporting_result(cid:int,visit_id:str,attachment:bool=False,db:Session=Depends(get_db),user:UserORM=Depends(require_roles(*WRITE))):
+    c=owned(db,user,cid)
+    v=next((x for x in c.data['visits'] if x['id']==visit_id),None)
+    if not v or not result_link(c,v):raise HTTPException(404,'Hasil pemeriksaan belum tersedia')
+    headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}
+    file=v.get('result_file')
+    if attachment:
+        if not file or not (RESULT_DIR/file['key']).is_file():raise HTTPException(404,'Lampiran tidak ditemukan')
+        return FileResponse(RESULT_DIR/file['key'],filename=file['name'],media_type=file['mime'],headers=headers)
+    sections=''.join('<h2>'+label+'</h2><p>'+escape(v[key])+'</p>' for key,label in RESULT_FIELDS if v.get(key))
+    if file:
+        query=escape(urlencode({'visit_id':visit_id,'attachment':'true'}))
+        sections+=f'<h2>Lampiran</h2><a href="?{query}">Unduh {escape(file["name"])}</a>'
+    title='Hasil pemeriksaan penunjang'
+    patient=db.get(PatientORM,c.patient_id)
+    return HTMLResponse(f'<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{title} · SEHATI</title><style>body{{max-width:48rem;margin:auto;padding:2rem;font:1rem/1.6 system-ui;color:#312e59}}h2{{font-size:1.1rem}}p{{white-space:pre-wrap;overflow-wrap:anywhere}}</style><main><small>SEHATI · Kolaborasi Fasyankes</small><h1>{title}</h1><p>{escape(patient.name)} · {escape(v["facility"])} · {escape(v.get("actual_date") or v.get("planned_date") or "Tanggal belum diisi")}</p>{sections}</main></html>',headers=headers)
+
+
 def pdf_response(content,filename):
     return Response(content,media_type='application/pdf',headers={'Content-Disposition':f'attachment; filename="{filename}"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
 
@@ -331,7 +389,7 @@ def summary_pdf(start:date,end:date,school_id:int|None=None,db:Session=Depends(g
             if not start.isoformat()<=when<=end.isoformat():continue
             # Whitelist only coordination fields. Never pass clinical values to summary renderer.
             row={key:v.get(key) for key in ('facility','status','planned_date','actual_date','companion','responsible','due_date','needs_control','next_date','next_facility','obstacle','cancel_reason')}
-            row.update(patient_id=patient.id,patient_name=patient.name,class_name=patient.class_name)
+            row.update(result_url=result_link(c,v),patient_id=patient.id,patient_name=patient.name,class_name=patient.class_name)
             rows.append(row)
     rows.sort(key=lambda r:(r['actual_date'] or r['planned_date'],r['patient_name']))
     content=build_report(school_name=school.school_name,school_address=school.address or '',author=user.full_name,rows=rows,start=start,end=end,undated=undated)
@@ -347,7 +405,7 @@ def student_pdf(patient_id:str,db:Session=Depends(get_db),user:UserORM=Depends(r
     rows=[]
     for c in case_query(db,user).filter(Case.patient_id==patient.id).order_by(Case.id).all():
         ref=db.get(BPJSReferralORM,c.referral_id) if c.referral_id else None
-        rows.extend(dict(case_id=c.id,version=c.version,referral_number=ref.referral_number if ref else None,visit=deepcopy(v)) for v in c.data['visits'])
+        rows.extend(dict(result_url=result_link(c,v),case_id=c.id,version=c.version,referral_number=ref.referral_number if ref else None,visit=deepcopy(v)) for v in c.data['visits'])
     rows.sort(key=lambda r:(r['visit']['actual_date'] or r['visit']['planned_date'] or '9999',r['case_id']))
     content=build_report(school_name=school.school_name if school else 'Sekolah',school_address=school.address if school else '',author=user.full_name,rows=rows,patient={'id':patient.id,'name':patient.name,'class_name':patient.class_name})
     return pdf_response(content,'riwayat-individual-fasyankes.pdf')
