@@ -1,5 +1,8 @@
 """School-scoped collaboration with explicit Fonnte notification delivery."""
 import os
+import hashlib
+import hmac
+import json
 from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlencode
@@ -94,10 +97,24 @@ def store_result(upload):
     return {'key':key,'name':name,'mime':mime}
 
 
+def has_result(v):
+    return bool(v and (any(v.get(k) for k,_ in RESULT_FIELDS) or v.get('result_file')))
+
+
+def result_signature(c,v):
+    secret=os.environ.get('SECRET_KEY','')
+    if len(secret)<32 or secret=='dev-secret-key-change-me':
+        raise HTTPException(503,'Konfigurasi tautan hasil belum tersedia')
+    payload=['sehati:shared-result:v1',c.school_id,c.patient_id,c.id,v['id'],
+             v.get('facility'),v.get('actual_date'),v.get('planned_date'),
+             [v.get(k) for k,_ in RESULT_FIELDS],v.get('result_file')]
+    return hmac.new(secret.encode(),json.dumps(payload,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
+
+
 def result_link(c,v):
-    if not any(v.get(k) for k,_ in RESULT_FIELDS) and not v.get('result_file'):return None
+    if not has_result(v):return None
     base=(os.getenv('PUBLIC_BASE_URL') or 'https://emruks.my.id').rstrip('/')
-    return f'{base}/api/fasyankes/{c.id}/supporting-result?'+urlencode({'visit_id':v['id']})
+    return f'{base}/api/fasyankes/{c.id}/shared-result?'+urlencode({'visit_id':v['id'],'key':result_signature(c,v)})
 
 
 class Create(BaseModel):
@@ -348,15 +365,29 @@ def send_notification(cid:int, payload:SendNotification, db:Session=Depends(get_
 def supporting_result(cid:int,visit_id:str,attachment:bool=False,db:Session=Depends(get_db),user:UserORM=Depends(require_roles(*WRITE))):
     c=owned(db,user,cid)
     v=next((x for x in c.data['visits'] if x['id']==visit_id),None)
-    if not v or not result_link(c,v):raise HTTPException(404,'Hasil pemeriksaan belum tersedia')
-    headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}
+    if not has_result(v):raise HTTPException(404,'Hasil pemeriksaan belum tersedia')
+    return render_supporting_result(db,c,v,attachment)
+
+
+@router.get('/{cid}/shared-result')
+def shared_result(cid:int,visit_id:str,key:str='',attachment:bool=False,db:Session=Depends(get_db)):
+    missing=HTTPException(404,'Tautan hasil tidak berlaku')
+    if len(key)!=64 or any(ch not in '0123456789abcdef' for ch in key):raise missing
+    c=db.get(Case,cid)
+    v=next((x for x in c.data['visits'] if x['id']==visit_id),None) if c else None
+    if not has_result(v) or not hmac.compare_digest(key,result_signature(c,v)):raise missing
+    return render_supporting_result(db,c,v,attachment,key)
+
+
+def render_supporting_result(db,c,v,attachment,key=None):
+    headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive'}
     file=v.get('result_file')
     if attachment:
         if not file or not (RESULT_DIR/file['key']).is_file():raise HTTPException(404,'Lampiran tidak ditemukan')
         return FileResponse(RESULT_DIR/file['key'],filename=file['name'],media_type=file['mime'],headers=headers)
     sections=''.join('<h2>'+label+'</h2><p>'+escape(v[key])+'</p>' for key,label in RESULT_FIELDS if v.get(key))
     if file:
-        query=escape(urlencode({'visit_id':visit_id,'attachment':'true'}))
+        query=escape(urlencode({'visit_id':v['id'],'attachment':'true',**({'key':key} if key else {})}))
         sections+=f'<h2>Lampiran</h2><a href="?{query}">Unduh {escape(file["name"])}</a>'
     title='Hasil pemeriksaan penunjang'
     patient=db.get(PatientORM,c.patient_id)

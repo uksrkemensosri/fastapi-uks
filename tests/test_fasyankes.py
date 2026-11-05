@@ -220,6 +220,15 @@ def test_optional_supporting_results_and_pdf_access(client, tmp_path, monkeypatc
         assert 'Hasil privat' not in client.get('/api/fasyankes',headers=h).text
     for route in ['/api/fasyankes/reports/summary.pdf?start=2026-01-02&end=2026-01-02','/api/fasyankes/reports/student/FASY-01.pdf']:
         pdf=client.get(route,headers=admin)
-        assert pdf.status_code==200 and path.encode() in pdf.content and b'/URI' in pdf.content
+        import re
+        assert pdf.status_code==200
+        match=re.search(rb'/URI\s*\(https?://[^/]+(/api/fasyankes/\d+/shared-result\?visit_id=lab-01&key=[0-9a-f]{64})\)',pdf.content)
+        assert match
+        shared=match[1].decode();anonymous={'Cookie':''}
+        assert 'Hasil privat &lt;contoh&gt;' in client.get(shared,headers=anonymous).text
+        assert client.get(shared+'&attachment=true',headers=anonymous).content==doc
+        assert client.get(shared.replace('lab-01','another-visit'),headers=anonymous).status_code==404
+        assert client.get(shared[:-1],headers=anonymous).status_code==404
+        assert client.get(path,headers=anonymous).status_code==401
     assert client.put(base+'/visit',headers=admin,json={'version':2,'visit':visit}).json()['visits'][0]['result_file_name']=='hasil.pdf'
     assert client.post(base+'/undo',headers=admin,json={'version':3}).status_code==200
