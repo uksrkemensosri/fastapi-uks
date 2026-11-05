@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/ui/assets/theme.css?v=126">
 <link rel="stylesheet" href="/ui/assets/students.css?v=3">
   <style>
+    #kunjungan [hidden]{display:none!important}
     body[data-role="wali_asuh"] #kunjungan,
     body[data-role="wali_asuh"] #btnExportCardData,
     body[data-role="wali_asuh"] [data-medical-card] { display: none !important; }
@@ -419,14 +420,26 @@ overflow:auto;
     color:var(--muted);
     font-size:.92rem;
   ">
-    Catat kunjungan dan tindakan medis siswa
+    Catat kunjungan dan tindakan medis di UKS
   </p>
 
 </div>
 <div class="form-grid">
         <div class="form-group">
 
-  <label>Cari Siswa</label>
+  <div id="staffModeControl" hidden><label for="visitPopulation">Jenis pasien</label><select id="visitPopulation"><option value="student">Siswa</option><option value="staff">Tendik</option></select></div>
+  <div id="staffVisitPanel" hidden>
+    <label for="staffChoice">Data Tendik</label><select id="staffChoice"></select>
+    <details id="staffNew"><summary>Daftarkan tendik baru</summary>
+      <label>Nama lengkap<input id="staffName" maxlength="200"></label>
+      <label>Jabatan<input id="staffPosition" maxlength="120" placeholder="Mis. Guru, Wali Asuh"></label>
+      <label>WhatsApp pribadi (opsional)<input id="staffPhone" type="tel" placeholder="08…"></label>
+      <label id="staffSchoolLabel" hidden>Sekolah<select id="staffSchool"></select></label>
+      <button type="button" class="btn btn-secondary" id="staffRegister">Simpan data tendik</button>
+    </details>
+    <details><summary>Riwayat tendik terpilih</summary><div id="staffHistory"></div></details>
+  </div>
+  <div id="studentVisitPicker"><label>Cari Siswa</label>
 
   <input
     id="patientSearch"
@@ -439,7 +452,7 @@ overflow:auto;
   <input
     type="hidden"
     id="visitPatientId"
-  >
+  ></div>
 
 </div>
 
@@ -476,7 +489,7 @@ overflow:auto;
 
         <div class="form-group">
           <label>Catatan</label>
-          <textarea id="visitNotes"></textarea>
+          <textarea id="visitNotes"></textarea><label id="staffAdviceLabel" hidden>Anjuran untuk tendik (dikirim ke WA pribadi)<textarea id="staffAdvice"></textarea></label>
         </div>
 
         <div class="form-group">
@@ -964,6 +977,7 @@ overflow:auto;
 
 
 let token = localStorage.getItem("access_token") || "";
+const staffViewer = token ? api('/api/auth/me','GET',null,true).catch(()=>null) : Promise.resolve(null);
 let editingPatientId = null;
 let editingVisitId = null;
 let medicinesData = [];
@@ -1801,7 +1815,8 @@ document
 
     const selectedPatientId = document.getElementById("visitPatientId").value.trim();
     const selectedPatient = patientsData.find(patient => String(patient.id) === selectedPatientId);
-    if (!selectedPatient) {
+    const staffMode = document.getElementById("visitPopulation").value === "staff";
+    if (!staffMode && !selectedPatient) {
       throw new Error("Pilih siswa dari daftar pencarian terlebih dahulu.");
     }
 
@@ -1845,6 +1860,19 @@ document
 
     };
 
+    if(staffMode){
+      const id=document.getElementById('staffChoice').value;
+      if(!id)throw Error('Pilih tendik terlebih dahulu.');
+      delete body.patient_id;
+      body.medications=visitMedicines;
+      body.advice=document.getElementById('staffAdvice').value;
+      const result=await api('/api/staff/'+id+'/visits','POST',body,true);
+      clearVisitForm();visitMedicines=[];renderMedicineList();loadMedicines();
+      document.getElementById('staffAdvice').value='';
+      const label={sent:'WA dikirim ke nomor pribadi.',queued:'WA pribadi masuk antrean.',skipped:'WA tidak dikirim; periksa nomor pribadi dan konfigurasi.',failed:'Pengiriman WA pribadi gagal.'};
+      showStatus('visitStatus','Kunjungan tendik tersimpan. '+(label[result.whatsapp_status]||''),true);
+      btn.disabled=false;btn.textContent='Simpan Kunjungan';await loadStaffHistory();await loadVisits();return;
+    }
     let savedVisitId;
     let savedVisit;
     const isNewVisit = !editingVisitId;
@@ -2061,6 +2089,11 @@ async function loadVisits() {
         true
       );
 
+    const viewer=await staffViewer;
+    if(viewer && ['admin','perawat','super_admin'].includes(viewer.role)){
+      data.push(...await api('/api/staff/visits'+monthQuery,'GET',null,true));
+      data.sort((a,b)=>String(b.visit_date).localeCompare(String(a.visit_date)));
+    }
     const tbody =
       document.getElementById(
         "visitTableBody"
@@ -2106,6 +2139,20 @@ tbody.innerHTML = `
 
       const row =
         document.createElement("tr");
+      if(item.kind==='staff'){
+        for(const value of [item.visit_date,item.patient_name+' · Tendik',item.complaint,item.diagnosis,item.treatment]){
+          const cell=row.insertCell();cell.textContent=value||'-';
+        }
+        const button=document.createElement('button');button.className='action-btn history-btn';button.textContent='Riwayat tendik';
+        button.onclick=async()=>{
+          if(editingVisitId||document.getElementById('visitComplaint').value.trim()){
+            if(!confirm('Buka riwayat dan tinggalkan isian kunjungan saat ini?'))return;
+          }
+          document.getElementById('visitPopulation').value='staff';await switchPopulation(item.staff_id);
+          document.getElementById('staffHistory').parentElement.open=true;document.getElementById('staffVisitPanel').scrollIntoView();
+        };
+        row.insertCell().append(button);tbody.append(row);return;
+      }
       const whatsappLabel =
         item.whatsapp_status === "sent"
         ? "WA Terkirim"
@@ -2263,6 +2310,7 @@ async function editVisit(id) {
 
     if (!visit) return;
 
+    if(document.getElementById('visitPopulation').value==='staff'){document.getElementById('visitPopulation').value='student';switchPopulation();}
     editingVisitId = id;
 
     document.getElementById(
@@ -3648,6 +3696,7 @@ window.print();
 
 };
 </script>
+<script src="/ui/assets/staff-visits.js?v=1"></script>
 <script src="/ui/assets/rbac.js?v=14" defer></script>
 </body>
 </html>

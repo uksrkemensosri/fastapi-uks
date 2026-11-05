@@ -1168,12 +1168,12 @@ body.dark .activity-item{
       <div class="stat-card">
        <div class="stat-icon">👨‍🎓</div>
         <div class="stat-label">Total Siswa</div>
-        <h1 id="totalStudents">0</h1>
+        <h1 id="totalStudents">0</h1><small id="staffCount"></small>
       </div>
 
       <div class="stat-card">
         <div class="stat-label">Kunjungan Hari Ini</div>
-        <h1 id="todayVisits">0</h1>
+        <h1 id="todayVisits">0</h1><small id="visitBreakdown"></small>
       </div>
 
       <div class="stat-card">
@@ -2036,10 +2036,7 @@ async function loadTodayPanel(){
         v.visit_date === today
       );
 
-    document.getElementById(
-      "todayVisitMini"
-    ).textContent =
-      todayVisits.length;
+
 
     const diagnosisMap = {};
 
@@ -2291,6 +2288,11 @@ async function loadDashboardStats() {
 
     document.getElementById("todayVisits").textContent =
       data.today_visits;
+    document.getElementById("todayVisitMini").textContent=data.today_visits;
+    if(document.body.dataset.role!=='wali_asuh'){
+      document.getElementById('visitBreakdown').textContent=data.today_student_visits+' siswa · '+data.today_staff_visits+' tendik';
+      document.getElementById('staffCount').textContent='Tendik terdaftar: '+data.total_staff;
+    }
 
     document.getElementById("topCase").textContent =
       data.top_case;

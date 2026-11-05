@@ -109,6 +109,8 @@ app.include_router(fitness_router)
 app.include_router(monthly_reports_router)
 app.include_router(recommendations_router)
 app.include_router(complaints_router)
+from app.api.staff import router as staff_router
+app.include_router(staff_router)
 app.include_router(fasyankes_router)
 
 Base.metadata.create_all(bind=engine)

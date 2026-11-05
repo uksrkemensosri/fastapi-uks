@@ -3294,6 +3294,9 @@ def dashboard_stats(
     current_user: UserORM = Depends(require_roles(ROLE_ADMIN, ROLE_PERAWAT, ROLE_KEPALA_UKSR, ROLE_TIM_UKSR, ROLE_WALI_ASUH)),
 ):
 
+    from app.db.staff import StaffORM, StaffVisitORM
+    from zoneinfo import ZoneInfo
+    local_day = datetime.now(ZoneInfo("Asia/Jakarta")).date().isoformat()
     total_students = guardian_patient_query(
         tenant_query(db.query(PatientORM), PatientORM, current_user), current_user, db
     ).count()
@@ -3302,8 +3305,13 @@ def dashboard_stats(
     if is_wali_asuh(current_user):
         visit_query = visit_query.filter(UKSVisitORM.patient_id.in_(guardian_patient_ids(db, current_user)))
     today_visits = visit_query.filter(
-        UKSVisitORM.visit_date == date.today().isoformat()
+        UKSVisitORM.visit_date == local_day
     ).count()
+
+    staff_count = staff_visits = 0
+    if not is_wali_asuh(current_user):
+        staff_count = tenant_query(db.query(StaffORM), StaffORM, current_user).count()
+        staff_visits = tenant_query(db.query(StaffVisitORM), StaffVisitORM, current_user).filter(StaffVisitORM.visit_date == local_day).count()
 
     top_case_query = tenant_query(
         db.query(UKSVisitORM.diagnosis, func.count(UKSVisitORM.diagnosis).label("total")),
@@ -3323,7 +3331,8 @@ def dashboard_stats(
 
     return {
         "total_students": total_students,
-        "today_visits": today_visits,
+        "today_visits": today_visits + staff_visits,
+        "today_student_visits": today_visits, "today_staff_visits": staff_visits, "total_staff": staff_count,
         "top_case": top_case[0] if top_case else "-",
         "active_reports": today_visits
     }
