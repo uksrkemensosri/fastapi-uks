@@ -1,4 +1,10 @@
+import hashlib
+import hmac
+import json
+import os
 from datetime import date
+from fastapi.responses import Response
+from app.reports.staff_visit_pdf import staff_report_data, build_staff_report
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, update
@@ -51,6 +57,28 @@ def staff_visit_message(name: str, visit: VisitInput) -> str:
             sections.append(f'{icon} *{title}*\n{value}')
     sections.extend(['Semoga lekas membaik, ' + name + '.', '━━━━━━━━━━━━━━━━━━\n*Tim UKS Sekolah Rakyat*\nKementerian Sosial RI'])
     return '\n\n'.join(sections)
+
+
+def staff_pdf_key(staff,visit,data):
+    secret=os.getenv('SECRET_KEY','')
+    if len(secret)<32:raise HTTPException(503,'Konfigurasi tautan PDF belum tersedia')
+    payload=['sehati:staff-visit-pdf:v1',staff.school_id,staff.id,visit.id,data]
+    return hmac.new(secret.encode(),json.dumps(payload,sort_keys=True,separators=(',',':')).encode(),hashlib.sha256).hexdigest()
+
+
+@router.get('/visits/{visit_id}/hasil.pdf')
+def public_visit_pdf(visit_id:int,key:str='',db:Session=Depends(get_db)):
+    missing=HTTPException(404,'Tautan PDF tidak berlaku')
+    if len(key)!=64 or any(ch not in '0123456789abcdef' for ch in key):raise missing
+    visit=db.get(StaffVisitORM,visit_id)
+    staff=db.get(StaffORM,visit.staff_id) if visit else None
+    if not staff or staff.school_id!=visit.school_id:raise missing
+    data=staff_report_data(staff,visit)
+    if not hmac.compare_digest(key,staff_pdf_key(staff,visit,data)):raise missing
+    return Response(build_staff_report(data),media_type='application/pdf',headers={
+        'Content-Disposition':'attachment; filename="hasil-kunjungan-tendik.pdf"',
+        'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer',
+        'X-Robots-Tag':'noindex, nofollow, noarchive','X-Content-Type-Options':'nosniff'})
 
 
 def identity(s):
@@ -107,9 +135,14 @@ def visit(staff_id:int,payload:VisitInput,db:Session=Depends(get_db),user=clinic
         if result.rowcount!=1:raise HTTPException(409,'Stok obat tidak cukup: '+inventory.name)
         db.add(MedicineTransactionORM(school_id=s.school_id,medicine_name=inventory.name,transaction_type='OUT',quantity=m.quantity,notes=f'Kunjungan tendik #{v.id}'))
     write_audit_log(db,user,'create_staff_visit','staff_visit',v.id,'Kunjungan UKS tendik')
+    message=None
+    if s.phone:
+        key=staff_pdf_key(s,v,staff_report_data(s,v))
+        base=(os.getenv('PUBLIC_BASE_URL') or 'https://emruks.my.id').rstrip('/')
+        message=staff_visit_message(s.name,payload)+f'\n\n📄 *Unduh PDF hasil kunjungan* (tanpa login):\n{base}/api/staff/visits/{v.id}/hasil.pdf?key={key}'
     db.commit()
     status='skipped'
-    if s.phone:
-        status,_=send_whatsapp_message(s.phone,staff_visit_message(s.name,payload))
+    if message:
+        status,_=send_whatsapp_message(s.phone,message)
         v.whatsapp_status=status;db.commit()
     return {'id':v.id,'whatsapp_status':status}

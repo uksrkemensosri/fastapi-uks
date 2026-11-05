@@ -30,6 +30,21 @@ def test_staff_visit_scope_counts_stock_and_recipient(client,monkeypatch):
     assert len(calls)==1 and calls[0][0]=='081234567890'
     assert all(x in calls[0][1] for x in ['Hai Indah Contoh','Hasil contoh','Anjuran contoh','Obat Uji Tendik'])
     assert 'Privat internal' not in calls[0][1]
+    from urllib.parse import urlsplit
+    link=urlsplit(calls[0][1].splitlines()[-1])
+    path=link.path+'?'+link.query
+    pdf=client.get(path,headers={'Cookie':''})
+    assert pdf.status_code==200 and pdf.content.startswith(b'%PDF-')
+    assert pdf.headers['content-disposition'].startswith('attachment;')
+    assert client.get(path[:-1],headers={'Cookie':''}).status_code==404
+    assert client.get(link.path,headers={'Cookie':''}).status_code==404
+    from app.reports.staff_visit_pdf import staff_report_data
+    from app.db.staff import StaffVisitORM,StaffORM
+    with SessionLocal() as db:
+        v=db.query(StaffVisitORM).filter_by(staff_id=r.json()['id']).one()
+        projection=staff_report_data(db.get(StaffORM,v.staff_id),v)
+        assert 'notes' not in projection and 'Privat internal' not in str(projection)
+
     after=stats()
     assert after['total_students']==before['total_students']
     assert after['total_staff']==before['total_staff']+1
